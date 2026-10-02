@@ -708,13 +708,13 @@ def xmltv():
                                     try:
                                         start = (
                                             datetime.utcfromtimestamp(
-                                                p.get("start_timestamp")
+                                                int(p.get("start_timestamp"))
                                             ).strftime("%Y%m%d%H%M%S")
                                             + " +0000"
                                         )
                                         stop = (
                                             datetime.utcfromtimestamp(
-                                                p.get("stop_timestamp")
+                                                int(p.get("stop_timestamp"))
                                             ).strftime("%Y%m%d%H%M%S")
                                             + " +0000"
                                         )
