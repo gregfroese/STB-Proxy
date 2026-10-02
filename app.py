@@ -679,6 +679,8 @@ def xmltv():
                         stb.getProfile(url, mac, token, proxy)
                         allChannels = stb.getAllChannels(url, mac, token, proxy)
                         epg = stb.getEpg(url, mac, token, 24, proxy)
+                        if not epg:
+                            epg = stb.getShortEpg(url, mac, token, enabledChannels, proxy)
                         break
                     except:
                         allChannels = None
@@ -702,7 +704,7 @@ def xmltv():
                                     channelEle, "display-name"
                                 ).text = channelName
                                 ET.SubElement(channelEle, "icon", src=c.get("logo"))
-                                for p in epg.get(channelId):
+                                for p in epg.get(channelId) or []:
                                     try:
                                         start = (
                                             datetime.utcfromtimestamp(

@@ -252,3 +252,29 @@ def getEpg(url, mac, token, period, proxy=None):
             return data
     except:
         pass
+
+
+# Per-channel EPG, for portals whose get_epg_info comes back empty (e.g. very large lineups).
+def getShortEpg(url, mac, token, channelIds, proxy=None):
+    proxies = {"http": proxy, "https": proxy}
+    cookies = deviceCookies(mac)
+    headers = deviceHeaders(mac, token)
+    epg = {}
+    for channelId in channelIds:
+        try:
+            response = s.get(
+                url
+                + "?type=itv&action=get_short_epg&ch_id="
+                + str(channelId)
+                + "&size=200&JsHttpRequest=1-xml",
+                cookies=cookies,
+                headers=headers,
+                proxies=proxies,
+            )
+            data = response.json()["js"]
+            if data:
+                epg[str(channelId)] = data
+        except:
+            pass
+    if epg:
+        return epg
