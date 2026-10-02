@@ -387,6 +387,8 @@ def editor_data():
             customChannelNumbers = portals[portal].get("custom channel numbers", {})
             customEpgIds = portals[portal].get("custom epg ids", {})
             fallbackChannels = portals[portal].get("fallback channels", {})
+            channelBlocks = portals[portal].get("channel blocks", {})
+            deadChannels = portals[portal].get("dead channels", [])
 
             for mac in macs:
                 try:
@@ -438,6 +440,8 @@ def editor_data():
                             "channelId": channelId,
                             "customEpgId": customEpgId,
                             "fallbackChannel": fallbackChannel,
+                            "block": channelBlocks.get(channelId, ""),
+                            "dead": channelId in deadChannels,
                             "link": "http://"
                             + host
                             + "/play/"
@@ -470,7 +474,10 @@ def editorSave():
     genreEdits = json.loads(request.form["genreEdits"])
     epgEdits = json.loads(request.form["epgEdits"])
     fallbackEdits = json.loads(request.form["fallbackEdits"])
+    blockEdits = json.loads(request.form.get("blockEdits", "[]"))
     portals = getPortals()
+    blocks = getBlocks()
+    availableBefore = {p: availability.availableChannels(portals[p], blocks) for p in portals}
     for edit in enabledEdits:
         portal = edit["portal"]
         channelId = edit["channel id"]
@@ -533,9 +540,25 @@ def editorSave():
         else:
             portals[portal]["fallback channels"].pop(channelId)
 
+    for edit in blockEdits:
+        portal = edit["portal"]
+        channelId = edit["channel id"]
+        block = edit["block"].strip()
+        portals[portal].setdefault("channel blocks", {})
+        if block:
+            portals[portal]["channel blocks"][channelId] = block
+        else:
+            portals[portal]["channel blocks"].pop(channelId, None)
+
     savePortals(portals)
+    saveBlocks(availability.pruneBlocks(portals, blocks))
     logger.info("Playlist config saved!")
     flash("Playlist config saved!", "success")
+
+    availableAfter = {p: availability.availableChannels(portals[p], getBlocks()) for p in portals}
+    if availableAfter != availableBefore:
+        category, message = syncPlex()
+        flash(message, category)
 
     return redirect("/editor", code=302)
 
