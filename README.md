@@ -11,6 +11,10 @@
 - Override epg
 - Set fallback channels
 - Support for multiple MACs/Streams per Portal
+- Channel blocks: group channels and switch the whole group on or off
+- Mark channels dead from the preview so they're hidden everywhere
+- Keeps a Plex DVR's channel list in step automatically
+- Works with portals that lock a MAC to a specific device
 
 
 # Setup
@@ -31,3 +35,50 @@ chris230291/stb-proxy:latest
 - `HOST` should be the docker hosts ip + the port you chose
 - Mounting `/config` is required for settings to persist through restarts
 - To configure go to the `HOST` in a browser eg 10.0.1.200:8084
+
+
+# Channel blocks
+
+Make sets of channels available only when you want them.
+
+- In the **Playlist Editor**, type a name in the **Block** column for each channel in the set, then **Save**. Channels with the same name form one block.
+- On the **Blocks** page, switch a block on or off. A channel is available when it's enabled on its own **or** in a block that's on, and it isn't marked dead.
+- Clear a channel's block name to take it out of the block. A block disappears when no channel uses its name.
+
+# Dead channels
+
+- Preview a channel in the editor and click **Mark dead** if it doesn't work. Dead channels are left out of the playlist, XMLTV, HDHomeRun lineup and Plex, even if they're enabled or in a block that's on.
+- **Hide dead**, above the editor table, hides them from the list. Turn it off to find them again, and use **Mark working** in the preview to bring one back.
+- If a preview doesn't start, the editor suggests trying again first, since the portal may just be busy with another stream.
+
+# Plex sync
+
+When STB-Proxy is added to Plex as an HDHomeRun tuner, it can keep the Plex DVR's channel list up to date.
+
+- In **Settings → Plex**, enter the Plex address (eg `http://192.168.1.10:32400`) and your Plex token. The token is never shown again; leave the field blank to keep it.
+- Switching a block, marking a channel dead or working, or saving editor changes that alter which channels are available then maps those channels in Plex and reloads its guide. The **Blocks** page shows the result of the last update and has a **Sync Plex now** button.
+- If a portal can't be reached, or no channels would be left, Plex is left unchanged rather than emptied.
+
+# Device-locked portals
+
+Some portals only accept a MAC from the device that registered it. To use one, capture what that device sends when it logs in (its serial, model and related values). Add them to `devices.json` next to `config.json`, keyed by MAC:
+
+```json
+{
+  "00:1A:79:XX:XX:XX": {
+    "cookies": {"timezone": "America/Toronto"},
+    "headers": {"User-Agent": "...", "X-User-Agent": "Model: MAG270; Link: WiFi"},
+    "handshake": {"token": "", "prehash": "..."},
+    "profile": {"sn": "...", "stb_type": "MAG270", "device_id": "", "device_id2": "", "signature": "", "hw_version_2": "..."}
+  }
+}
+```
+
+MACs that aren't listed log in as before.
+
+# Development
+
+```
+python3 -m venv .venv && .venv/bin/pip install -r requirements-test.txt
+.venv/bin/python -m unittest discover -s tests -t .
+```
