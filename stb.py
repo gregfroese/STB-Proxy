@@ -2,10 +2,43 @@ import requests
 from requests.adapters import HTTPAdapter, Retry
 from urllib.parse import urlparse
 import re
+import json
+import os
+import time
 
 s = requests.Session()
 retries = Retry(total=3, backoff_factor=0.1, status_forcelist=[500, 502, 503, 504])
 s.mount("http://", HTTPAdapter(max_retries=retries))
+
+# Optional per-MAC device profiles, for portals that lock a MAC to the device
+# that registered it. Keys: "cookies", "headers", "handshake" and "profile"
+# (extra query params for those two calls). MACs not listed behave as before.
+devicesFile = os.getenv(
+    "DEVICES",
+    os.path.join(os.path.dirname(os.getenv("CONFIG", "config.json")), "devices.json"),
+)
+
+
+def device(mac):
+    try:
+        with open(devicesFile) as f:
+            return json.load(f).get(mac, {})
+    except (OSError, ValueError):
+        return {}
+
+
+def deviceCookies(mac):
+    cookies = {"mac": mac, "stb_lang": "en", "timezone": "Europe/London"}
+    cookies.update(device(mac).get("cookies", {}))
+    return cookies
+
+
+def deviceHeaders(mac, token=None):
+    headers = {"User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)"}
+    headers.update(device(mac).get("headers", {}))
+    if token:
+        headers["Authorization"] = "Bearer " + token
+    return headers
 
 
 def getUrl(url, proxy=None):
@@ -65,11 +98,14 @@ def getUrl(url, proxy=None):
 
 def getToken(url, mac, proxy=None):
     proxies = {"http": proxy, "https": proxy}
-    cookies = {"mac": mac, "stb_lang": "en", "timezone": "Europe/London"}
-    headers = {"User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)"}
+    cookies = deviceCookies(mac)
+    headers = deviceHeaders(mac)
+    params = {"type": "stb", "action": "handshake", "JsHttpRequest": "1-xml"}
+    params.update(device(mac).get("handshake", {}))
     try:
         response = s.get(
-            url + "?type=stb&action=handshake&JsHttpRequest=1-xml",
+            url,
+            params=params,
             cookies=cookies,
             headers=headers,
             proxies=proxies,
@@ -83,14 +119,16 @@ def getToken(url, mac, proxy=None):
 
 def getProfile(url, mac, token, proxy=None):
     proxies = {"http": proxy, "https": proxy}
-    cookies = {"mac": mac, "stb_lang": "en", "timezone": "Europe/London"}
-    headers = {
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)",
-        "Authorization": "Bearer " + token,
-    }
+    cookies = deviceCookies(mac)
+    headers = deviceHeaders(mac, token)
+    params = {"type": "stb", "action": "get_profile", "JsHttpRequest": "1-xml"}
+    params.update(device(mac).get("profile", {}))
+    if "timestamp" in params:
+        params["timestamp"] = str(int(time.time()))
     try:
         response = s.get(
-            url + "?type=stb&action=get_profile&JsHttpRequest=1-xml",
+            url,
+            params=params,
             cookies=cookies,
             headers=headers,
             proxies=proxies,
@@ -104,11 +142,8 @@ def getProfile(url, mac, token, proxy=None):
 
 def getExpires(url, mac, token, proxy=None):
     proxies = {"http": proxy, "https": proxy}
-    cookies = {"mac": mac, "stb_lang": "en", "timezone": "Europe/London"}
-    headers = {
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)",
-        "Authorization": "Bearer " + token,
-    }
+    cookies = deviceCookies(mac)
+    headers = deviceHeaders(mac, token)
     try:
         response = s.get(
             url + "?type=account_info&action=get_main_info&JsHttpRequest=1-xml",
@@ -116,7 +151,9 @@ def getExpires(url, mac, token, proxy=None):
             headers=headers,
             proxies=proxies,
         )
-        expires = response.json()["js"]["phone"]
+        info = response.json()["js"]
+        # Some portals leave "phone" empty and put the expiry in "end_date".
+        expires = info.get("phone") or info.get("end_date")
         if expires:
             return expires
     except:
@@ -125,11 +162,8 @@ def getExpires(url, mac, token, proxy=None):
 
 def getAllChannels(url, mac, token, proxy=None):
     proxies = {"http": proxy, "https": proxy}
-    cookies = {"mac": mac, "stb_lang": "en", "timezone": "Europe/London"}
-    headers = {
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)",
-        "Authorization": "Bearer " + token,
-    }
+    cookies = deviceCookies(mac)
+    headers = deviceHeaders(mac, token)
     try:
         response = s.get(
             url
@@ -147,11 +181,8 @@ def getAllChannels(url, mac, token, proxy=None):
 
 def getGenres(url, mac, token, proxy=None):
     proxies = {"http": proxy, "https": proxy}
-    cookies = {"mac": mac, "stb_lang": "en", "timezone": "Europe/London"}
-    headers = {
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)",
-        "Authorization": "Bearer " + token,
-    }
+    cookies = deviceCookies(mac)
+    headers = deviceHeaders(mac, token)
     try:
         response = s.get(
             url + "?action=get_genres&type=itv&JsHttpRequest=1-xml",
@@ -182,11 +213,8 @@ def getGenreNames(url, mac, token, proxy=None):
 
 def getLink(url, mac, token, cmd, proxy=None):
     proxies = {"http": proxy, "https": proxy}
-    cookies = {"mac": mac, "stb_lang": "en", "timezone": "Europe/London"}
-    headers = {
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)",
-        "Authorization": "Bearer " + token,
-    }
+    cookies = deviceCookies(mac)
+    headers = deviceHeaders(mac, token)
     try:
         response = s.get(
             url
@@ -207,11 +235,8 @@ def getLink(url, mac, token, cmd, proxy=None):
 
 def getEpg(url, mac, token, period, proxy=None):
     proxies = {"http": proxy, "https": proxy}
-    cookies = {"mac": mac, "stb_lang": "en", "timezone": "Europe/London"}
-    headers = {
-        "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; C)",
-        "Authorization": "Bearer " + token,
-    }
+    cookies = deviceCookies(mac)
+    headers = deviceHeaders(mac, token)
     try:
         response = s.get(
             url
