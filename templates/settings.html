@@ -189,6 +189,35 @@
 
     </div>
 
+    <br>
+
+    <h4>Plex</h4>
+    <hr>
+    <div class="p-sm-3">
+
+        <h6>Plex address:</h6>
+        <div class="col-md-4">
+            <input form="save" type="text" name="plex url" id="plex url" class="form-control"
+                placeholder="http://192.168.1.10:32400" value="{{ settings['plex url'] }}">
+        </div>
+        <span class="text-muted">Lets block switches and dead marks update the Plex DVR. Leave blank to turn this off.</span>
+
+        <br>
+        <br>
+
+        <h6>Plex token:</h6>
+        <div class="col-md-4">
+            <input form="save" type="password" name="plex token" id="plex token" class="form-control"
+                autocomplete="off"
+                placeholder="{{ 'Saved, leave blank to keep' if settings['plex token'] else 'Not set' }}">
+        </div>
+        <div class="form-check mt-1">
+            <input form="save" type="checkbox" class="form-check-input" name="clear plex token" id="clear plex token" value="true">
+            <label class="form-check-label" for="clear plex token">Clear token</label>
+        </div>
+
+    </div>
+
 </div>
 
 <script>

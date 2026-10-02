@@ -13,6 +13,7 @@
                 <th>Play</th>
                 <th>Name</th>
                 <th>Genre</th>
+                <th>Block</th>
                 <th>Number</th>
                 <th>EPG ID</th>
                 <th>Fallback For</th>
@@ -30,6 +31,7 @@
         <input type="text" id="genreEdits" name="genreEdits" value="">
         <input type="text" id="epgEdits" name="epgEdits" value="">
         <input type="text" id="fallbackEdits" name="fallbackEdits" value="">
+        <input type="text" id="blockEdits" name="blockEdits" value="">
     </form>
 
     <form action="/editor/reset" method="post" id="reset" hidden>
@@ -48,6 +50,13 @@
                         Your browser does not support HTML video.
                     </video>
                 </div>
+                <div class="modal-footer">
+                    <span id="previewProblem" class="me-auto text-warning d-none">This channel didn't play. The portal may just be busy: try again in a few seconds before marking it dead.
+                        <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="retryPreview" onclick="retryPreview()">Try again</button>
+                    </span>
+                    <span id="deadStatus" class="me-auto small"></span>
+                    <button type="button" class="btn btn-danger" id="deadButton" onclick="toggleDead()">Mark dead</button>
+                </div>
             </div>
         </div>
     </div>
@@ -61,6 +70,12 @@
     var genreEdits = [];
     var epgEdits = [];
     var fallbackEdits = [];
+    var blockEdits = [];
+    var table;
+
+    function escapeAttr(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
 
     function editAll(ele) {
         var checkboxes = document.getElementsByClassName('checkbox');
@@ -121,6 +136,13 @@
         fallbackEdits.push(j);
     }
 
+    function editBlock(ele) {
+        var p = ele.getAttribute('data-portal');
+        var i = ele.getAttribute('data-channelId');
+        var j = { "portal": p, "channel id": i, "block": ele.value };
+        blockEdits.push(j);
+    }
+
     function save() {
         document.getElementById("enabledEdits").value = JSON.stringify(enabledEdits);
         document.getElementById("numberEdits").value = JSON.stringify(numberEdits);
@@ -128,12 +150,16 @@
         document.getElementById("genreEdits").value = JSON.stringify(genreEdits);
         document.getElementById("epgEdits").value = JSON.stringify(epgEdits);
         document.getElementById("fallbackEdits").value = JSON.stringify(fallbackEdits);
+        document.getElementById("blockEdits").value = JSON.stringify(blockEdits);
         document.getElementById("save edits").submit();
     }
 
     var player = document.getElementById("player")
     var title = document.getElementById("channelLabel")
     player.volume = 0.25
+    var currentChannel = null;
+    var previewTimer = null;
+
     function selectChannel(ele) {
         link = ele.getAttribute('data-link');
         player.src = link;
@@ -142,11 +168,94 @@
             channel = ele.getAttribute('data-channelName');
         }
         title.innerHTML = channel
+        currentChannel = { portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') };
+        showDeadState(rowFor(currentChannel).dead);
+        document.getElementById("previewProblem").classList.add("d-none");
+        document.getElementById("deadStatus").textContent = "";
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(previewFailed, 15000);
     }
 
+    player.addEventListener("playing", function () {
+        clearTimeout(previewTimer);
+    });
+
+    player.addEventListener("error", function () {
+        previewFailed();
+    });
+
     $('#videoModal').on('hidden.bs.modal', function () {
+        currentChannel = null;
+        clearTimeout(previewTimer);
         player.src = "";
     })
+
+    function rowFor(ch) {
+        var found = null;
+        table.rows().every(function () {
+            var d = this.data();
+            if (d.portal == ch.portal && d.channelId == ch.channelId) {
+                found = d;
+            }
+        });
+        return found;
+    }
+
+    function previewFailed() {
+        clearTimeout(previewTimer);
+        if (!currentChannel) {
+            return;
+        }
+        var row = rowFor(currentChannel);
+        if (!row || row.dead) {
+            return;
+        }
+        document.getElementById("previewProblem").classList.remove("d-none");
+    }
+
+    function retryPreview() {
+        document.getElementById("previewProblem").classList.add("d-none");
+        player.src = link;
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(previewFailed, 15000);
+    }
+
+    function showDeadState(dead) {
+        var button = document.getElementById("deadButton");
+        button.textContent = dead ? "Mark working" : "Mark dead";
+        button.className = dead ? "btn btn-success" : "btn btn-danger";
+    }
+
+    function toggleDead() {
+        var ch = currentChannel;
+        var row = rowFor(ch);
+        var button = document.getElementById("deadButton");
+        var status = document.getElementById("deadStatus");
+        button.disabled = true;
+        $.post("/channel/dead", { portal: ch.portal, channelId: ch.channelId, dead: row.dead ? "false" : "true" })
+            .done(function (res) {
+                row.dead = res.dead;
+                var badge = document.querySelector('.dead-badge[data-key="' + ch.portal + '/' + ch.channelId + '"]');
+                if (badge) {
+                    badge.classList.toggle("d-none", !res.dead);
+                }
+                showDeadState(res.dead);
+                document.getElementById("previewProblem").classList.add("d-none");
+                status.textContent = (res.dead ? "Marked dead." : "Marked working.") + (res.plex ? " " + res.plex : "");
+                table.draw(false);
+            })
+            .fail(function () {
+                status.textContent = "Couldn't save. Try again.";
+            })
+            .always(function () {
+                button.disabled = false;
+            });
+    }
+
+    var hideDead = true;
+    $.fn.dataTable.ext.search.push(function (settings, data, dataIndex, rowData) {
+        return !hideDead || !rowData.dead;
+    });
 
     /* Create an array with the values of all the checkboxes in a column */
     $.fn.dataTable.ext.order['dom-checkbox'] = function (settings, col) {
@@ -172,13 +281,21 @@
     };
 
     $(document).ready(function () {
-        $('#table').DataTable({
-            dom: "<'row m-1'<'col-auto'B><'col-auto ms-auto'f><'col-auto'l>>" +
+        table = $('#table').DataTable({
+            dom: "<'row m-1'<'col-auto'B><'col-auto d-flex align-items-center dead-filter'><'col-auto ms-auto'f><'col-auto'l>>" +
                 "<'row'<'col-12'tr>>" +
                 "<'row mb-1 mb-lg-0'<'col-auto text-light'i><'col-auto ms-auto'p>>",
             orderFixed: [0, 'des'],
             order: [[0, 'des'], [2, 'asc']],
             pageLength: 25,
+            initComplete: function () {
+                $('div.dead-filter').html(
+                    '<div class="form-check form-switch text-light mb-0">' +
+                    '<input type="checkbox" class="form-check-input" id="hideDead" checked ' +
+                    'onchange="hideDead = this.checked; table.draw(false);">' +
+                    '<label class="form-check-label" for="hideDead">Hide dead</label></div>'
+                );
+            },
             lengthMenu: [[25, 50, 100, 250, 500, 1000, -1], [25, 50, 100, 250, 500, 1000, "All"]],
             columnDefs: [
                 { targets: [0, 1], width: "0%" },
@@ -186,10 +303,11 @@
                 { targets: 1, className: "align-middle", orderable: false, searchable: false },
                 { targets: 2, className: "align-middle", orderDataType: "dom-text", type: 'string' },
                 { targets: 3, className: "align-middle", orderDataType: "dom-text", type: 'string' },
-                { targets: 4, className: "align-middle", orderDataType: "dom-text-numeric" },
-                { targets: 5, className: "align-middle", orderDataType: "dom-text", type: 'string' },
+                { targets: 4, className: "align-middle", orderDataType: "dom-text", type: 'string' },
+                { targets: 5, className: "align-middle", orderDataType: "dom-text-numeric" },
                 { targets: 6, className: "align-middle", orderDataType: "dom-text", type: 'string' },
-                { targets: 7, className: "align-middle" }
+                { targets: 7, className: "align-middle", orderDataType: "dom-text", type: 'string' },
+                { targets: 8, className: "align-middle" }
             ],
             language: {
                 search: "",
@@ -252,6 +370,8 @@
                             data-bs-toggle="modal" \
                             data-bs-target="#videoModal" \
                             onclick="selectChannel(this)" \
+                            data-portal="' + row.portal + '" \
+                            data-channelId="' + row.channelId + '" \
                             data-channelName="' + row.channelName + '" \
                             data-customChannelName="' + row.customChannelName + '" \
                             data-link="' + row.link + '">\
@@ -262,7 +382,7 @@
                 {
                     data: "channelName",
                     render: function (data, type, row, meta) {
-                        return '<input \
+                        return '<div class="d-flex align-items-center"><input \
                                 type="text" \
                                 class="form-control" \
                                 style="min-width: 200px;" \
@@ -272,7 +392,8 @@
                                 placeholder="' + row.channelName + '" \
                                 title="' + row.channelName + '" \
                                 value="' + row.customChannelName +
-                            '">'
+                            '"><span class="badge bg-danger ms-2 dead-badge' + (row.dead ? '' : ' d-none') + '" \
+                                data-key="' + row.portal + '/' + row.channelId + '">dead</span></div>'
                     },
                 },
                 {
@@ -288,6 +409,24 @@
                                 placeholder="' + row.genre + '" \
                                 title="' + row.genre + '" \
                                 value="' + row.customGenre +
+                            '">'
+                    },
+                },
+                {
+                    data: "block",
+                    render: function (data, type, row, meta) {
+                        if (type === 'filter' || type === 'sort') {
+                            return data;
+                        }
+                        return '<input \
+                                type="text" \
+                                class="form-control" \
+                                style="min-width: 150px;" \
+                                onchange="editBlock(this)" \
+                                data-portal="' + row.portal + '" \
+                                data-channelId="' + row.channelId + '" \
+                                placeholder="No block" \
+                                value="' + escapeAttr(data) +
                             '">'
                     },
                 },

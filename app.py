@@ -1,5 +1,7 @@
 import flask
 import stb
+import availability
+import plex
 import os
 import json
 import subprocess
@@ -69,6 +71,8 @@ defaultSettings = {
     "hdhr name": "STB-Proxy",
     "hdhr id": str(uuid.uuid4().hex),
     "hdhr tuners": "1",
+    "plex url": "",
+    "plex token": "",
 }
 
 defaultPortal = {
@@ -84,6 +88,8 @@ defaultPortal = {
     "custom genres": {},
     "custom epg ids": {},
     "fallback channels": {},
+    "channel blocks": {},
+    "dead channels": [],
 }
 
 
@@ -97,6 +103,7 @@ def loadConfig():
 
     data.setdefault("portals", {})
     data.setdefault("settings", {})
+    data.setdefault("blocks", {})
 
     settings = data["settings"]
     settingsOut = {}
@@ -145,6 +152,16 @@ def getSettings():
 def saveSettings(settings):
     with open(configFile, "w") as f:
         config["settings"] = settings
+        json.dump(config, f, indent=4)
+
+
+def getBlocks():
+    return config["blocks"]
+
+
+def saveBlocks(blocks):
+    with open(configFile, "w") as f:
+        config["blocks"] = blocks
         json.dump(config, f, indent=4)
 
 
@@ -370,6 +387,8 @@ def editor_data():
             customChannelNumbers = portals[portal].get("custom channel numbers", {})
             customEpgIds = portals[portal].get("custom epg ids", {})
             fallbackChannels = portals[portal].get("fallback channels", {})
+            channelBlocks = portals[portal].get("channel blocks", {})
+            deadChannels = portals[portal].get("dead channels", [])
 
             for mac in macs:
                 try:
@@ -421,6 +440,8 @@ def editor_data():
                             "channelId": channelId,
                             "customEpgId": customEpgId,
                             "fallbackChannel": fallbackChannel,
+                            "block": channelBlocks.get(channelId, ""),
+                            "dead": channelId in deadChannels,
                             "link": "http://"
                             + host
                             + "/play/"
@@ -453,7 +474,10 @@ def editorSave():
     genreEdits = json.loads(request.form["genreEdits"])
     epgEdits = json.loads(request.form["epgEdits"])
     fallbackEdits = json.loads(request.form["fallbackEdits"])
+    blockEdits = json.loads(request.form.get("blockEdits", "[]"))
     portals = getPortals()
+    blocks = getBlocks()
+    availableBefore = {p: availability.availableChannels(portals[p], blocks) for p in portals}
     for edit in enabledEdits:
         portal = edit["portal"]
         channelId = edit["channel id"]
@@ -516,9 +540,31 @@ def editorSave():
         else:
             portals[portal]["fallback channels"].pop(channelId)
 
+    # Build new dicts rather than mutating: other threads may be iterating the old ones.
+    newChannelBlocks = {}
+    for edit in blockEdits:
+        portal = edit["portal"]
+        channelId = edit["channel id"]
+        block = edit["block"].strip()
+        channelBlocks = newChannelBlocks.setdefault(
+            portal, dict(portals[portal].get("channel blocks", {}))
+        )
+        if block:
+            channelBlocks[channelId] = block
+        else:
+            channelBlocks.pop(channelId, None)
+    for portal, channelBlocks in newChannelBlocks.items():
+        portals[portal]["channel blocks"] = channelBlocks
+
     savePortals(portals)
+    saveBlocks(availability.pruneBlocks(portals, blocks))
     logger.info("Playlist config saved!")
     flash("Playlist config saved!", "success")
+
+    availableAfter = {p: availability.availableChannels(portals[p], getBlocks()) for p in portals}
+    if availableAfter != availableBefore:
+        category, message = syncPlex()
+        flash(message, category)
 
     return redirect("/editor", code=302)
 
@@ -542,6 +588,72 @@ def editorReset():
     return redirect("/editor", code=302)
 
 
+@app.route("/blocks", methods=["GET"])
+@authorise
+def blocksPage():
+    return render_template(
+        "blocks.html",
+        blocks=availability.blockSummaries(getPortals(), getBlocks()),
+        lastPlexSync=lastPlexSync,
+        plexConfigured=plexConfigured(),
+    )
+
+
+@app.route("/blocks/toggle", methods=["POST"])
+@authorise
+def blocksToggle():
+    name = request.form["name"]
+    enabled = request.form.get("enabled") == "true"
+    if name not in availability.blockNames(getPortals()):
+        flash("No block called {}".format(name), "danger")
+        return redirect("/blocks", code=302)
+
+    blocks = getBlocks()
+    blocks[name] = "true" if enabled else "false"
+    saveBlocks(blocks)
+    logger.info("Block({}) switched {}".format(name, "on" if enabled else "off"))
+    flash("{} switched {}".format(name, "on" if enabled else "off"), "success")
+
+    category, message = syncPlex()
+    flash(message, category)
+    return redirect("/blocks", code=302)
+
+
+@app.route("/blocks/sync", methods=["POST"])
+@authorise
+def blocksSync():
+    category, message = syncPlex()
+    flash(message, category)
+    return redirect("/blocks", code=302)
+
+
+@app.route("/channel/dead", methods=["POST"])
+@authorise
+def channelDead():
+    portal = request.form["portal"]
+    channelId = request.form["channelId"]
+    dead = request.form.get("dead") == "true"
+    portals = getPortals()
+    if portal not in portals:
+        return flask.jsonify({"error": "Unknown portal"}), 404
+
+    blocks = getBlocks()
+    wasAvailable = channelId in availability.availableChannels(portals[portal], blocks)
+    deadChannels = [c for c in portals[portal].get("dead channels", []) if c != channelId]
+    if dead:
+        deadChannels.append(channelId)
+    portals[portal]["dead channels"] = deadChannels
+    savePortals(portals)
+    logger.info(
+        "Channel({}) for Portal({}) marked {}".format(channelId, portal, "dead" if dead else "working")
+    )
+
+    plexMessage = ""
+    if wasAvailable != (channelId in availability.availableChannels(portals[portal], blocks)):
+        _, plexMessage = syncPlex()
+    return flask.jsonify({"dead": dead, "plex": plexMessage})
+
+
 @app.route("/settings", methods=["GET"])
 @authorise
 def settings():
@@ -560,6 +672,13 @@ def save():
         value = request.form.get(setting, "false")
         settings[setting] = value
 
+    settings["plex url"] = request.form.get("plex url", "").strip().rstrip("/")
+    # The token field is never pre-filled, so blank means "keep the saved token".
+    if request.form.get("clear plex token") == "true":
+        settings["plex token"] = ""
+    elif not request.form.get("plex token"):
+        settings["plex token"] = getSettings()["plex token"]
+
     saveSettings(settings)
     logger.info("Settings saved!")
     flash("Settings saved!", "success")
@@ -573,7 +692,7 @@ def playlist():
     portals = getPortals()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = portals[portal].get("enabled channels", [])
+            enabledChannels = availability.availableChannels(portals[portal], getBlocks())
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -664,7 +783,7 @@ def xmltv():
     portals = getPortals()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = portals[portal].get("enabled channels", [])
+            enabledChannels = availability.availableChannels(portals[portal], getBlocks())
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -679,6 +798,8 @@ def xmltv():
                         stb.getProfile(url, mac, token, proxy)
                         allChannels = stb.getAllChannels(url, mac, token, proxy)
                         epg = stb.getEpg(url, mac, token, 24, proxy)
+                        if not epg:
+                            epg = stb.getShortEpg(url, mac, token, enabledChannels, proxy)
                         break
                     except:
                         allChannels = None
@@ -702,17 +823,17 @@ def xmltv():
                                     channelEle, "display-name"
                                 ).text = channelName
                                 ET.SubElement(channelEle, "icon", src=c.get("logo"))
-                                for p in epg.get(channelId):
+                                for p in epg.get(channelId) or []:
                                     try:
                                         start = (
                                             datetime.utcfromtimestamp(
-                                                p.get("start_timestamp")
+                                                int(p.get("start_timestamp"))
                                             ).strftime("%Y%m%d%H%M%S")
                                             + " +0000"
                                         )
                                         stop = (
                                             datetime.utcfromtimestamp(
-                                                p.get("stop_timestamp")
+                                                int(p.get("stop_timestamp"))
                                             ).strftime("%Y%m%d%H%M%S")
                                             + " +0000"
                                         )
@@ -1121,15 +1242,20 @@ def status():
     return flask.jsonify(data)
 
 
-@app.route("/lineup.json", methods=["GET"])
-@app.route("/lineup.post", methods=["POST"])
-@hdhr
-def lineup():
-    lineup = []
+def buildLineup():
+    """Every available channel as an HDHomeRun lineup entry plus its XMLTV id.
+
+    Returns (entries, failedPortals). failedPortals names the portals whose
+    channel list couldn't be fetched, so callers can tell an empty lineup from
+    a failed one.
+    """
+    entries = []
+    failedPortals = []
     portals = getPortals()
+    blocks = getBlocks()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = portals[portal].get("enabled channels", [])
+            enabledChannels = availability.availableChannels(portals[portal], blocks)
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -1137,6 +1263,7 @@ def lineup():
                 proxy = portals[portal]["proxy"]
                 customChannelNames = portals[portal].get("custom channel names", {})
                 customChannelNumbers = portals[portal].get("custom channel numbers", {})
+                customEpgIds = portals[portal].get("custom epg ids", {})
 
                 for mac in macs:
                     try:
@@ -1158,7 +1285,7 @@ def lineup():
                             if channelNumber == None:
                                 channelNumber = str(channel.get("number"))
 
-                            lineup.append(
+                            entries.append(
                                 {
                                     "GuideNumber": channelNumber,
                                     "GuideName": channelName,
@@ -1168,12 +1295,63 @@ def lineup():
                                     + portal
                                     + "/"
                                     + channelId,
+                                    "epgId": customEpgIds.get(channelId)
+                                    or portal + channelId,
                                 }
                             )
                 else:
                     logger.error("Error making lineup for {}, skipping".format(name))
+                    failedPortals.append(name)
 
-    return flask.jsonify(lineup)
+    return entries, failedPortals
+
+
+lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}
+
+
+def plexConfigured():
+    settings = getSettings()
+    return bool(settings["plex url"] and settings["plex token"])
+
+
+def syncPlex():
+    """Make the Plex DVR match the available channels. Returns (flashCategory, message)."""
+    if not plexConfigured():
+        return "info", "Plex sync is off (add the Plex address and token in Settings)"
+
+    settings = getSettings()
+    entries, failedPortals = buildLineup()
+    try:
+        if failedPortals:
+            raise plex.PlexSyncError(
+                "couldn't load channels from {}, so Plex was left unchanged".format(
+                    ", ".join(failedPortals)
+                )
+            )
+        message = plex.sync(settings["plex url"], settings["plex token"], "http://" + host, entries)
+        ok = True
+    except plex.PlexSyncError as e:
+        message = "Plex not updated: {}".format(e)
+        ok = False
+
+    lastPlexSync.update(
+        {"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "message": message, "ok": ok}
+    )
+    if ok:
+        logger.info(message)
+        return "success", message
+    logger.error(message)
+    return "danger", message
+
+
+@app.route("/lineup.json", methods=["GET"])
+@app.route("/lineup.post", methods=["POST"])
+@hdhr
+def lineup():
+    entries, _ = buildLineup()
+    return flask.jsonify(
+        [{k: v for k, v in entry.items() if k != "epgId"} for entry in entries]
+    )
 
 
 if __name__ == "__main__":
