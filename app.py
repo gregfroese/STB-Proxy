@@ -1,6 +1,7 @@
 import flask
 import stb
 import availability
+import plex
 import os
 import json
 import subprocess
@@ -575,6 +576,13 @@ def save():
     for setting, _ in defaultSettings.items():
         value = request.form.get(setting, "false")
         settings[setting] = value
+
+    settings["plex url"] = request.form.get("plex url", "").strip().rstrip("/")
+    # The token field is never pre-filled, so blank means "keep the saved token".
+    if request.form.get("clear plex token") == "true":
+        settings["plex token"] = ""
+    elif not request.form.get("plex token"):
+        settings["plex token"] = getSettings()["plex token"]
 
     saveSettings(settings)
     logger.info("Settings saved!")
@@ -1201,6 +1209,44 @@ def buildLineup():
                     failedPortals.append(name)
 
     return entries, failedPortals
+
+
+lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}
+
+
+def plexConfigured():
+    settings = getSettings()
+    return bool(settings["plex url"] and settings["plex token"])
+
+
+def syncPlex():
+    """Make the Plex DVR match the available channels. Returns (flashCategory, message)."""
+    if not plexConfigured():
+        return "info", "Plex sync is off (add the Plex address and token in Settings)"
+
+    settings = getSettings()
+    entries, failedPortals = buildLineup()
+    try:
+        if failedPortals:
+            raise plex.PlexSyncError(
+                "couldn't load channels from {}, so Plex was left unchanged".format(
+                    ", ".join(failedPortals)
+                )
+            )
+        message = plex.sync(settings["plex url"], settings["plex token"], "http://" + host, entries)
+        ok = True
+    except plex.PlexSyncError as e:
+        message = "Plex not updated: {}".format(e)
+        ok = False
+
+    lastPlexSync.update(
+        {"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "message": message, "ok": ok}
+    )
+    if ok:
+        logger.info(message)
+        return "success", message
+    logger.error(message)
+    return "danger", message
 
 
 @app.route("/lineup.json", methods=["GET"])
