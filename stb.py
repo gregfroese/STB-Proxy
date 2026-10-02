@@ -4,11 +4,38 @@ from urllib.parse import urlparse
 import re
 import json
 import os
+import threading
 import time
 
 s = requests.Session()
 retries = Retry(total=3, backoff_factor=0.1, status_forcelist=[500, 502, 503, 504])
 s.mount("http://", HTTPAdapter(max_retries=retries))
+
+# Reuse portal sessions instead of handshaking on every request: some portals
+# refuse handshakes after a few in quick succession. Sessions are dropped early
+# if the portal answers "Authorization failed".
+TOKEN_TTL = 300
+sessions = {}
+sessionsLock = threading.RLock()
+
+
+def dropRejectedToken(response, *args, **kwargs):
+    if len(response.content) < 64 and response.text.startswith("Authorization failed"):
+        auth = response.request.headers.get("Authorization", "")
+        with sessionsLock:
+            for key, session in list(sessions.items()):
+                if auth == "Bearer " + session["token"]:
+                    sessions.pop(key, None)
+
+
+s.hooks["response"].append(dropRejectedToken)
+
+
+def cachedSession(url, mac):
+    session = sessions.get((url, mac))
+    if session and time.time() - session["time"] < TOKEN_TTL:
+        return session
+
 
 # Optional per-MAC device profiles, for portals that lock a MAC to the device
 # that registered it. Keys: "cookies", "headers", "handshake" and "profile"
@@ -97,6 +124,17 @@ def getUrl(url, proxy=None):
 
 
 def getToken(url, mac, proxy=None):
+    with sessionsLock:
+        session = cachedSession(url, mac)
+        if session:
+            return session["token"]
+        token = handshake(url, mac, proxy)
+        if token:
+            sessions[(url, mac)] = {"token": token, "time": time.time()}
+        return token
+
+
+def handshake(url, mac, proxy=None):
     proxies = {"http": proxy, "https": proxy}
     cookies = deviceCookies(mac)
     headers = deviceHeaders(mac)
@@ -118,6 +156,9 @@ def getToken(url, mac, proxy=None):
 
 
 def getProfile(url, mac, token, proxy=None):
+    session = cachedSession(url, mac)
+    if session and session["token"] == token and session.get("profile"):
+        return session["profile"]
     proxies = {"http": proxy, "https": proxy}
     cookies = deviceCookies(mac)
     headers = deviceHeaders(mac, token)
@@ -135,6 +176,8 @@ def getProfile(url, mac, token, proxy=None):
         )
         profile = response.json()["js"]
         if profile:
+            if session and session["token"] == token:
+                session["profile"] = profile
             return profile
     except:
         pass
