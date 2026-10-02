@@ -540,15 +540,21 @@ def editorSave():
         else:
             portals[portal]["fallback channels"].pop(channelId)
 
+    # Build new dicts rather than mutating: other threads may be iterating the old ones.
+    newChannelBlocks = {}
     for edit in blockEdits:
         portal = edit["portal"]
         channelId = edit["channel id"]
         block = edit["block"].strip()
-        portals[portal].setdefault("channel blocks", {})
+        channelBlocks = newChannelBlocks.setdefault(
+            portal, dict(portals[portal].get("channel blocks", {}))
+        )
         if block:
-            portals[portal]["channel blocks"][channelId] = block
+            channelBlocks[channelId] = block
         else:
-            portals[portal]["channel blocks"].pop(channelId, None)
+            channelBlocks.pop(channelId, None)
+    for portal, channelBlocks in newChannelBlocks.items():
+        portals[portal]["channel blocks"] = channelBlocks
 
     savePortals(portals)
     saveBlocks(availability.pruneBlocks(portals, blocks))

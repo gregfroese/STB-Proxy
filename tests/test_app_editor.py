@@ -42,6 +42,14 @@ class EditorTest(unittest.TestCase):
         self.assertIn('id="blockEdits"', body)
         self.assertIn("function editBlock", body)
 
+    def test_block_edits_replace_rather_than_mutate_channel_blocks(self):
+        # Other threads may be iterating the old dict (lineup/xmltv/playlist).
+        before = self.app.getPortals()[PORTAL]["channel blocks"]
+        snapshot = dict(before)
+        self.save([self.blockEdit("1", "NHL"), self.blockEdit("2", "")])
+        self.assertEqual(before, snapshot)
+        self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"], {"1": "NHL"})
+
     def test_editor_data_has_block_and_dead(self):
         rows = {r["channelId"]: r for r in self.client.get("/editor_data").get_json()["data"]}
         self.assertEqual(rows["2"]["block"], "NHL")

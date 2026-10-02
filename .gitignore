@@ -1,3 +1,7 @@
+*.pyc
+config.json
+STB-Proxy.log
+changenotes.txt
+.vscode
 .venv/
 __pycache__/
-STB-Proxy.log

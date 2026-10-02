@@ -51,7 +51,9 @@
                     </video>
                 </div>
                 <div class="modal-footer">
-                    <span id="previewProblem" class="me-auto text-warning d-none">This channel didn't play. Mark it dead?</span>
+                    <span id="previewProblem" class="me-auto text-warning d-none">This channel didn't play. The portal may just be busy: try again in a few seconds before marking it dead.
+                        <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="retryPreview" onclick="retryPreview()">Try again</button>
+                    </span>
                     <span id="deadStatus" class="me-auto small"></span>
                     <button type="button" class="btn btn-danger" id="deadButton" onclick="toggleDead()">Mark dead</button>
                 </div>
@@ -201,10 +203,21 @@
 
     function previewFailed() {
         clearTimeout(previewTimer);
-        if (!currentChannel || rowFor(currentChannel).dead) {
+        if (!currentChannel) {
+            return;
+        }
+        var row = rowFor(currentChannel);
+        if (!row || row.dead) {
             return;
         }
         document.getElementById("previewProblem").classList.remove("d-none");
+    }
+
+    function retryPreview() {
+        document.getElementById("previewProblem").classList.add("d-none");
+        player.src = link;
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(previewFailed, 15000);
     }
 
     function showDeadState(dead) {
