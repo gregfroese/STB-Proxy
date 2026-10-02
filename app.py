@@ -1,5 +1,6 @@
 import flask
 import stb
+import availability
 import os
 import json
 import subprocess
@@ -69,6 +70,8 @@ defaultSettings = {
     "hdhr name": "STB-Proxy",
     "hdhr id": str(uuid.uuid4().hex),
     "hdhr tuners": "1",
+    "plex url": "",
+    "plex token": "",
 }
 
 defaultPortal = {
@@ -84,6 +87,8 @@ defaultPortal = {
     "custom genres": {},
     "custom epg ids": {},
     "fallback channels": {},
+    "channel blocks": {},
+    "dead channels": [],
 }
 
 
@@ -97,6 +102,7 @@ def loadConfig():
 
     data.setdefault("portals", {})
     data.setdefault("settings", {})
+    data.setdefault("blocks", {})
 
     settings = data["settings"]
     settingsOut = {}
@@ -145,6 +151,16 @@ def getSettings():
 def saveSettings(settings):
     with open(configFile, "w") as f:
         config["settings"] = settings
+        json.dump(config, f, indent=4)
+
+
+def getBlocks():
+    return config["blocks"]
+
+
+def saveBlocks(blocks):
+    with open(configFile, "w") as f:
+        config["blocks"] = blocks
         json.dump(config, f, indent=4)
 
 
@@ -573,7 +589,7 @@ def playlist():
     portals = getPortals()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = portals[portal].get("enabled channels", [])
+            enabledChannels = availability.availableChannels(portals[portal], getBlocks())
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -664,7 +680,7 @@ def xmltv():
     portals = getPortals()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = portals[portal].get("enabled channels", [])
+            enabledChannels = availability.availableChannels(portals[portal], getBlocks())
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -1123,15 +1139,20 @@ def status():
     return flask.jsonify(data)
 
 
-@app.route("/lineup.json", methods=["GET"])
-@app.route("/lineup.post", methods=["POST"])
-@hdhr
-def lineup():
-    lineup = []
+def buildLineup():
+    """Every available channel as an HDHomeRun lineup entry plus its XMLTV id.
+
+    Returns (entries, failedPortals). failedPortals names the portals whose
+    channel list couldn't be fetched, so callers can tell an empty lineup from
+    a failed one.
+    """
+    entries = []
+    failedPortals = []
     portals = getPortals()
+    blocks = getBlocks()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = portals[portal].get("enabled channels", [])
+            enabledChannels = availability.availableChannels(portals[portal], blocks)
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -1139,6 +1160,7 @@ def lineup():
                 proxy = portals[portal]["proxy"]
                 customChannelNames = portals[portal].get("custom channel names", {})
                 customChannelNumbers = portals[portal].get("custom channel numbers", {})
+                customEpgIds = portals[portal].get("custom epg ids", {})
 
                 for mac in macs:
                     try:
@@ -1160,7 +1182,7 @@ def lineup():
                             if channelNumber == None:
                                 channelNumber = str(channel.get("number"))
 
-                            lineup.append(
+                            entries.append(
                                 {
                                     "GuideNumber": channelNumber,
                                     "GuideName": channelName,
@@ -1170,12 +1192,25 @@ def lineup():
                                     + portal
                                     + "/"
                                     + channelId,
+                                    "epgId": customEpgIds.get(channelId)
+                                    or portal + channelId,
                                 }
                             )
                 else:
                     logger.error("Error making lineup for {}, skipping".format(name))
+                    failedPortals.append(name)
 
-    return flask.jsonify(lineup)
+    return entries, failedPortals
+
+
+@app.route("/lineup.json", methods=["GET"])
+@app.route("/lineup.post", methods=["POST"])
+@hdhr
+def lineup():
+    entries, _ = buildLineup()
+    return flask.jsonify(
+        [{k: v for k, v in entry.items() if k != "epgId"} for entry in entries]
+    )
 
 
 if __name__ == "__main__":
