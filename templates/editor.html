@@ -13,6 +13,7 @@
                 <th>Play</th>
                 <th>Name</th>
                 <th>Genre</th>
+                <th>Block</th>
                 <th>Number</th>
                 <th>EPG ID</th>
                 <th>Fallback For</th>
@@ -30,6 +31,7 @@
         <input type="text" id="genreEdits" name="genreEdits" value="">
         <input type="text" id="epgEdits" name="epgEdits" value="">
         <input type="text" id="fallbackEdits" name="fallbackEdits" value="">
+        <input type="text" id="blockEdits" name="blockEdits" value="">
     </form>
 
     <form action="/editor/reset" method="post" id="reset" hidden>
@@ -61,6 +63,12 @@
     var genreEdits = [];
     var epgEdits = [];
     var fallbackEdits = [];
+    var blockEdits = [];
+    var table;
+
+    function escapeAttr(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
 
     function editAll(ele) {
         var checkboxes = document.getElementsByClassName('checkbox');
@@ -121,6 +129,13 @@
         fallbackEdits.push(j);
     }
 
+    function editBlock(ele) {
+        var p = ele.getAttribute('data-portal');
+        var i = ele.getAttribute('data-channelId');
+        var j = { "portal": p, "channel id": i, "block": ele.value };
+        blockEdits.push(j);
+    }
+
     function save() {
         document.getElementById("enabledEdits").value = JSON.stringify(enabledEdits);
         document.getElementById("numberEdits").value = JSON.stringify(numberEdits);
@@ -128,6 +143,7 @@
         document.getElementById("genreEdits").value = JSON.stringify(genreEdits);
         document.getElementById("epgEdits").value = JSON.stringify(epgEdits);
         document.getElementById("fallbackEdits").value = JSON.stringify(fallbackEdits);
+        document.getElementById("blockEdits").value = JSON.stringify(blockEdits);
         document.getElementById("save edits").submit();
     }
 
@@ -172,7 +188,7 @@
     };
 
     $(document).ready(function () {
-        $('#table').DataTable({
+        table = $('#table').DataTable({
             dom: "<'row m-1'<'col-auto'B><'col-auto ms-auto'f><'col-auto'l>>" +
                 "<'row'<'col-12'tr>>" +
                 "<'row mb-1 mb-lg-0'<'col-auto text-light'i><'col-auto ms-auto'p>>",
@@ -186,10 +202,11 @@
                 { targets: 1, className: "align-middle", orderable: false, searchable: false },
                 { targets: 2, className: "align-middle", orderDataType: "dom-text", type: 'string' },
                 { targets: 3, className: "align-middle", orderDataType: "dom-text", type: 'string' },
-                { targets: 4, className: "align-middle", orderDataType: "dom-text-numeric" },
-                { targets: 5, className: "align-middle", orderDataType: "dom-text", type: 'string' },
+                { targets: 4, className: "align-middle", orderDataType: "dom-text", type: 'string' },
+                { targets: 5, className: "align-middle", orderDataType: "dom-text-numeric" },
                 { targets: 6, className: "align-middle", orderDataType: "dom-text", type: 'string' },
-                { targets: 7, className: "align-middle" }
+                { targets: 7, className: "align-middle", orderDataType: "dom-text", type: 'string' },
+                { targets: 8, className: "align-middle" }
             ],
             language: {
                 search: "",
@@ -290,6 +307,24 @@
                                 value="' + row.customGenre +
                             '">'
                     },
+                {
+                    data: "block",
+                    render: function (data, type, row, meta) {
+                        if (type === 'filter' || type === 'sort') {
+                            return data;
+                        }
+                        return '<input \
+                                type="text" \
+                                class="form-control" \
+                                style="min-width: 150px;" \
+                                onchange="editBlock(this)" \
+                                data-portal="' + row.portal + '" \
+                                data-channelId="' + row.channelId + '" \
+                                placeholder="No block" \
+                                value="' + escapeAttr(data) +
+                            '">'
+                    },
+                },
                 },
                 {
                     data: "channelNumber",
