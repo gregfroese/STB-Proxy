@@ -582,6 +582,45 @@ def editorReset():
     return redirect("/editor", code=302)
 
 
+@app.route("/blocks", methods=["GET"])
+@authorise
+def blocksPage():
+    return render_template(
+        "blocks.html",
+        blocks=availability.blockSummaries(getPortals(), getBlocks()),
+        lastPlexSync=lastPlexSync,
+        plexConfigured=plexConfigured(),
+    )
+
+
+@app.route("/blocks/toggle", methods=["POST"])
+@authorise
+def blocksToggle():
+    name = request.form["name"]
+    enabled = request.form.get("enabled") == "true"
+    if name not in availability.blockNames(getPortals()):
+        flash("No block called {}".format(name), "danger")
+        return redirect("/blocks", code=302)
+
+    blocks = getBlocks()
+    blocks[name] = "true" if enabled else "false"
+    saveBlocks(blocks)
+    logger.info("Block({}) switched {}".format(name, "on" if enabled else "off"))
+    flash("{} switched {}".format(name, "on" if enabled else "off"), "success")
+
+    category, message = syncPlex()
+    flash(message, category)
+    return redirect("/blocks", code=302)
+
+
+@app.route("/blocks/sync", methods=["POST"])
+@authorise
+def blocksSync():
+    category, message = syncPlex()
+    flash(message, category)
+    return redirect("/blocks", code=302)
+
+
 @app.route("/settings", methods=["GET"])
 @authorise
 def settings():
