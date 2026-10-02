@@ -621,6 +621,33 @@ def blocksSync():
     return redirect("/blocks", code=302)
 
 
+@app.route("/channel/dead", methods=["POST"])
+@authorise
+def channelDead():
+    portal = request.form["portal"]
+    channelId = request.form["channelId"]
+    dead = request.form.get("dead") == "true"
+    portals = getPortals()
+    if portal not in portals:
+        return flask.jsonify({"error": "Unknown portal"}), 404
+
+    blocks = getBlocks()
+    wasAvailable = channelId in availability.availableChannels(portals[portal], blocks)
+    deadChannels = [c for c in portals[portal].get("dead channels", []) if c != channelId]
+    if dead:
+        deadChannels.append(channelId)
+    portals[portal]["dead channels"] = deadChannels
+    savePortals(portals)
+    logger.info(
+        "Channel({}) for Portal({}) marked {}".format(channelId, portal, "dead" if dead else "working")
+    )
+
+    plexMessage = ""
+    if wasAvailable != (channelId in availability.availableChannels(portals[portal], blocks)):
+        _, plexMessage = syncPlex()
+    return flask.jsonify({"dead": dead, "plex": plexMessage})
+
+
 @app.route("/settings", methods=["GET"])
 @authorise
 def settings():
