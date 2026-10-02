@@ -35,5 +35,21 @@ class TemplateScriptTest(unittest.TestCase):
         self.assertValidJavaScript("blocks.html")
 
 
+class PreviewPromptTest(unittest.TestCase):
+    def setUp(self):
+        self.script = inlineScripts("editor.html")
+        with open(os.path.join(ROOT, "templates", "editor.html")) as f:
+            self.html = f.read()
+
+    def test_failed_preview_offers_retry_not_just_dead(self):
+        # A busy portal (503 from /play) looks the same to the browser as a dead stream.
+        self.assertIn('id="retryPreview"', self.html)
+        self.assertIn("function retryPreview", self.script)
+        self.assertIn("busy", self.html)
+
+    def test_preview_failure_tolerates_missing_row(self):
+        self.assertRegex(self.script, r"var row = rowFor\(currentChannel\);\s*if \(!row \|\| row\.dead\)")
+
+
 if __name__ == "__main__":
     unittest.main()
