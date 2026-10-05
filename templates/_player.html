@@ -1,0 +1,182 @@
+<!-- Channel preview, shared by the editor and blocks pages.
+     A page that includes this defines rowFor(ch), returning the channel's data row
+     ({portal, channelId, channelName, customChannelName, link, dead, favourite}) or null,
+     and channelChanged(row), called after a dead or favourite mark is saved. -->
+<div class="modal fade" id="videoModal" tabindex="-1" aria-labelledby="channelLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="channelLabel">Channel</h5>
+                <button type="button" class="btn btn-outline-warning ms-auto" id="favouriteButton"
+                    onclick="toggleFavourite()" title="Favourite"><i class="fa fa-star-o"></i></button>
+            </div>
+            <div class="modal-body">
+                <video width="100%" id="player" controls autoplay>
+                    <source src="" type="video/mp4">
+                    Your browser does not support HTML video.
+                </video>
+            </div>
+            <div class="modal-footer">
+                <span id="previewProblem" class="me-auto text-warning d-none">This channel didn't play. The portal may just be busy: try again in a few seconds before marking it dead.
+                    <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="retryPreview" onclick="retryPreview()">Try again</button>
+                </span>
+                <span id="deadStatus" class="me-auto small"></span>
+                <button type="button" class="btn btn-danger" id="deadButton" onclick="toggleDead()">Mark dead</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    var player = document.getElementById("player");
+    var title = document.getElementById("channelLabel");
+    player.volume = 0.25;
+    var currentChannel = null;
+    var currentLink = "";
+    var previewTimer = null;
+
+    function escapeAttr(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function channelKey(row) {
+        return row.portal + '/' + row.channelId;
+    }
+
+    function playButton(row) {
+        return '<button class="btn btn-success btn-block" title="Play" data-bs-toggle="modal" ' +
+            'data-bs-target="#videoModal" onclick="selectChannel(this)" ' +
+            'data-portal="' + escapeAttr(row.portal) + '" data-channelId="' + escapeAttr(row.channelId) + '">' +
+            '<i class="fa fa-play"></i></button>';
+    }
+
+    function favouriteStar(row) {
+        return '<button class="btn btn-link text-warning p-0 fav-star" title="Favourite" onclick="starClicked(this)" ' +
+            'data-key="' + escapeAttr(channelKey(row)) + '" data-portal="' + escapeAttr(row.portal) + '" ' +
+            'data-channelId="' + escapeAttr(row.channelId) + '">' +
+            '<i class="fa ' + (row.favourite ? 'fa-star' : 'fa-star-o') + '"></i></button>';
+    }
+
+    function deadBadge(row) {
+        return '<span class="badge bg-danger ms-2 dead-badge' + (row.dead ? '' : ' d-none') + '" ' +
+            'data-key="' + escapeAttr(channelKey(row)) + '">dead</span>';
+    }
+
+    function selectChannel(ele) {
+        var row = rowFor({ portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') });
+        currentChannel = { portal: row.portal, channelId: row.channelId };
+        currentLink = row.link;
+        player.src = currentLink;
+        title.textContent = row.customChannelName || row.channelName;
+        showDeadState(row.dead);
+        showFavouriteState(row.favourite);
+        document.getElementById("previewProblem").classList.add("d-none");
+        document.getElementById("deadStatus").textContent = "";
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(previewFailed, 15000);
+    }
+
+    player.addEventListener("playing", function () {
+        clearTimeout(previewTimer);
+    });
+
+    player.addEventListener("error", function () {
+        previewFailed();
+    });
+
+    $('#videoModal').on('hidden.bs.modal', function () {
+        currentChannel = null;
+        clearTimeout(previewTimer);
+        player.src = "";
+    })
+
+    function previewFailed() {
+        clearTimeout(previewTimer);
+        if (!currentChannel) {
+            return;
+        }
+        var row = rowFor(currentChannel);
+        if (!row || row.dead) {
+            return;
+        }
+        document.getElementById("previewProblem").classList.remove("d-none");
+    }
+
+    function retryPreview() {
+        document.getElementById("previewProblem").classList.add("d-none");
+        player.src = currentLink;
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(previewFailed, 15000);
+    }
+
+    function showDeadState(dead) {
+        var button = document.getElementById("deadButton");
+        button.textContent = dead ? "Mark working" : "Mark dead";
+        button.className = dead ? "btn btn-success" : "btn btn-danger";
+    }
+
+    function showFavouriteState(favourite) {
+        var button = document.getElementById("favouriteButton");
+        button.innerHTML = '<i class="fa ' + (favourite ? 'fa-star' : 'fa-star-o') + '"></i>';
+        button.title = favourite ? "Remove from favourites" : "Add to favourites";
+        button.className = favourite ? "btn btn-warning ms-auto" : "btn btn-outline-warning ms-auto";
+    }
+
+    function toggleDead() {
+        var ch = currentChannel;
+        var row = rowFor(ch);
+        var button = document.getElementById("deadButton");
+        var status = document.getElementById("deadStatus");
+        button.disabled = true;
+        $.post("/channel/dead", { portal: ch.portal, channelId: ch.channelId, dead: row.dead ? "false" : "true" })
+            .done(function (res) {
+                row.dead = res.dead;
+                document.querySelectorAll('.dead-badge[data-key="' + channelKey(row) + '"]').forEach(function (badge) {
+                    badge.classList.toggle("d-none", !res.dead);
+                });
+                showDeadState(res.dead);
+                document.getElementById("previewProblem").classList.add("d-none");
+                status.textContent = (res.dead ? "Marked dead." : "Marked working.") + (res.plex ? " " + res.plex : "");
+                channelChanged(row);
+            })
+            .fail(function () {
+                status.textContent = "Couldn't save. Try again.";
+            })
+            .always(function () {
+                button.disabled = false;
+            });
+    }
+
+    function setFavourite(ch, button) {
+        var row = rowFor(ch);
+        if (!row) {
+            return;
+        }
+        button.disabled = true;
+        $.post("/channel/favourite", { portal: ch.portal, channelId: ch.channelId, favourite: row.favourite ? "false" : "true" })
+            .done(function (res) {
+                row.favourite = res.favourite;
+                document.querySelectorAll('.fav-star[data-key="' + channelKey(row) + '"] i').forEach(function (icon) {
+                    icon.className = 'fa ' + (res.favourite ? 'fa-star' : 'fa-star-o');
+                });
+                if (currentChannel && channelKey(currentChannel) == channelKey(row)) {
+                    showFavouriteState(res.favourite);
+                }
+                channelChanged(row);
+            })
+            .fail(function () {
+                alert("Couldn't save the favourite. Try again.");
+            })
+            .always(function () {
+                button.disabled = false;
+            });
+    }
+
+    function toggleFavourite() {
+        setFavourite(currentChannel, document.getElementById("favouriteButton"));
+    }
+
+    function starClicked(ele) {
+        setFavourite({ portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') }, ele);
+    }
+</script>
