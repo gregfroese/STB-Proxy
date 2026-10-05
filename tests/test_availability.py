@@ -31,6 +31,11 @@ class AvailableChannelsTest(unittest.TestCase):
         p = portal(["1", "2"], {"2": "NHL", "3": "NHL"}, dead=["2", "3"])
         self.assertEqual(availability.availableChannels(p, {"NHL": "true"}), {"1"})
 
+    def test_channel_in_several_blocks_is_on_if_any_block_is(self):
+        p = portal(blocks={"2": ["NHL", "Sports"]})
+        self.assertEqual(availability.availableChannels(p, {"NHL": "false", "Sports": "true"}), {"2"})
+        self.assertEqual(availability.availableChannels(p, {"NHL": "false", "Sports": "false"}), set())
+
     def test_missing_keys_mean_nothing_extra(self):
         self.assertEqual(availability.availableChannels({"enabled channels": ["1"]}, {}), {"1"})
 
@@ -58,8 +63,28 @@ class BlocksTest(unittest.TestCase):
             ],
         )
 
+    def test_channel_counts_in_each_of_its_blocks(self):
+        portals = {"a": portal(blocks={"1": ["NHL", "Sports"], "2": ["Sports"]})}
+        self.assertEqual(availability.blockNames(portals), {"NHL", "Sports"})
+        self.assertEqual(
+            [(s["name"], s["channels"]) for s in availability.blockSummaries(portals, {})],
+            [("NHL", 1), ("Sports", 2)],
+        )
+
     def test_no_blocks(self):
         self.assertEqual(availability.blockSummaries({"a": portal()}, {}), [])
+
+
+class BlockNamesTest(unittest.TestCase):
+    def test_parse_trims_and_drops_blanks_and_repeats(self):
+        self.assertEqual(availability.parseBlockNames(" NHL, Sports ,, NHL"), ["NHL", "Sports"])
+        self.assertEqual(availability.parseBlockNames(""), [])
+
+    def test_normalise_converts_single_names_to_lists(self):
+        self.assertEqual(
+            availability.normaliseChannelBlocks({"1": "NHL", "2": ["NHL", " Sports"], "3": "", "4": []}),
+            {"1": ["NHL"], "2": ["NHL", "Sports"]},
+        )
 
 
 if __name__ == "__main__":
