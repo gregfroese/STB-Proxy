@@ -17,7 +17,7 @@ class ConfigTest(unittest.TestCase):
         }
         app = loadApp(self, cfg)
         portal = app.getPortals()[PORTAL]
-        self.assertEqual(portal["channel blocks"], {"2": "NHL"})
+        self.assertEqual(portal["channel blocks"], {"2": ["NHL"]})  # single names become lists
         self.assertEqual(portal["dead channels"], ["3"])
         self.assertEqual(app.getBlocks(), {"NHL": "true"})
         self.assertEqual(app.getSettings()["plex url"], "http://plex.test:32400")

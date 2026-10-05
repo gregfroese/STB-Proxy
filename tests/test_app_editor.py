@@ -48,18 +48,22 @@ class EditorTest(unittest.TestCase):
         snapshot = dict(before)
         self.save([self.blockEdit("1", "NHL"), self.blockEdit("2", "")])
         self.assertEqual(before, snapshot)
-        self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"], {"1": "NHL"})
+        self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"], {"1": ["NHL"]})
 
     def test_editor_data_has_block_and_dead(self):
         rows = {r["channelId"]: r for r in self.client.get("/editor_data").get_json()["data"]}
-        self.assertEqual(rows["2"]["block"], "NHL")
-        self.assertEqual(rows["1"]["block"], "")
+        self.assertEqual(rows["2"]["blocks"], ["NHL"])
+        self.assertEqual(rows["1"]["blocks"], [])
         self.assertTrue(rows["3"]["dead"])
         self.assertFalse(rows["1"]["dead"])
 
     def test_block_names_are_trimmed(self):
         self.save([self.blockEdit("1", "  NHL ")])
-        self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"]["1"], "NHL")
+        self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"]["1"], ["NHL"])
+
+    def test_comma_separated_blocks(self):
+        self.save([self.blockEdit("1", "NHL, Sports,,NHL ")])
+        self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"]["1"], ["NHL", "Sports"])
 
     def test_clearing_block_removes_membership(self):
         self.save([self.blockEdit("2", "")])

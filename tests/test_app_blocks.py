@@ -24,7 +24,7 @@ class BlocksPageTest(unittest.TestCase):
     def test_page_lists_blocks_with_counts(self):
         body = self.client.get("/blocks").get_data(as_text=True)
         self.assertIn("NHL", body)
-        self.assertIn("2 channels", body)
+        self.assertIn('data-block="NHL">2</span> channels', body)
         self.assertIn("1 dead", body)
         self.assertIn("Sync Plex now", body)
 
