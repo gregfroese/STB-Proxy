@@ -66,7 +66,7 @@ class FavouriteChannelTest(unittest.TestCase):
         self.assertIn('class="block-channels" data-block="NHL"', body)
         self.assertIn('id="favouritesTab"', body)
         self.assertIn('<span class="badge bg-secondary" id="favouriteCount">1</span>', body)
-        self.assertIn('id="videoModal"', body)
+        self.assertIn('id="playerPanel"', body)
         self.assertIn('id="favouriteButton"', body)
 
     def test_editor_page_has_favourite_controls(self):

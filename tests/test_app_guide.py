@@ -94,7 +94,7 @@ class GuideTest(unittest.TestCase):
     def test_guide_page(self):
         body = self.client.get("/guide").get_data(as_text=True)
         self.assertIn('id="query"', body)
-        self.assertIn('id="videoModal"', body)
+        self.assertIn('id="playerPanel"', body)
         self.assertIn('id="blockChoices" data-blocks=\'["NHL"]\'', body)
         self.assertIn('href="/guide"', body)
 
