@@ -53,6 +53,14 @@ class PreviewPromptTest(unittest.TestCase):
         self.assertIn("function retryPreview", self.script)
         self.assertIn("busy", self.html)
 
+    def test_player_does_not_block_the_page(self):
+        # A docked panel, not a modal, so the guide and editor stay usable while it plays.
+        self.assertNotIn("modal", self.html)
+        self.assertIn('id="playerPanel"', self.html)
+
+    def test_closing_the_player_drops_the_stream(self):
+        self.assertRegex(self.script, r'function closePlayer\(\) \{[^}]*player\.removeAttribute\("src"\);\s*player\.load\(\);')
+
     def test_preview_failure_tolerates_missing_row(self):
         self.assertRegex(self.script, r"var row = rowFor\(currentChannel\);\s*if \(!row \|\| row\.dead\)")
 
