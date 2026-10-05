@@ -18,6 +18,7 @@ COPY /app.py /app/app.py
 COPY /stb.py /app/stb.py
 COPY /availability.py /app/availability.py
 COPY /plex.py /app/plex.py
+COPY /guide.py /app/guide.py
 COPY /templates /app/templates
 COPY /static /app/static
 
