@@ -1,6 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 
+<style>
+    .nav-tabs .nav-link.active {
+        background-color: #2c3034;
+        border-color: #495057 #495057 #2c3034;
+        color: #f8f9fa;
+    }
+    .nav-tabs {
+        border-bottom-color: #495057;
+    }
+</style>
+
 <div class="container text-light p-lg-5">
 
     <div class="d-flex align-items-center mb-2">
@@ -20,52 +31,191 @@
         {{ lastPlexSync.message }}
         {% endif %}
     </p>
-    <hr>
 
-    {% if blocks %}
-    <table class="table table-dark table-striped align-middle">
-        <thead>
-            <tr>
-                <th style="width: 0%;">On</th>
-                <th>Block</th>
-                <th>Channels</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for block in blocks %}
-            <tr>
-                <td>
-                    <form action="/blocks/toggle" method="post">
-                        <input type="hidden" name="name" value="{{ block.name }}">
-                        <input type="hidden" name="enabled" value="{{ 'false' if block.enabled else 'true' }}">
-                        <div class="form-check form-switch">
-                            <input class="form-check-input block-switch" type="checkbox"
-                                onchange="switchBlock(this)" {{ "checked" if block.enabled }}>
-                        </div>
-                    </form>
-                </td>
-                <td>{{ block.name }}</td>
-                <td>
-                    {{ block.channels }} channels
-                    {% if block.dead %}<span class="badge bg-danger ms-1">{{ block.dead }} dead</span>{% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    <p id="updating" class="text-muted d-none"><i class="fa fa-spinner fa-spin"></i> Updating Plex...</p>
-    {% else %}
-    <p>No blocks yet. In the Playlist Editor, type the same block name in the Block column for each channel you
-        want in a block, then save.</p>
-    {% endif %}
+    <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="blocksTabButton" data-bs-toggle="tab" data-bs-target="#blocksTab"
+                type="button" role="tab"><i class="fa fa-th-large"></i> Blocks</button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="favouritesTabButton" data-bs-toggle="tab" data-bs-target="#favouritesTab"
+                type="button" role="tab"><i class="fa fa-star text-warning"></i> Favourites
+                <span class="badge bg-secondary" id="favouriteCount">{{ favourites }}</span></button>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="blocksTab" role="tabpanel">
+            {% if blocks %}
+            <table class="table table-dark table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th style="width: 0%;">On</th>
+                        <th>Block</th>
+                        <th>Channels</th>
+                        <th style="width: 0%;"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for block in blocks %}
+                    <tr>
+                        <td>
+                            <form action="/blocks/toggle" method="post">
+                                <input type="hidden" name="name" value="{{ block.name }}">
+                                <input type="hidden" name="enabled" value="{{ 'false' if block.enabled else 'true' }}">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input block-switch" type="checkbox"
+                                        onchange="switchBlock(this)" {{ "checked" if block.enabled }}>
+                                </div>
+                            </form>
+                        </td>
+                        <td>{{ block.name }}</td>
+                        <td>
+                            {{ block.channels }} channels
+                            {% if block.dead %}<span class="badge bg-danger ms-1">{{ block.dead }} dead</span>{% endif %}
+                        </td>
+                        <td class="text-nowrap">
+                            <button type="button" class="btn btn-sm btn-outline-light" data-block="{{ block.name }}"
+                                onclick="toggleBlockChannels(this)"><i class="fa fa-chevron-down"></i> View</button>
+                        </td>
+                    </tr>
+                    <tr class="d-none">
+                        <td colspan="4" class="block-channels" data-block="{{ block.name }}"></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <p id="updating" class="text-muted d-none"><i class="fa fa-spinner fa-spin"></i> Updating Plex...</p>
+            {% else %}
+            <p>No blocks yet. In the Playlist Editor, type the same block name in the Block column for each channel you
+                want in a block, then save.</p>
+            {% endif %}
+        </div>
+
+        <div class="tab-pane fade" id="favouritesTab" role="tabpanel">
+            <div id="favouriteChannels"></div>
+        </div>
+    </div>
 
 </div>
 
+{% include "_player.html" %}
+
 <script>
+    var channels = null;
+    var loading = null;
+
     function switchBlock(ele) {
         document.querySelectorAll('.block-switch').forEach(function (e) { e.disabled = true; });
         document.getElementById('updating').classList.remove('d-none');
         ele.form.submit();
+    }
+
+    // Channel names live on the portals, so fetch them once, the first time a list is opened.
+    function loadChannels() {
+        if (!loading) {
+            loading = $.getJSON("/editor_data").then(function (res) {
+                channels = res.data;
+                return channels;
+            });
+            loading.fail(function () {
+                loading = null;
+            });
+        }
+        return loading;
+    }
+
+    function rowFor(ch) {
+        if (!channels) {
+            return null;
+        }
+        for (var i = 0; i < channels.length; i++) {
+            if (channels[i].portal == ch.portal && channels[i].channelId == ch.channelId) {
+                return channels[i];
+            }
+        }
+        return null;
+    }
+
+    function channelNumber(row) {
+        return row.customChannelNumber || row.channelNumber;
+    }
+
+    function channelTable(rows, showBlock) {
+        rows = rows.slice().sort(function (a, b) {
+            return (channelNumber(a) * 1 || 0) - (channelNumber(b) * 1 || 0) ||
+                (a.customChannelName || a.channelName).localeCompare(b.customChannelName || b.channelName);
+        });
+        var html = '<table class="table table-dark table-sm align-middle mb-0"><thead><tr>' +
+            '<th style="width: 0%;">Play</th><th style="width: 0%;"></th><th>Number</th><th>Name</th>' +
+            '<th>Genre</th>' + (showBlock ? '<th>Block</th>' : '') + '<th>Portal</th></tr></thead><tbody>';
+        rows.forEach(function (row) {
+            html += '<tr><td>' + playButton(row) + '</td>' +
+                '<td>' + favouriteStar(row) + '</td>' +
+                '<td>' + escapeAttr(channelNumber(row)) + '</td>' +
+                '<td>' + escapeAttr(row.customChannelName || row.channelName) + deadBadge(row) + '</td>' +
+                '<td>' + escapeAttr(row.customGenre || row.genre) + '</td>' +
+                (showBlock ? '<td>' + escapeAttr(row.block) + '</td>' : '') +
+                '<td>' + escapeAttr(row.portalName) + '</td></tr>';
+        });
+        return html + '</tbody></table>';
+    }
+
+    function renderInto(container, pick, empty, showBlock) {
+        container.innerHTML = '<p class="text-muted m-2"><i class="fa fa-spinner fa-spin"></i> Loading channels...</p>';
+        loadChannels()
+            .done(function () {
+                var rows = channels.filter(pick);
+                container.innerHTML = rows.length ? channelTable(rows, showBlock) : '<p class="text-muted m-2">' + empty + '</p>';
+            })
+            .fail(function () {
+                container.innerHTML = '<p class="text-danger m-2">Couldn\'t load channels from the portals. Try again.</p>';
+            });
+    }
+
+    function renderBlock(container) {
+        var name = container.getAttribute('data-block');
+        renderInto(container, function (row) { return row.block == name; },
+            "None of this block's channels are on an enabled portal.", false);
+    }
+
+    function renderFavourites() {
+        renderInto(document.getElementById('favouriteChannels'), function (row) { return row.favourite; },
+            'No favourites yet. Click <i class="fa fa-star-o"></i> next to a channel in a block, in the Playlist Editor or in the preview.', true);
+    }
+
+    function toggleBlockChannels(button) {
+        var container = document.querySelector('.block-channels[data-block="' + CSS.escape(button.getAttribute('data-block')) + '"]');
+        var row = container.parentElement;
+        var opening = row.classList.contains('d-none');
+        row.classList.toggle('d-none', !opening);
+        button.innerHTML = opening ? '<i class="fa fa-chevron-up"></i> Hide' : '<i class="fa fa-chevron-down"></i> View';
+        if (opening) {
+            renderBlock(container);
+        }
+    }
+
+    function channelChanged(row) {
+        if (!channels) {
+            return;
+        }
+        document.getElementById('favouriteCount').textContent = channels.filter(function (r) { return r.favourite; }).length;
+        if (document.getElementById('favouritesTab').classList.contains('active')) {
+            renderFavourites();
+        }
+    }
+
+    document.getElementById('favouritesTabButton').addEventListener('shown.bs.tab', function () {
+        history.replaceState(null, '', '#favourites');
+        renderFavourites();
+    });
+
+    document.getElementById('blocksTabButton').addEventListener('shown.bs.tab', function () {
+        history.replaceState(null, '', location.pathname);
+    });
+
+    if (location.hash == '#favourites') {
+        new bootstrap.Tab(document.getElementById('favouritesTabButton')).show();
     }
 </script>
 

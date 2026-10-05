@@ -90,6 +90,7 @@ defaultPortal = {
     "fallback channels": {},
     "channel blocks": {},
     "dead channels": [],
+    "favourite channels": [],
 }
 
 
@@ -389,6 +390,7 @@ def editor_data():
             fallbackChannels = portals[portal].get("fallback channels", {})
             channelBlocks = portals[portal].get("channel blocks", {})
             deadChannels = portals[portal].get("dead channels", [])
+            favouriteChannels = portals[portal].get("favourite channels", [])
 
             for mac in macs:
                 try:
@@ -442,6 +444,7 @@ def editor_data():
                             "fallbackChannel": fallbackChannel,
                             "block": channelBlocks.get(channelId, ""),
                             "dead": channelId in deadChannels,
+                            "favourite": channelId in favouriteChannels,
                             "link": "http://"
                             + host
                             + "/play/"
@@ -594,6 +597,9 @@ def blocksPage():
     return render_template(
         "blocks.html",
         blocks=availability.blockSummaries(getPortals(), getBlocks()),
+        favourites=sum(
+            len(p.get("favourite channels", [])) for p in getPortals().values() if p["enabled"] == "true"
+        ),
         lastPlexSync=lastPlexSync,
         plexConfigured=plexConfigured(),
     )
@@ -652,6 +658,27 @@ def channelDead():
     if wasAvailable != (channelId in availability.availableChannels(portals[portal], blocks)):
         _, plexMessage = syncPlex()
     return flask.jsonify({"dead": dead, "plex": plexMessage})
+
+
+@app.route("/channel/favourite", methods=["POST"])
+@authorise
+def channelFavourite():
+    portal = request.form["portal"]
+    channelId = request.form["channelId"]
+    favourite = request.form.get("favourite") == "true"
+    portals = getPortals()
+    if portal not in portals:
+        return flask.jsonify({"error": "Unknown portal"}), 404
+
+    favouriteChannels = [c for c in portals[portal].get("favourite channels", []) if c != channelId]
+    if favourite:
+        favouriteChannels.append(channelId)
+    portals[portal]["favourite channels"] = favouriteChannels
+    savePortals(portals)
+    logger.info(
+        "Channel({}) for Portal({}) {}".format(channelId, portal, "favourited" if favourite else "unfavourited")
+    )
+    return flask.jsonify({"favourite": favourite})
 
 
 @app.route("/settings", methods=["GET"])

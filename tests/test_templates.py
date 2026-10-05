@@ -34,11 +34,14 @@ class TemplateScriptTest(unittest.TestCase):
     def test_blocks_script_is_valid_javascript(self):
         self.assertValidJavaScript("blocks.html")
 
+    def test_player_script_is_valid_javascript(self):
+        self.assertValidJavaScript("_player.html")
+
 
 class PreviewPromptTest(unittest.TestCase):
     def setUp(self):
-        self.script = inlineScripts("editor.html")
-        with open(os.path.join(ROOT, "templates", "editor.html")) as f:
+        self.script = inlineScripts("_player.html")
+        with open(os.path.join(ROOT, "templates", "_player.html")) as f:
             self.html = f.read()
 
     def test_failed_preview_offers_retry_not_just_dead(self):

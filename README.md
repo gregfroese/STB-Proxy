@@ -44,6 +44,13 @@ Make sets of channels available only when you want them.
 - In the **Playlist Editor**, type a name in the **Block** column for each channel in the set, then **Save**. Channels with the same name form one block.
 - On the **Blocks** page, switch a block on or off. A channel is available when it's enabled on its own **or** in a block that's on, and it isn't marked dead.
 - Clear a channel's block name to take it out of the block. A block disappears when no channel uses its name.
+- Click **View** next to a block to list its channels, and play any of them right there.
+
+# Favourites
+
+- Click the star next to a channel (on the **Blocks** page, in the **Playlist Editor**, or in the preview) to make it a favourite. Click it again to remove it.
+- The **Favourites** tab on the **Blocks** page lists your favourites so you can watch them quickly. **Favourites only**, above the editor table, filters the editor to them.
+- Favourites are just for finding channels. They don't change what's in the playlist or Plex.
 
 # Dead channels
 
