@@ -1,0 +1,306 @@
+<!-- Channel preview, shared by the editor and blocks pages.
+     A page that includes this defines rowFor(ch), returning the channel's data row
+     ({portal, channelId, channelName, customChannelName, link, dead, favourite, blocks}) or null,
+     and channelChanged(row, previousBlocks), called after a dead mark, favourite or the
+     channel's blocks are saved (previousBlocks is only passed when the blocks changed).
+     The page passes allBlocks, every block name, to the template. -->
+<div class="modal fade" id="videoModal" tabindex="-1" aria-labelledby="channelLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="channelLabel">Channel</h5>
+                <button type="button" class="btn btn-outline-warning ms-auto" id="favouriteButton"
+                    onclick="toggleFavourite()" title="Favourite"><i class="fa fa-star-o"></i></button>
+            </div>
+            <div class="modal-body">
+                <video width="100%" id="player" controls autoplay>
+                    <source src="" type="video/mp4">
+                    Your browser does not support HTML video.
+                </video>
+                <div class="mt-3">
+                    <div class="small text-muted mb-1">Blocks</div>
+                    <div id="blockChoices" data-blocks='{{ allBlocks|tojson }}'></div>
+                    <div class="input-group input-group-sm mt-2" style="max-width: 320px;">
+                        <input type="text" class="form-control" id="newBlock" placeholder="New block">
+                        <button class="btn btn-outline-secondary" type="button" id="addBlockButton" onclick="addBlock()">Add</button>
+                    </div>
+                    <div id="blockStatus" class="small mt-1"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <span id="previewProblem" class="me-auto text-warning d-none">This channel didn't play. The portal may just be busy: try again in a few seconds before marking it dead.
+                    <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="retryPreview" onclick="retryPreview()">Try again</button>
+                </span>
+                <span id="deadStatus" class="me-auto small"></span>
+                <button type="button" class="btn btn-danger" id="deadButton" onclick="toggleDead()">Mark dead</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    var player = document.getElementById("player");
+    var title = document.getElementById("channelLabel");
+    player.volume = 0.25;
+    var currentChannel = null;
+    var currentLink = "";
+    var previewTimer = null;
+    var allBlocks = JSON.parse(document.getElementById("blockChoices").getAttribute("data-blocks"));
+
+    function escapeAttr(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function channelKey(row) {
+        return row.portal + '/' + row.channelId;
+    }
+
+    function playButton(row) {
+        return '<button class="btn btn-success btn-block" title="Play" data-bs-toggle="modal" ' +
+            'data-bs-target="#videoModal" onclick="selectChannel(this)" ' +
+            'data-portal="' + escapeAttr(row.portal) + '" data-channelId="' + escapeAttr(row.channelId) + '">' +
+            '<i class="fa fa-play"></i></button>';
+    }
+
+    function favouriteStar(row) {
+        return '<button class="btn btn-link text-warning p-0 fav-star" title="Favourite" onclick="starClicked(this)" ' +
+            'data-key="' + escapeAttr(channelKey(row)) + '" data-portal="' + escapeAttr(row.portal) + '" ' +
+            'data-channelId="' + escapeAttr(row.channelId) + '">' +
+            '<i class="fa ' + (row.favourite ? 'fa-star' : 'fa-star-o') + '"></i></button>';
+    }
+
+    function deadBadge(row) {
+        return '<span class="badge bg-danger ms-2 dead-badge' + (row.dead ? '' : ' d-none') + '" ' +
+            'data-key="' + escapeAttr(channelKey(row)) + '">dead</span>';
+    }
+
+    function selectChannel(ele) {
+        var row = rowFor({ portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') });
+        currentChannel = { portal: row.portal, channelId: row.channelId };
+        currentLink = row.link;
+        player.src = currentLink;
+        title.textContent = row.customChannelName || row.channelName;
+        showDeadState(row.dead);
+        showFavouriteState(row.favourite);
+        renderBlockChoices(row);
+        document.getElementById("blockStatus").textContent = "";
+        document.getElementById("newBlock").value = "";
+        document.getElementById("previewProblem").classList.add("d-none");
+        document.getElementById("deadStatus").textContent = "";
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(previewFailed, 15000);
+    }
+
+    player.addEventListener("playing", function () {
+        clearTimeout(previewTimer);
+    });
+
+    player.addEventListener("error", function () {
+        previewFailed();
+    });
+
+    $('#videoModal').on('hidden.bs.modal', function () {
+        currentChannel = null;
+        clearTimeout(previewTimer);
+        player.src = "";
+    })
+
+    function previewFailed() {
+        clearTimeout(previewTimer);
+        if (!currentChannel) {
+            return;
+        }
+        var row = rowFor(currentChannel);
+        if (!row || row.dead) {
+            return;
+        }
+        document.getElementById("previewProblem").classList.remove("d-none");
+    }
+
+    function retryPreview() {
+        document.getElementById("previewProblem").classList.add("d-none");
+        player.src = currentLink;
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(previewFailed, 15000);
+    }
+
+    function showDeadState(dead) {
+        var button = document.getElementById("deadButton");
+        button.textContent = dead ? "Mark working" : "Mark dead";
+        button.className = dead ? "btn btn-success" : "btn btn-danger";
+    }
+
+    function showFavouriteState(favourite) {
+        var button = document.getElementById("favouriteButton");
+        button.innerHTML = '<i class="fa ' + (favourite ? 'fa-star' : 'fa-star-o') + '"></i>';
+        button.title = favourite ? "Remove from favourites" : "Add to favourites";
+        button.className = favourite ? "btn btn-warning ms-auto" : "btn btn-outline-warning ms-auto";
+    }
+
+    function toggleDead() {
+        var ch = currentChannel;
+        var row = rowFor(ch);
+        var button = document.getElementById("deadButton");
+        var status = document.getElementById("deadStatus");
+        button.disabled = true;
+        $.post("/channel/dead", { portal: ch.portal, channelId: ch.channelId, dead: row.dead ? "false" : "true" })
+            .done(function (res) {
+                row.dead = res.dead;
+                document.querySelectorAll('.dead-badge[data-key="' + channelKey(row) + '"]').forEach(function (badge) {
+                    badge.classList.toggle("d-none", !res.dead);
+                });
+                showDeadState(res.dead);
+                document.getElementById("previewProblem").classList.add("d-none");
+                status.textContent = (res.dead ? "Marked dead." : "Marked working.") + (res.plex ? " " + res.plex : "");
+                channelChanged(row);
+            })
+            .fail(function () {
+                status.textContent = "Couldn't save. Try again.";
+            })
+            .always(function () {
+                button.disabled = false;
+            });
+    }
+
+    function setFavourite(ch, button) {
+        var row = rowFor(ch);
+        if (!row) {
+            return;
+        }
+        button.disabled = true;
+        $.post("/channel/favourite", { portal: ch.portal, channelId: ch.channelId, favourite: row.favourite ? "false" : "true" })
+            .done(function (res) {
+                row.favourite = res.favourite;
+                document.querySelectorAll('.fav-star[data-key="' + channelKey(row) + '"] i').forEach(function (icon) {
+                    icon.className = 'fa ' + (res.favourite ? 'fa-star' : 'fa-star-o');
+                });
+                if (currentChannel && channelKey(currentChannel) == channelKey(row)) {
+                    showFavouriteState(res.favourite);
+                }
+                channelChanged(row);
+            })
+            .fail(function () {
+                alert("Couldn't save the favourite. Try again.");
+            })
+            .always(function () {
+                button.disabled = false;
+            });
+    }
+
+    function toggleFavourite() {
+        setFavourite(currentChannel, document.getElementById("favouriteButton"));
+    }
+
+    function starClicked(ele) {
+        setFavourite({ portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') }, ele);
+    }
+
+    function renderBlockChoices(row) {
+        var container = document.getElementById("blockChoices");
+        container.innerHTML = "";
+        var names = allBlocks.slice();
+        row.blocks.forEach(function (name) {
+            if (names.indexOf(name) == -1) {
+                names.push(name);
+            }
+        });
+        names.sort(function (a, b) { return a.localeCompare(b); });
+        if (!names.length) {
+            container.innerHTML = '<span class="small text-muted">No blocks yet. Add one below.</span>';
+        }
+        names.forEach(function (name, i) {
+            var div = document.createElement("div");
+            div.className = "form-check form-check-inline";
+            var input = document.createElement("input");
+            input.type = "checkbox";
+            input.className = "form-check-input block-choice";
+            input.id = "blockChoice" + i;
+            input.value = name;
+            input.checked = row.blocks.indexOf(name) != -1;
+            input.onchange = blockChoiceChanged;
+            var label = document.createElement("label");
+            label.className = "form-check-label";
+            label.htmlFor = input.id;
+            label.textContent = name;
+            div.appendChild(input);
+            div.appendChild(label);
+            container.appendChild(div);
+        });
+    }
+
+    function checkedBlocks() {
+        var names = [];
+        document.querySelectorAll(".block-choice").forEach(function (input) {
+            if (input.checked) {
+                names.push(input.value);
+            }
+        });
+        return names;
+    }
+
+    function blockChoiceChanged() {
+        saveChannelBlocks(checkedBlocks());
+    }
+
+    function addBlock() {
+        var input = document.getElementById("newBlock");
+        var names = checkedBlocks();
+        input.value.split(",").forEach(function (name) {
+            name = name.trim();
+            if (name && names.indexOf(name) == -1) {
+                names.push(name);
+            }
+        });
+        input.value = "";
+        saveChannelBlocks(names);
+    }
+
+    document.getElementById("newBlock").addEventListener("keydown", function (event) {
+        if (event.key == "Enter") {
+            addBlock();
+        }
+    });
+
+    function setBlockControlsDisabled(disabled) {
+        document.querySelectorAll(".block-choice, #newBlock, #addBlockButton").forEach(function (e) {
+            e.disabled = disabled;
+        });
+    }
+
+    function saveChannelBlocks(names) {
+        var ch = currentChannel;
+        var row = rowFor(ch);
+        var status = document.getElementById("blockStatus");
+        var previousBlocks = row.blocks.slice();
+        setBlockControlsDisabled(true);
+        status.className = "small mt-1 text-muted";
+        status.textContent = "Saving...";
+        $.ajax({
+            url: "/channel/blocks",
+            method: "POST",
+            traditional: true,
+            data: { portal: ch.portal, channelId: ch.channelId, blocks: names }
+        })
+            .done(function (res) {
+                row.blocks = res.blocks;
+                res.allBlocks.forEach(function (name) {
+                    if (allBlocks.indexOf(name) == -1) {
+                        allBlocks.push(name);
+                    }
+                });
+                status.className = "small mt-1 text-success";
+                status.textContent = "Saved." + (res.plex ? " " + res.plex : "");
+                channelChanged(row, previousBlocks);
+            })
+            .fail(function () {
+                status.className = "small mt-1 text-danger";
+                status.textContent = "Couldn't save. Try again.";
+            })
+            .always(function () {
+                if (currentChannel && channelKey(currentChannel) == channelKey(row)) {
+                    renderBlockChoices(row);
+                }
+                setBlockControlsDisabled(false);
+            });
+    }
+</script>

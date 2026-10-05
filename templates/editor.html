@@ -37,29 +37,7 @@
     <form action="/editor/reset" method="post" id="reset" hidden>
     </form>
 
-    <!-- Video Modal -->
-    <div class="modal fade" id="videoModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="channelLabel">Channel</h5>
-                </div>
-                <div class="modal-body">
-                    <video width="100%" id="player" controls autoplay>
-                        <source src="" type="video/mp4">
-                        Your browser does not support HTML video.
-                    </video>
-                </div>
-                <div class="modal-footer">
-                    <span id="previewProblem" class="me-auto text-warning d-none">This channel didn't play. The portal may just be busy: try again in a few seconds before marking it dead.
-                        <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="retryPreview" onclick="retryPreview()">Try again</button>
-                    </span>
-                    <span id="deadStatus" class="me-auto small"></span>
-                    <button type="button" class="btn btn-danger" id="deadButton" onclick="toggleDead()">Mark dead</button>
-                </div>
-            </div>
-        </div>
-    </div>
+    {% include "_player.html" %}
 
 </div>
 
@@ -72,10 +50,6 @@
     var fallbackEdits = [];
     var blockEdits = [];
     var table;
-
-    function escapeAttr(s) {
-        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }
 
     function editAll(ele) {
         var checkboxes = document.getElementsByClassName('checkbox');
@@ -154,42 +128,6 @@
         document.getElementById("save edits").submit();
     }
 
-    var player = document.getElementById("player")
-    var title = document.getElementById("channelLabel")
-    player.volume = 0.25
-    var currentChannel = null;
-    var previewTimer = null;
-
-    function selectChannel(ele) {
-        link = ele.getAttribute('data-link');
-        player.src = link;
-        channel = ele.getAttribute('data-customChannelName');
-        if (channel == "") {
-            channel = ele.getAttribute('data-channelName');
-        }
-        title.innerHTML = channel
-        currentChannel = { portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') };
-        showDeadState(rowFor(currentChannel).dead);
-        document.getElementById("previewProblem").classList.add("d-none");
-        document.getElementById("deadStatus").textContent = "";
-        clearTimeout(previewTimer);
-        previewTimer = setTimeout(previewFailed, 15000);
-    }
-
-    player.addEventListener("playing", function () {
-        clearTimeout(previewTimer);
-    });
-
-    player.addEventListener("error", function () {
-        previewFailed();
-    });
-
-    $('#videoModal').on('hidden.bs.modal', function () {
-        currentChannel = null;
-        clearTimeout(previewTimer);
-        player.src = "";
-    })
-
     function rowFor(ch) {
         var found = null;
         table.rows().every(function () {
@@ -201,60 +139,21 @@
         return found;
     }
 
-    function previewFailed() {
-        clearTimeout(previewTimer);
-        if (!currentChannel) {
-            return;
-        }
-        var row = rowFor(currentChannel);
-        if (!row || row.dead) {
-            return;
-        }
-        document.getElementById("previewProblem").classList.remove("d-none");
-    }
-
-    function retryPreview() {
-        document.getElementById("previewProblem").classList.add("d-none");
-        player.src = link;
-        clearTimeout(previewTimer);
-        previewTimer = setTimeout(previewFailed, 15000);
-    }
-
-    function showDeadState(dead) {
-        var button = document.getElementById("deadButton");
-        button.textContent = dead ? "Mark working" : "Mark dead";
-        button.className = dead ? "btn btn-success" : "btn btn-danger";
-    }
-
-    function toggleDead() {
-        var ch = currentChannel;
-        var row = rowFor(ch);
-        var button = document.getElementById("deadButton");
-        var status = document.getElementById("deadStatus");
-        button.disabled = true;
-        $.post("/channel/dead", { portal: ch.portal, channelId: ch.channelId, dead: row.dead ? "false" : "true" })
-            .done(function (res) {
-                row.dead = res.dead;
-                var badge = document.querySelector('.dead-badge[data-key="' + ch.portal + '/' + ch.channelId + '"]');
-                if (badge) {
-                    badge.classList.toggle("d-none", !res.dead);
-                }
-                showDeadState(res.dead);
-                document.getElementById("previewProblem").classList.add("d-none");
-                status.textContent = (res.dead ? "Marked dead." : "Marked working.") + (res.plex ? " " + res.plex : "");
-                table.draw(false);
-            })
-            .fail(function () {
-                status.textContent = "Couldn't save. Try again.";
-            })
-            .always(function () {
-                button.disabled = false;
+    function channelChanged(row, previousBlocks) {
+        if (previousBlocks) {
+            // Saved from the preview: show it in the Block box and drop any unsaved edit there.
+            $(table.rows().nodes()).find('.block-input[data-key="' + channelKey(row) + '"]').val(row.blocks.join(", "));
+            blockEdits = blockEdits.filter(function (e) {
+                return !(e.portal == row.portal && e["channel id"] == row.channelId);
             });
+        }
+        table.draw(false);
     }
 
     var hideDead = true;
+    var favouritesOnly = false;
     $.fn.dataTable.ext.search.push(function (settings, data, dataIndex, rowData) {
-        return !hideDead || !rowData.dead;
+        return (!hideDead || !rowData.dead) && (!favouritesOnly || rowData.favourite);
     });
 
     /* Create an array with the values of all the checkboxes in a column */
@@ -293,7 +192,11 @@
                     '<div class="form-check form-switch text-light mb-0">' +
                     '<input type="checkbox" class="form-check-input" id="hideDead" checked ' +
                     'onchange="hideDead = this.checked; table.draw(false);">' +
-                    '<label class="form-check-label" for="hideDead">Hide dead</label></div>'
+                    '<label class="form-check-label" for="hideDead">Hide dead</label></div>' +
+                    '<div class="form-check form-switch text-light mb-0 ms-3">' +
+                    '<input type="checkbox" class="form-check-input" id="favouritesOnly" ' +
+                    'onchange="favouritesOnly = this.checked; table.draw(false);">' +
+                    '<label class="form-check-label" for="favouritesOnly"><i class="fa fa-star text-warning"></i> Favourites only</label></div>'
                 );
             },
             lengthMenu: [[25, 50, 100, 250, 500, 1000, -1], [25, 50, 100, 250, 500, 1000, "All"]],
@@ -364,19 +267,8 @@
                 {
                     data: "link",
                     render: function (data, type, row, meta) {
-                        return '<button \
-                            class="btn btn-success btn-block" \
-                            title="Play" \
-                            data-bs-toggle="modal" \
-                            data-bs-target="#videoModal" \
-                            onclick="selectChannel(this)" \
-                            data-portal="' + row.portal + '" \
-                            data-channelId="' + row.channelId + '" \
-                            data-channelName="' + row.channelName + '" \
-                            data-customChannelName="' + row.customChannelName + '" \
-                            data-link="' + row.link + '">\
-                            <i class="fa fa-play"></i>\
-                        </button>'
+                        return '<div class="d-flex align-items-center">' + playButton(row) +
+                            '<span class="ms-2">' + favouriteStar(row) + '</span></div>'
                     }
                 },
                 {
@@ -392,8 +284,7 @@
                                 placeholder="' + row.channelName + '" \
                                 title="' + row.channelName + '" \
                                 value="' + row.customChannelName +
-                            '"><span class="badge bg-danger ms-2 dead-badge' + (row.dead ? '' : ' d-none') + '" \
-                                data-key="' + row.portal + '/' + row.channelId + '">dead</span></div>'
+                            '">' + deadBadge(row) + '</div>'
                     },
                 },
                 {
@@ -413,20 +304,22 @@
                     },
                 },
                 {
-                    data: "block",
+                    data: "blocks",
                     render: function (data, type, row, meta) {
                         if (type === 'filter' || type === 'sort') {
-                            return data;
+                            return data.join(", ");
                         }
                         return '<input \
                                 type="text" \
-                                class="form-control" \
+                                class="form-control block-input" \
                                 style="min-width: 150px;" \
                                 onchange="editBlock(this)" \
                                 data-portal="' + row.portal + '" \
                                 data-channelId="' + row.channelId + '" \
-                                placeholder="No block" \
-                                value="' + escapeAttr(data) +
+                                data-key="' + escapeAttr(channelKey(row)) + '" \
+                                placeholder="No blocks" \
+                                title="Separate blocks with commas" \
+                                value="' + escapeAttr(data.join(", ")) +
                             '">'
                     },
                 },
@@ -482,4 +375,4 @@
     });
 
 </script>
-{% endblock %}
+{% endblock %}
