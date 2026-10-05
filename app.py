@@ -2,11 +2,14 @@ import flask
 import stb
 import availability
 import plex
+import guide
 import os
 import json
 import subprocess
 import uuid
 import logging
+import threading
+import time
 import xml.etree.cElementTree as ET
 from flask import (
     Flask,
@@ -714,6 +717,147 @@ def channelFavourite():
         "Channel({}) for Portal({}) {}".format(channelId, portal, "favourited" if favourite else "unfavourited")
     )
     return flask.jsonify({"favourite": favourite})
+
+
+GUIDE_MAX_AGE = 3600
+GUIDE_RETRY_AGE = 300
+guideCache = {"loaded": 0, "time": None, "programmes": [], "channels": {}, "failed": [], "partial": []}
+guideLock = threading.Lock()
+
+
+def loadGuide(force=False):
+    """The guide for every channel on the enabled portals, reloaded once it's an hour old."""
+    global guideCache
+    with guideLock:
+        if not force and time.time() - guideCache["loaded"] < GUIDE_MAX_AGE:
+            return guideCache
+
+        now = int(time.time())
+        programmes = []
+        channels = {}
+        failed = []
+        partial = []
+        portals = getPortals()
+        for portal in portals:
+            if portals[portal]["enabled"] != "true":
+                continue
+            name = portals[portal]["name"]
+            url = portals[portal]["url"]
+            proxy = portals[portal]["proxy"]
+            allChannels = None
+            epg = None
+            short = False
+            for mac in portals[portal]["macs"].keys():
+                try:
+                    token = stb.getToken(url, mac, proxy)
+                    stb.getProfile(url, mac, token, proxy)
+                    allChannels = stb.getAllChannels(url, mac, token, proxy)
+                    epg = stb.getEpg(url, mac, token, 24, proxy)
+                    if not epg:
+                        # No bulk guide: fetching every channel one by one would take too long,
+                        # so fall back to the channels in the lineup, as the XMLTV does.
+                        short = True
+                        epg = stb.getShortEpg(
+                            url, mac, token, availability.availableChannels(portals[portal], getBlocks()), proxy
+                        )
+                    if allChannels and epg:
+                        break
+                except Exception:
+                    allChannels = None
+                    epg = None
+
+            if not (allChannels and epg):
+                logger.error("Error loading the guide for {}, skipping".format(name))
+                failed.append(name)
+                continue
+            if short:
+                partial.append(name)
+            for c in allChannels:
+                channels[(portal, str(c["id"]))] = {"name": str(c["name"]), "number": str(c["number"])}
+            programmes.extend(guide.programmes(portal, epg, now))
+
+        logger.info("Guide loaded: {} programmes on {} channels".format(len(programmes), len(channels)))
+        guideCache = {
+            # Try a failed portal again sooner than the usual refresh.
+            "loaded": time.time() - (GUIDE_MAX_AGE - GUIDE_RETRY_AGE if failed else 0),
+            "time": time.time(),
+            "programmes": programmes,
+            "channels": channels,
+            "failed": failed,
+            "partial": partial,
+        }
+        return guideCache
+
+
+@app.route("/guide", methods=["GET"])
+@authorise
+def guidePage():
+    return render_template("guide.html", allBlocks=sorted(availability.blockNames(getPortals())))
+
+
+@app.route("/guide/search", methods=["GET"])
+@authorise
+def guideSearch():
+    query = request.args.get("q", "").strip()
+    onNow = request.args.get("now") == "true"
+    lineupOnly = request.args.get("lineup") == "true"
+    favouritesOnly = request.args.get("favourites") == "true"
+    hideDead = request.args.get("hideDead", "true") == "true"
+
+    cache = loadGuide(force=request.args.get("refresh") == "true")
+    portals = getPortals()
+    blocks = getBlocks()
+    available = {p: availability.availableChannels(portals[p], blocks) for p in portals}
+
+    def keep(portal, channelId):
+        if portal not in portals or (portal, channelId) not in cache["channels"]:
+            return False
+        if hideDead and channelId in portals[portal].get("dead channels", []):
+            return False
+        if lineupOnly and channelId not in available[portal]:
+            return False
+        if favouritesOnly and channelId not in portals[portal].get("favourite channels", []):
+            return False
+        return True
+
+    matches, total = [], 0
+    if query or onNow or lineupOnly or favouritesOnly:
+        matches, total = guide.search(cache["programmes"], query, int(time.time()), keep, onNow)
+
+    results = []
+    for start, stop, title, desc, portal, channelId in matches:
+        channel = cache["channels"][(portal, channelId)]
+        p = portals[portal]
+        results.append(
+            {
+                "start": start,
+                "stop": stop,
+                "title": title,
+                "desc": desc,
+                "portal": portal,
+                "portalName": p["name"],
+                "channelId": channelId,
+                "channelName": channel["name"],
+                "customChannelName": p.get("custom channel names", {}).get(channelId, ""),
+                "channelNumber": p.get("custom channel numbers", {}).get(channelId) or channel["number"],
+                "dead": channelId in p.get("dead channels", []),
+                "favourite": channelId in p.get("favourite channels", []),
+                "blocks": p.get("channel blocks", {}).get(channelId, []),
+                "available": channelId in available[portal],
+                "link": "http://" + host + "/play/" + portal + "/" + channelId + "?web=true",
+            }
+        )
+
+    return flask.jsonify(
+        {
+            "results": results,
+            "total": total,
+            "loadedAt": cache["time"],
+            "programmes": len(cache["programmes"]),
+            "failed": cache["failed"],
+            "partial": cache["partial"],
+        }
+    )
 
 
 @app.route("/settings", methods=["GET"])

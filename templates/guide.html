@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+    .programme-desc {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        max-width: 40rem;
+    }
+</style>
+
+<div class="container text-light p-lg-5">
+
+    <div class="d-flex align-items-center mb-3">
+        <h4 class="mb-0">Guide</h4>
+        <button type="button" class="btn btn-outline-light btn-sm ms-auto" id="reloadGuide" onclick="runSearch(true)"
+            title="Fetch the guide from the portals again"><i class="fa fa-refresh"></i> Reload guide</button>
+    </div>
+
+    <input type="search" class="form-control form-control-lg" id="query" placeholder="Search programmes, e.g. oilers"
+        autocomplete="off" autofocus>
+
+    <div class="d-flex flex-wrap mt-2">
+        <div class="form-check form-switch me-4">
+            <input type="checkbox" class="form-check-input guide-filter" id="onNow">
+            <label class="form-check-label" for="onNow">On now</label>
+        </div>
+        <div class="form-check form-switch me-4">
+            <input type="checkbox" class="form-check-input guide-filter" id="lineupOnly">
+            <label class="form-check-label" for="lineupOnly">In my lineup</label>
+        </div>
+        <div class="form-check form-switch me-4">
+            <input type="checkbox" class="form-check-input guide-filter" id="favouritesOnly">
+            <label class="form-check-label" for="favouritesOnly"><i class="fa fa-star text-warning"></i> Favourites</label>
+        </div>
+        <div class="form-check form-switch me-4">
+            <input type="checkbox" class="form-check-input guide-filter" id="hideDead" checked>
+            <label class="form-check-label" for="hideDead">Hide dead</label>
+        </div>
+    </div>
+
+    <p id="guideStatus" class="text-muted small mt-2 mb-2">Search the next 24 hours on every channel, or switch on a filter
+        to browse.</p>
+    <div id="results" class="table-responsive"></div>
+
+</div>
+
+{% include "_player.html" %}
+
+<script>
+    var channelsByKey = {};
+    var lastSearch = null;
+    var searchSeq = 0;
+    var searchTimer = null;
+    var loadedOnce = false;
+
+    function rowFor(ch) {
+        return channelsByKey[ch.portal + '/' + ch.channelId] || null;
+    }
+
+    function channelChanged(row, previousBlocks) {
+        // Dead, favourite and blocks all feed the filters and the "in lineup" badge.
+        runSearch(false, true);
+    }
+
+    function filtersOn() {
+        return ['onNow', 'lineupOnly', 'favouritesOnly'].some(function (id) {
+            return document.getElementById(id).checked;
+        });
+    }
+
+    function scheduleSearch() {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(function () { runSearch(false); }, 350);
+    }
+
+    function setStatus(html, className) {
+        var status = document.getElementById('guideStatus');
+        status.className = 'small mt-2 mb-2 ' + (className || 'text-muted');
+        status.innerHTML = html;
+    }
+
+    function runSearch(refresh, quiet) {
+        clearTimeout(searchTimer);
+        var query = document.getElementById('query').value.trim();
+        if (!query && !filtersOn() && !refresh) {
+            if (lastSearch) {
+                lastSearch.abort();
+            }
+            document.getElementById('results').innerHTML = '';
+            setStatus('Search the next 24 hours on every channel, or switch on a filter to browse.');
+            return;
+        }
+        if (lastSearch) {
+            lastSearch.abort();
+        }
+        var seq = ++searchSeq;
+        if (!quiet) {
+            setStatus('<i class="fa fa-spinner fa-spin"></i> ' + (refresh || !loadedOnce
+                ? 'Loading the guide from the portal. This takes about 15 seconds...'
+                : 'Searching...'));
+        }
+        document.getElementById('reloadGuide').disabled = true;
+        lastSearch = $.getJSON('/guide/search', {
+            q: query,
+            now: document.getElementById('onNow').checked,
+            lineup: document.getElementById('lineupOnly').checked,
+            favourites: document.getElementById('favouritesOnly').checked,
+            hideDead: document.getElementById('hideDead').checked,
+            refresh: refresh ? 'true' : 'false'
+        })
+            .done(function (res) {
+                if (seq != searchSeq) {
+                    return;
+                }
+                loadedOnce = true;
+                showResults(res, query || filtersOn());
+            })
+            .fail(function (xhr, textStatus) {
+                if (seq != searchSeq || textStatus == 'abort') {
+                    return;
+                }
+                setStatus("Couldn't search the guide. Try again.", 'text-danger');
+            })
+            .always(function () {
+                if (seq == searchSeq) {
+                    document.getElementById('reloadGuide').disabled = false;
+                }
+            });
+    }
+
+    function formatTime(seconds) {
+        return new Date(seconds * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+
+    function formatWhen(row, now) {
+        if (row.start <= now) {
+            return '<span class="badge bg-success">On now</span><div class="small text-muted">until ' +
+                formatTime(row.stop) + '</div>';
+        }
+        var day = new Date(row.start * 1000);
+        var today = new Date(now * 1000);
+        var tomorrow = new Date(now * 1000);
+        tomorrow.setDate(today.getDate() + 1);
+        var label = day.toDateString() == today.toDateString() ? 'Today'
+            : day.toDateString() == tomorrow.toDateString() ? 'Tomorrow'
+                : day.toLocaleDateString([], { weekday: 'short' });
+        return escapeAttr(label + ' ' + formatTime(row.start)) +
+            '<div class="small text-muted">until ' + formatTime(row.stop) + '</div>';
+    }
+
+    function showResults(res, searched) {
+        var now = Date.now() / 1000;
+        channelsByKey = {};
+        res.results.forEach(function (r) {
+            var key = channelKey(r);
+            if (!channelsByKey[key]) {
+                channelsByKey[key] = r;
+            }
+        });
+
+        var status = !searched ? 'Guide reloaded'
+            : res.total == 0 ? 'Nothing found'
+            : res.total > res.results.length
+                ? 'Showing the first ' + res.results.length + ' of ' + res.total.toLocaleString() + ' matches. Add words to narrow it down'
+                : res.total.toLocaleString() + (res.total == 1 ? ' match' : ' matches');
+        status = escapeAttr(status) + '. Guide loaded at ' + (res.loadedAt ? formatTime(res.loadedAt) : '?') + ', ' +
+            res.programmes.toLocaleString() + ' programmes.';
+        var warning = '';
+        if (res.failed.length) {
+            warning += " Couldn't load the guide for " + res.failed.join(', ') + '.';
+        }
+        if (res.partial.length) {
+            warning += ' ' + res.partial.join(', ') + " has no full guide, so only channels in your lineup are searched.";
+        }
+        setStatus(status + (warning ? ' <span class="text-warning">' + escapeAttr(warning) + '</span>' : ''));
+
+        if (!res.results.length) {
+            document.getElementById('results').innerHTML = '';
+            return;
+        }
+        var html = '<table class="table table-dark table-striped align-middle"><thead><tr>' +
+            '<th style="width: 0%;"></th><th>When</th><th>Programme</th><th>Channel</th></tr></thead><tbody>';
+        res.results.forEach(function (r) {
+            var channel = channelsByKey[channelKey(r)];
+            html += '<tr><td class="text-nowrap">' + playButton(channel) + ' <span class="ms-1">' + favouriteStar(channel) + '</span></td>' +
+                '<td class="text-nowrap">' + formatWhen(r, now) + '</td>' +
+                '<td><div class="fw-bold">' + escapeAttr(r.title) + '</div>' +
+                (r.desc ? '<div class="small text-muted programme-desc">' + escapeAttr(r.desc) + '</div>' : '') + '</td>' +
+                '<td class="text-nowrap">' + escapeAttr(channel.channelNumber) + ' ' +
+                escapeAttr(channel.customChannelName || channel.channelName) + deadBadge(channel) +
+                (channel.available ? ' <span class="badge bg-secondary">in lineup</span>' : '') +
+                '<div class="small text-muted">' + escapeAttr(channel.portalName) + '</div></td></tr>';
+        });
+        document.getElementById('results').innerHTML = html + '</tbody></table>';
+    }
+
+    document.getElementById('query').addEventListener('input', scheduleSearch);
+    document.getElementById('query').addEventListener('keydown', function (event) {
+        if (event.key == 'Enter') {
+            runSearch(false);
+        }
+    });
+    document.querySelectorAll('.guide-filter').forEach(function (input) {
+        input.addEventListener('change', function () { runSearch(false); });
+    });
+</script>
+
+{% endblock %}
