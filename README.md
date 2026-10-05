@@ -53,6 +53,14 @@ Make sets of channels available only when you want them.
 - The **Favourites** tab on the **Blocks** page lists your favourites so you can watch them quickly. **Favourites only**, above the editor table, filters the editor to them.
 - Favourites are just for finding channels. They don't change what's in the playlist or Plex.
 
+# Guide
+
+- The **Guide** page searches the next 24 hours of programmes on every channel the portals carry, not just the ones in your lineup. Every word you type must appear in the title or description.
+- Switch on **On now**, **In my lineup** or **Favourites** to narrow the results, or to browse without typing. **Hide dead** is on by default.
+- Click play on a result to preview the channel. The preview has the same favourite, dead and blocks controls as everywhere else.
+- The guide is fetched from the portal the first time you search (about 15 seconds) and kept for an hour. **Reload guide** fetches it again.
+- If a portal has no bulk guide, only the channels in your lineup are searched.
+
 # Dead channels
 
 - Preview a channel in the editor and click **Mark dead** if it doesn't work. Dead channels are left out of the playlist, XMLTV, HDHomeRun lineup and Plex, even if they're enabled or in a block that's on.
