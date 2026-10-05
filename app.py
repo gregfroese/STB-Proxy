@@ -127,6 +127,9 @@ def loadConfig():
             if not value or type(default) != type(value):
                 value = default
             portalsOut[portal][setting] = value
+        portalsOut[portal]["channel blocks"] = availability.normaliseChannelBlocks(
+            portalsOut[portal]["channel blocks"]
+        )
 
     data["portals"] = portalsOut
 
@@ -368,7 +371,7 @@ def portalRemove():
 @app.route("/editor", methods=["GET"])
 @authorise
 def editor():
-    return render_template("editor.html")
+    return render_template("editor.html", allBlocks=sorted(availability.blockNames(getPortals())))
 
 
 @app.route("/editor_data", methods=["GET"])
@@ -442,7 +445,7 @@ def editor_data():
                             "channelId": channelId,
                             "customEpgId": customEpgId,
                             "fallbackChannel": fallbackChannel,
-                            "block": channelBlocks.get(channelId, ""),
+                            "blocks": channelBlocks.get(channelId, []),
                             "dead": channelId in deadChannels,
                             "favourite": channelId in favouriteChannels,
                             "link": "http://"
@@ -548,12 +551,12 @@ def editorSave():
     for edit in blockEdits:
         portal = edit["portal"]
         channelId = edit["channel id"]
-        block = edit["block"].strip()
+        names = availability.parseBlockNames(edit["block"])
         channelBlocks = newChannelBlocks.setdefault(
             portal, dict(portals[portal].get("channel blocks", {}))
         )
-        if block:
-            channelBlocks[channelId] = block
+        if names:
+            channelBlocks[channelId] = names
         else:
             channelBlocks.pop(channelId, None)
     for portal, channelBlocks in newChannelBlocks.items():
@@ -597,6 +600,7 @@ def blocksPage():
     return render_template(
         "blocks.html",
         blocks=availability.blockSummaries(getPortals(), getBlocks()),
+        allBlocks=sorted(availability.blockNames(getPortals())),
         favourites=sum(
             len(p.get("favourite channels", [])) for p in getPortals().values() if p["enabled"] == "true"
         ),
@@ -658,6 +662,37 @@ def channelDead():
     if wasAvailable != (channelId in availability.availableChannels(portals[portal], blocks)):
         _, plexMessage = syncPlex()
     return flask.jsonify({"dead": dead, "plex": plexMessage})
+
+
+@app.route("/channel/blocks", methods=["POST"])
+@authorise
+def channelBlocks():
+    portal = request.form["portal"]
+    channelId = request.form["channelId"]
+    names = availability.parseBlockNames(",".join(request.form.getlist("blocks")))
+    portals = getPortals()
+    if portal not in portals:
+        return flask.jsonify({"error": "Unknown portal"}), 404
+
+    blocks = getBlocks()
+    wasAvailable = channelId in availability.availableChannels(portals[portal], blocks)
+    # Build a new dict rather than mutating: other threads may be iterating the old one.
+    channelBlocks = dict(portals[portal].get("channel blocks", {}))
+    if names:
+        channelBlocks[channelId] = names
+    else:
+        channelBlocks.pop(channelId, None)
+    portals[portal]["channel blocks"] = channelBlocks
+    savePortals(portals)
+    saveBlocks(availability.pruneBlocks(portals, blocks))
+    logger.info("Channel({}) for Portal({}) blocks set to {}".format(channelId, portal, names))
+
+    plexMessage = ""
+    if wasAvailable != (channelId in availability.availableChannels(portals[portal], getBlocks())):
+        _, plexMessage = syncPlex()
+    return flask.jsonify(
+        {"blocks": names, "allBlocks": sorted(availability.blockNames(portals)), "plex": plexMessage}
+    )
 
 
 @app.route("/channel/favourite", methods=["POST"])

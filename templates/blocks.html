@@ -71,7 +71,7 @@
                         </td>
                         <td>{{ block.name }}</td>
                         <td>
-                            {{ block.channels }} channels
+                            <span class="block-count" data-block="{{ block.name }}">{{ block.channels }}</span> channels
                             {% if block.dead %}<span class="badge bg-danger ms-1">{{ block.dead }} dead</span>{% endif %}
                         </td>
                         <td class="text-nowrap">
@@ -87,9 +87,10 @@
             </table>
             <p id="updating" class="text-muted d-none"><i class="fa fa-spinner fa-spin"></i> Updating Plex...</p>
             {% else %}
-            <p>No blocks yet. In the Playlist Editor, type the same block name in the Block column for each channel you
-                want in a block, then save.</p>
+            <p>No blocks yet. Preview a channel and add it to a new block, or type block names in the Playlist
+                Editor's Block column and save.</p>
             {% endif %}
+            <p id="newBlocks" class="text-muted d-none">New blocks were added. <a href="/blocks">Reload</a> to see them.</p>
         </div>
 
         <div class="tab-pane fade" id="favouritesTab" role="tabpanel">
@@ -155,7 +156,7 @@
                 '<td>' + escapeAttr(channelNumber(row)) + '</td>' +
                 '<td>' + escapeAttr(row.customChannelName || row.channelName) + deadBadge(row) + '</td>' +
                 '<td>' + escapeAttr(row.customGenre || row.genre) + '</td>' +
-                (showBlock ? '<td>' + escapeAttr(row.block) + '</td>' : '') +
+                (showBlock ? '<td>' + escapeAttr(row.blocks.join(", ")) + '</td>' : '') +
                 '<td>' + escapeAttr(row.portalName) + '</td></tr>';
         });
         return html + '</tbody></table>';
@@ -175,7 +176,7 @@
 
     function renderBlock(container) {
         var name = container.getAttribute('data-block');
-        renderInto(container, function (row) { return row.block == name; },
+        renderInto(container, function (row) { return row.blocks.indexOf(name) != -1; },
             "None of this block's channels are on an enabled portal.", false);
     }
 
@@ -195,9 +196,35 @@
         }
     }
 
-    function channelChanged(row) {
+    function blockCount(name, delta) {
+        var count = document.querySelector('.block-count[data-block="' + CSS.escape(name) + '"]');
+        if (count) {
+            count.textContent = count.textContent * 1 + delta;
+        } else if (delta > 0) {
+            document.getElementById('newBlocks').classList.remove('d-none');
+        }
+    }
+
+    function channelChanged(row, previousBlocks) {
         if (!channels) {
             return;
+        }
+        if (previousBlocks) {
+            previousBlocks.forEach(function (name) {
+                if (row.blocks.indexOf(name) == -1) {
+                    blockCount(name, -1);
+                }
+            });
+            row.blocks.forEach(function (name) {
+                if (previousBlocks.indexOf(name) == -1) {
+                    blockCount(name, 1);
+                }
+            });
+            document.querySelectorAll('.block-channels').forEach(function (container) {
+                if (!container.parentElement.classList.contains('d-none')) {
+                    renderBlock(container);
+                }
+            });
         }
         document.getElementById('favouriteCount').textContent = channels.filter(function (r) { return r.favourite; }).length;
         if (document.getElementById('favouritesTab').classList.contains('active')) {

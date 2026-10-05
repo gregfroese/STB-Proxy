@@ -41,8 +41,9 @@ chris230291/stb-proxy:latest
 
 Make sets of channels available only when you want them.
 
-- In the **Playlist Editor**, type a name in the **Block** column for each channel in the set, then **Save**. Channels with the same name form one block.
-- On the **Blocks** page, switch a block on or off. A channel is available when it's enabled on its own **or** in a block that's on, and it isn't marked dead.
+- In the **Playlist Editor**, type a name in the **Block** column for each channel in the set, then **Save**. Channels with the same name form one block. A channel can be in several blocks: separate the names with commas.
+- Or preview a channel and tick the blocks it belongs to, or type a new block name and click **Add**. Changes save right away.
+- On the **Blocks** page, switch a block on or off. A channel is available when it's enabled on its own **or** in any block that's on, and it isn't marked dead.
 - Clear a channel's block name to take it out of the block. A block disappears when no channel uses its name.
 - Click **View** next to a block to list its channels, and play any of them right there.
 

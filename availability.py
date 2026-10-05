@@ -1,16 +1,42 @@
 """Which channels STB-Proxy offers, given enabled channels, blocks and dead marks.
 
 A channel is available when it is (individually enabled OR in a block that is
-on) AND not marked dead. Blocks are named in each portal's "channel blocks"
-({channelId: blockName}); whether a block is on lives in config["blocks"]
-({blockName: "true"|"false"}).
+on) AND not marked dead. A channel can be in several blocks: each portal's
+"channel blocks" is {channelId: [blockName, ...]}; whether a block is on lives
+in config["blocks"] ({blockName: "true"|"false"}).
 """
+
+
+def channelBlockNames(value):
+    # Configs from before channels could be in several blocks hold a single name.
+    if isinstance(value, str):
+        return [value] if value else []
+    return list(value)
+
+
+def normaliseChannelBlocks(channelBlocks):
+    normalised = {}
+    for channelId, value in channelBlocks.items():
+        names = parseBlockNames(",".join(channelBlockNames(value)))
+        if names:
+            normalised[channelId] = names
+    return normalised
+
+
+def parseBlockNames(text):
+    """Comma-separated block names, trimmed, without blanks or repeats, in order."""
+    names = []
+    for name in text.split(","):
+        name = name.strip()
+        if name and name not in names:
+            names.append(name)
+    return names
 
 
 def availableChannels(portal, blocks):
     channels = set(portal.get("enabled channels", []))
-    for channelId, block in portal.get("channel blocks", {}).items():
-        if blocks.get(block) == "true":
+    for channelId, names in portal.get("channel blocks", {}).items():
+        if any(blocks.get(name) == "true" for name in channelBlockNames(names)):
             channels.add(channelId)
     return channels - set(portal.get("dead channels", []))
 
@@ -18,7 +44,8 @@ def availableChannels(portal, blocks):
 def blockNames(portals):
     names = set()
     for portal in portals.values():
-        names.update(portal.get("channel blocks", {}).values())
+        for value in portal.get("channel blocks", {}).values():
+            names.update(channelBlockNames(value))
     return names
 
 
@@ -31,12 +58,13 @@ def blockSummaries(portals, blocks):
     summaries = {}
     for portal in portals.values():
         dead = set(portal.get("dead channels", []))
-        for channelId, name in portal.get("channel blocks", {}).items():
-            summary = summaries.setdefault(
-                name,
-                {"name": name, "enabled": blocks.get(name) == "true", "channels": 0, "dead": 0},
-            )
-            summary["channels"] += 1
-            if channelId in dead:
-                summary["dead"] += 1
+        for channelId, value in portal.get("channel blocks", {}).items():
+            for name in channelBlockNames(value):
+                summary = summaries.setdefault(
+                    name,
+                    {"name": name, "enabled": blocks.get(name) == "true", "channels": 0, "dead": 0},
+                )
+                summary["channels"] += 1
+                if channelId in dead:
+                    summary["dead"] += 1
     return [summaries[name] for name in sorted(summaries)]

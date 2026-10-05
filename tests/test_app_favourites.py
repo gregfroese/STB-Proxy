@@ -58,7 +58,7 @@ class FavouriteChannelTest(unittest.TestCase):
         rows = {r["channelId"]: r for r in self.client.get("/editor_data").get_json()["data"]}
         self.assertTrue(rows["2"]["favourite"])
         self.assertFalse(rows["1"]["favourite"])
-        self.assertEqual(rows["3"]["block"], "NHL")
+        self.assertEqual(rows["3"]["blocks"], ["NHL"])
 
     def test_blocks_page_has_channel_viewer_and_favourites(self):
         self.mark("2", True)

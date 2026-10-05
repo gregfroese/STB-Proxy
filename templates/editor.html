@@ -139,7 +139,14 @@
         return found;
     }
 
-    function channelChanged(row) {
+    function channelChanged(row, previousBlocks) {
+        if (previousBlocks) {
+            // Saved from the preview: show it in the Block box and drop any unsaved edit there.
+            $(table.rows().nodes()).find('.block-input[data-key="' + channelKey(row) + '"]').val(row.blocks.join(", "));
+            blockEdits = blockEdits.filter(function (e) {
+                return !(e.portal == row.portal && e["channel id"] == row.channelId);
+            });
+        }
         table.draw(false);
     }
 
@@ -297,20 +304,22 @@
                     },
                 },
                 {
-                    data: "block",
+                    data: "blocks",
                     render: function (data, type, row, meta) {
                         if (type === 'filter' || type === 'sort') {
-                            return data;
+                            return data.join(", ");
                         }
                         return '<input \
                                 type="text" \
-                                class="form-control" \
+                                class="form-control block-input" \
                                 style="min-width: 150px;" \
                                 onchange="editBlock(this)" \
                                 data-portal="' + row.portal + '" \
                                 data-channelId="' + row.channelId + '" \
-                                placeholder="No block" \
-                                value="' + escapeAttr(data) +
+                                data-key="' + escapeAttr(channelKey(row)) + '" \
+                                placeholder="No blocks" \
+                                title="Separate blocks with commas" \
+                                value="' + escapeAttr(data.join(", ")) +
                             '">'
                     },
                 },
