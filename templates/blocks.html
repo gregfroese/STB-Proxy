@@ -72,7 +72,7 @@
                         <td>{{ block.name }}</td>
                         <td>
                             <span class="block-count" data-block="{{ block.name }}">{{ block.channels }}</span> channels
-                            {% if block.dead %}<span class="badge bg-danger ms-1">{{ block.dead }} dead</span>{% endif %}
+                            <span class="badge bg-danger ms-1 block-dead{{ ' d-none' if not block.dead }}" data-block="{{ block.name }}"><span class="block-dead-count">{{ block.dead }}</span> dead</span>
                         </td>
                         <td class="text-nowrap">
                             <button type="button" class="btn btn-sm btn-outline-light" data-block="{{ block.name }}"
@@ -207,19 +207,38 @@
         }
     }
 
-    function channelChanged(row, previousBlocks) {
+    function deadCount(name, delta) {
+        var badge = document.querySelector('.block-dead[data-block="' + CSS.escape(name) + '"]');
+        if (badge) {
+            var count = badge.querySelector('.block-dead-count');
+            count.textContent = Math.max(0, count.textContent * 1 + delta);
+            badge.classList.toggle('d-none', count.textContent == '0');
+        }
+    }
+
+    // Keep the block counts and lists in step with marks and moves made from the player.
+    function channelChanged(row, previousBlocks, before) {
         if (!channels) {
             return;
+        }
+        if (before && before.dead != row.dead) {
+            row.blocks.forEach(function (name) { deadCount(name, row.dead ? 1 : -1); });
         }
         if (previousBlocks) {
             previousBlocks.forEach(function (name) {
                 if (row.blocks.indexOf(name) == -1) {
                     blockCount(name, -1);
+                    if (row.dead) {
+                        deadCount(name, -1);
+                    }
                 }
             });
             row.blocks.forEach(function (name) {
                 if (previousBlocks.indexOf(name) == -1) {
                     blockCount(name, 1);
+                    if (row.dead) {
+                        deadCount(name, 1);
+                    }
                 }
             });
             document.querySelectorAll('.block-channels').forEach(function (container) {
