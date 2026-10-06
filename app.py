@@ -2,6 +2,7 @@ import flask
 import stb
 import availability
 import plex
+import jellyfin
 import guide
 import logos
 import os
@@ -85,6 +86,8 @@ defaultSettings = {
     "plex token": "",
     "match logos": "true",
     "api token": "",
+    "jellyfin url": "",
+    "jellyfin api key": "",
 }
 
 defaultPortal = {
@@ -842,6 +845,9 @@ def blocksPage():
         ),
         lastPlexSync=lastPlexSync,
         plexConfigured=plexConfigured(),
+        lastJellyfinSync=lastJellyfinSync,
+        jellyfinConfigured=jellyfinConfigured(),
+        retryAt=syncRetry["at"],
     )
 
 
@@ -1237,6 +1243,11 @@ def save():
         settings[setting] = value
 
     settings["api token"] = getSettings()["api token"]  # changed only by "New token"
+    settings["jellyfin url"] = request.form.get("jellyfin url", "").strip().rstrip("/")
+    if request.form.get("clear jellyfin api key") == "true":
+        settings["jellyfin api key"] = ""
+    elif not request.form.get("jellyfin api key"):
+        settings["jellyfin api key"] = getSettings()["jellyfin api key"]
     settings["plex url"] = request.form.get("plex url", "").strip().rstrip("/")
     # The token field is never pre-filled, so blank means "keep the saved token".
     if request.form.get("clear plex token") == "true":
@@ -1247,6 +1258,27 @@ def save():
     saveSettings(settings)
     logger.info("Settings saved!")
     flash("Settings saved!", "success")
+    return redirect("/settings", code=302)
+
+
+@app.route("/settings/jellyfin-setup", methods=["POST"])
+@authorise
+def jellyfinSetup():
+    settings = getSettings()
+    if not jellyfinConfigured():
+        flash("Save the Jellyfin address and API key first.", "danger")
+        return redirect("/settings", code=302)
+    try:
+        tuners = int(settings["hdhr tuners"] or 1)
+    except ValueError:
+        tuners = 1
+    try:
+        message = jellyfin.setup(settings["jellyfin url"], settings["jellyfin api key"], "http://" + host, tuners)
+        logger.info(message)
+        flash(message + ".", "success")
+    except jellyfin.JellyfinError as e:
+        logger.error("Jellyfin setup failed: {}".format(e))
+        flash("Couldn't set up Jellyfin: {}".format(e), "danger")
     return redirect("/settings", code=302)
 
 
@@ -1906,7 +1938,17 @@ def plexStatus():
         "ok": lastPlexSync["ok"],
         "message": lastPlexSync["message"],
         "time": lastPlexSync["time"],
-        "retryAt": lastPlexSync["retryAt"],
+        "retryAt": syncRetry["at"],
+    }
+
+
+def jellyfinStatus():
+    return {
+        "configured": jellyfinConfigured(),
+        "ok": lastJellyfinSync["ok"],
+        "message": lastJellyfinSync["message"],
+        "time": lastJellyfinSync["time"],
+        "retryAt": syncRetry["at"],
     }
 
 
@@ -1936,7 +1978,7 @@ def setBlock(name, enabled):
         logger.info("Block({}) switched {} (API)".format(name, "on" if enabled else "off"))
         syncPlex()
     block = next(b for b in blockStates() if b["name"] == name)
-    return dict(block, changed=changed, plex=plexStatus())
+    return dict(block, changed=changed, plex=plexStatus(), jellyfin=jellyfinStatus())
 
 
 @app.route("/api/status", methods=["GET"])
@@ -1951,6 +1993,7 @@ def apiStatus():
         "streams": sum(len(v) for v in occupied.values()),
         "blocks": blockStates(),
         "plex": plexStatus(),
+        "jellyfin": jellyfinStatus(),
         "otherLogins": sum(len(a.get("otherLogins", [])) for a in activity),
         "boxOn": any(a.get("boxOn") for a in activity),
     })
@@ -1992,11 +2035,19 @@ def apiPlex():
     return flask.jsonify(plexStatus())
 
 
+@app.route("/api/jellyfin", methods=["GET"])
+@apiAuth
+def apiJellyfin():
+    return flask.jsonify(jellyfinStatus())
+
+
+@app.route("/api/sync", methods=["POST"])
 @app.route("/api/plex/sync", methods=["POST"])
 @apiAuth
 def apiPlexSync():
+    """Sync every configured media server (Plex and Jellyfin) now."""
     syncPlex()
-    return flask.jsonify(plexStatus())
+    return flask.jsonify({"plex": plexStatus(), "jellyfin": jellyfinStatus(), **plexStatus()})
 
 
 @app.route("/dashboard")
@@ -2142,7 +2193,9 @@ def buildLineup():
     return entries, failedPortals
 
 
-lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None, "retryAt": None}
+lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}
+lastJellyfinSync = {"time": None, "message": "Not refreshed since STB-Proxy started", "ok": None}
+syncRetry = {"at": None}
 # Syncs run one at a time. A failed one is retried in the background (Plex may be restarting)
 # after each of these delays in turn, about an hour in all; any new sync starts the count again.
 PLEX_RETRY_DELAYS = [60, 120, 300, 600, 900, 1200]
@@ -2159,41 +2212,65 @@ def cancelPlexRetry():
     if plexRetry["timer"]:
         plexRetry["timer"].cancel()
     plexRetry["timer"] = None
-    lastPlexSync["retryAt"] = None
+    syncRetry["at"] = None
 
 
 def schedulePlexRetry():
     if plexRetry["attempt"] >= len(PLEX_RETRY_DELAYS):
-        logger.error("Plex still not updated after retrying for an hour; giving up until the next change")
-        lastPlexSync["retryAt"] = None
+        logger.error("Media servers still not updated after retrying for an hour; giving up until the next change")
+        syncRetry["at"] = None
         return
     delay = PLEX_RETRY_DELAYS[plexRetry["attempt"]]
     plexRetry["attempt"] += 1
     timer = threading.Timer(delay, syncPlex, kwargs={"retry": True})
     timer.daemon = True
     plexRetry["timer"] = timer
-    lastPlexSync["retryAt"] = time.time() + delay
+    syncRetry["at"] = time.time() + delay
     timer.start()
-    logger.info("Retrying the Plex sync in {} min".format(delay // 60))
+    logger.info("Retrying the media server sync in {} min".format(delay // 60))
+
+
+def jellyfinConfigured():
+    settings = getSettings()
+    return bool(settings["jellyfin url"] and settings["jellyfin api key"])
 
 
 def syncPlex(retry=False):
-    """Make the Plex DVR match the available channels. Returns (flashCategory, message).
+    """Bring the media servers (Plex's DVR, Jellyfin's Live TV) in step with the available
+    channels. Returns (flashCategory, message).
 
     One sync at a time: callers wait for a running one, then sync again with the latest
-    state. A failure is retried in the background (see PLEX_RETRY_DELAYS).
+    state. If any server fails, all are tried again later (see PLEX_RETRY_DELAYS).
     """
-    if not plexConfigured():
+    servers = [run for run, on in ((runPlexSync, plexConfigured()), (runJellyfinSync, jellyfinConfigured())) if on]
+    if not servers:
         cancelPlexRetry()
-        return "info", "Plex sync is off (add the Plex address and token in Settings)"
+        return "info", "Plex sync is off (add Plex or Jellyfin in Settings)"
     with plexSyncLock:
         if not retry:
             plexRetry["attempt"] = 0
         cancelPlexRetry()
-        category, message = runPlexSync()
-        if category != "success":
+        results = [run() for run in servers]
+        failed = any(category != "success" for category, _ in results)
+        if failed:
             schedulePlexRetry()
-        return category, message
+        return ("danger" if failed else "success"), " ".join(message for _, message in results)
+
+
+def runJellyfinSync():
+    settings = getSettings()
+    try:
+        message = jellyfin.refresh(settings["jellyfin url"], settings["jellyfin api key"])
+        ok = True
+    except jellyfin.JellyfinError as e:
+        message = "Jellyfin not refreshed: {}".format(e)
+        ok = False
+    lastJellyfinSync.update({"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "message": message, "ok": ok})
+    if ok:
+        logger.info(message)
+        return "success", message
+    logger.error(message)
+    return "danger", message
 
 
 def runPlexSync():
