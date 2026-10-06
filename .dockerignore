@@ -1,0 +1,14 @@
+# Only the app goes into the image; keep secrets and local clutter out of the build context.
+.git
+.github
+.venv
+__pycache__
+*.pyc
+config.json
+devices.json
+config/
+STB-Proxy.log
+tests
+docs
+.superpowers
+.playwright-mcp
