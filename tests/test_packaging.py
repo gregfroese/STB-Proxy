@@ -16,6 +16,12 @@ class PackagingTest(unittest.TestCase):
             copied = set(re.findall(r"^COPY /(\w+)\.py ", f.read(), re.M))
         self.assertEqual(localModules - copied, set())
 
+    def test_container_stops_promptly(self):
+        # Without an init process, python3 is PID 1, ignores SIGTERM, and every stop waits 10 s.
+        with open(os.path.join(ROOT, "Dockerfile")) as f:
+            entrypoint = re.search(r"^ENTRYPOINT (.*)$", f.read(), re.M).group(1)
+        self.assertTrue(entrypoint.startswith('["/sbin/tini","--"'), entrypoint)
+
     @unittest.skipUnless(shutil.which("git"), "git not installed")
     def test_config_json_is_git_ignored(self):
         result = subprocess.run(["git", "check-ignore", "-q", "config.json"], cwd=ROOT)
