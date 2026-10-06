@@ -69,6 +69,29 @@ class PreviewPromptTest(unittest.TestCase):
     def test_failed_preview_retries_once_before_offering_mark_dead(self):
         self.assertRegex(self.script, r'if \(!retried\) \{[^}]*startStream\(\d+\);\s*return;')
 
+    def test_player_has_channel_up_and_down(self):
+        self.assertIn('onclick="changeChannel(1)"', self.html)
+        self.assertIn('onclick="changeChannel(-1)"', self.html)
+        self.assertIn('"PageUp"', self.script)
+
+    def test_channel_that_left_the_list_continues_from_its_place(self):
+        self.assertRegex(self.script, r"index == -1 \? \(step > 0 \? lastListIndex : lastListIndex - 1\)")
+
+    def test_lists_can_mark_dead_without_playing(self):
+        self.assertIn("function deadToggle", self.script)
+        self.assertIn("function deadClicked", self.script)
+        for template in ("editor.html", "blocks.html", "guide.html"):
+            self.assertIn("deadToggle(", inlineScripts(template), template)
+
+    def test_every_list_is_navigable(self):
+        self.assertIn("function channelList", inlineScripts("editor.html"))
+        for template in ("blocks.html", "guide.html"):
+            with open(os.path.join(ROOT, "templates", template)) as f:
+                self.assertIn("channel-list", f.read(), template)
+
+    def test_editor_can_hide_channels_in_blocks(self):
+        self.assertIn("hideInBlocks || !rowData.blocks.length", inlineScripts("editor.html"))
+
     def test_preview_failure_tolerates_missing_row(self):
         self.assertRegex(self.script, r"var row = rowFor\(currentChannel\);\s*if \(!row \|\| row\.dead\)")
 
