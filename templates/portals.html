@@ -1,6 +1,59 @@
 {% extends "base.html" %}
 {% block content %}
 
+{% macro deviceSection(p) %}
+<h6>Device lock:</h6>
+<input type="hidden" name="device state" id="{{ p }}DeviceState" value="keep">
+<div class="form-check form-switch">
+    <input class="form-check-input" type="checkbox" id="{{ p }}DeviceLocked" onchange="deviceToggled('{{ p }}')">
+    <label class="form-check-label" for="{{ p }}DeviceLocked">The portal only accepts my MAC from one box</label>
+</div>
+<span class="text-muted">Leave this off unless the portal refuses a MAC that works on your box or in STB Emulator.</span>
+<div class="small text-danger d-none" id="{{ p }}DeviceMixed">These MACs have different device details. To change them, edit
+    devices.json next to config.json.</div>
+<div class="border rounded p-2 mt-2 d-none" id="{{ p }}DeviceFields" oninput="deviceEdited('{{ p }}')">
+    <p class="small text-muted mb-2">Copy these from the box the MAC belongs to. In STB Emulator they're under
+        Settings &rarr; Profiles &rarr; your profile &rarr; STB configuration. On a MAG box the serial number is in
+        Settings &rarr; System information. Leave out anything your box doesn't show.</p>
+    <div class="row g-2">
+        <div class="col-6">
+            <label class="form-label small mb-0">Model</label>
+            <input type="text" name="device model" data-device-field="model" class="form-control form-control-sm" placeholder="MAG250">
+        </div>
+        <div class="col-6">
+            <label class="form-label small mb-0">Serial number</label>
+            <input type="text" name="device serial" data-device-field="serial" class="form-control form-control-sm">
+        </div>
+        <div class="col-6">
+            <label class="form-label small mb-0">Device ID</label>
+            <input type="text" name="device device id" data-device-field="device id" class="form-control form-control-sm">
+        </div>
+        <div class="col-6">
+            <label class="form-label small mb-0">Device ID 2</label>
+            <input type="text" name="device device id2" data-device-field="device id2" class="form-control form-control-sm">
+        </div>
+        <div class="col-8">
+            <label class="form-label small mb-0">Signature</label>
+            <input type="text" name="device signature" data-device-field="signature" class="form-control form-control-sm">
+        </div>
+        <div class="col-4">
+            <label class="form-label small mb-0">Time zone</label>
+            <input type="text" name="device timezone" data-device-field="timezone" class="form-control form-control-sm" placeholder="America/Edmonton">
+        </div>
+    </div>
+    <details class="mt-2">
+        <summary class="small">Advanced</summary>
+        <textarea name="device extra" data-device-field="extra" class="form-control form-control-sm font-monospace mt-1" rows="5"
+            placeholder='{"headers": {"User-Agent": "..."}, "profile": {"hw_version": "..."}}'></textarea>
+        <span class="small text-muted">Anything else the portal checks, as JSON with any of cookies, headers, handshake and
+            profile. They're sent with the box's requests as they are. Some portals need values captured from the box's
+            own login (for example signatures that change per request).</span>
+    </details>
+    <p class="small text-muted mb-0 mt-2">Saved to devices.json next to config.json, for every MAC above.</p>
+</div>
+{% endmacro %}
+
+
 <div class="container-fluid p-lg-5">
 
     <div>
@@ -55,7 +108,7 @@
 
 <!-- Add Modal -->
 <div class="modal fade text-dark" id="modalAdd" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Add Portal</h5>
@@ -72,9 +125,9 @@
 
                     <h6>URL:</h6>
                     <input type="text" name="url" class="form-control flex-fill" title="URL" required>
-                    <span class="text-muted">Its best to enter the full address ending in .php if you know
-                        it.<br>If
-                        not STB-Proxy will attempt to figure it out for you.</span>
+                    <span class="text-muted">The portal address your box or STB Emulator uses, e.g.
+                        http://example.com:8080/c/. STB-Proxy finds the API address behind it and tells you which one
+                        it used.</span>
 
                     <br><br>
 
@@ -86,7 +139,7 @@
 
                     <h6>MACs:</h6>
                     <input type="text" name="macs" class="form-control flex-fill" title="MACs" required>
-                    <span class="text-muted">Enter a comma seperated list of MAC adresses.</span>
+                    <span class="text-muted">Enter a comma separated list of MAC addresses.</span>
 
                     <br><br>
 
@@ -94,6 +147,10 @@
                     <input type="number" name="streams per mac" class="form-control flex-fill" title="Streams Per Mac"
                         min="0" value="1" required>
                     <span class="text-muted">How many streams does each MAC allow. 0 = unlimited.</span>
+
+                    <br><br>
+
+                    {{ deviceSection("add") }}
 
                     <br><br>
 
@@ -111,7 +168,7 @@
 
 <!-- Edit Modal -->
 <div class="modal fade text-dark" id="modalEdit" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Edit Portal</h5>
@@ -135,9 +192,9 @@
 
                     <h6>URL:</h6>
                     <input type="text" name="url" id="editUrl" class="form-control flex-fill" title="URL" required>
-                    <span class="text-muted">Its best to enter the full address ending in .php if you know
-                        it.<br>If
-                        not STB-Proxy will attempt to figure it out for you.</span>
+                    <span class="text-muted">The portal address your box or STB Emulator uses, e.g.
+                        http://example.com:8080/c/. STB-Proxy finds the API address behind it and tells you which one
+                        it used.</span>
 
                     <br><br>
 
@@ -148,8 +205,9 @@
                     <br><br>
 
                     <h6>MACs:</h6>
-                    <input type="text" name="macs" id="editMacs" class="form-control flex-fill" title="MACs" required>
-                    <span class="text-muted">Enter a comma seperated list of MAC adresses.</span>
+                    <input type="text" name="macs" id="editMacs" class="form-control flex-fill" title="MACs" required
+                        oninput="macsEdited('edit')">
+                    <span class="text-muted">Enter a comma separated list of MAC addresses.</span>
 
                     <br><br>
 
@@ -157,6 +215,10 @@
                     <input type="number" name="streams per mac" id="editStreamsPerMac" class="form-control flex-fill"
                         title="Streams Per MAC" min="0" required>
                     <span class="text-muted">How many streams does each MAC allow. 0 = unlimited.</span>
+
+                    <br><br>
+
+                    {{ deviceSection("edit") }}
 
                     <br><br>
 
@@ -180,7 +242,81 @@
     </div>
 </div>
 
+<script id="devicesData" type="application/json">{{ devices|tojson }}</script>
+
 <script>
+
+    // Device details saved in devices.json, by MAC, split into the form's fields and the rest.
+    var devices = JSON.parse(document.getElementById('devicesData').textContent);
+
+    function deviceSection(prefix) {
+        return {
+            state: document.getElementById(prefix + 'DeviceState'),
+            locked: document.getElementById(prefix + 'DeviceLocked'),
+            fields: document.getElementById(prefix + 'DeviceFields'),
+            mixed: document.getElementById(prefix + 'DeviceMixed')
+        };
+    }
+
+    function fillDevice(prefix, details) {
+        var section = deviceSection(prefix);
+        section.fields.querySelectorAll('[data-device-field]').forEach(function (input) {
+            var field = input.getAttribute('data-device-field');
+            if (field == 'extra') {
+                input.value = details && Object.keys(details.extra).length ? JSON.stringify(details.extra, null, 2) : '';
+            } else {
+                input.value = details && details.fields[field] ? details.fields[field] : '';
+            }
+        });
+    }
+
+    // state: "keep" sends nothing to change; "on" saves the fields; "off" removes them.
+    function showDevice(prefix, locked, state, mixed) {
+        var section = deviceSection(prefix);
+        section.locked.checked = locked;
+        section.locked.disabled = mixed;
+        section.state.value = state;
+        section.fields.classList.toggle('d-none', !locked || mixed);
+        section.mixed.classList.toggle('d-none', !mixed);
+    }
+
+    function deviceToggled(prefix) {
+        var locked = deviceSection(prefix).locked.checked;
+        showDevice(prefix, locked, locked ? 'on' : 'off', false);
+    }
+
+    function deviceEdited(prefix) {
+        deviceSection(prefix).state.value = 'on';
+    }
+
+    // A MAC added to a device-locked portal needs the same device details.
+    function macsEdited(prefix) {
+        var section = deviceSection(prefix);
+        if (section.locked.checked && !section.locked.disabled) {
+            section.state.value = 'on';
+        }
+    }
+
+    function loadDevice(prefix, macs) {
+        var found = macs.map(function (mac) { return devices[mac.trim()]; });
+        var saved = found.filter(function (d) { return d; });
+        var same = saved.length == found.length && saved.every(function (d) {
+            return JSON.stringify(d) == JSON.stringify(saved[0]);
+        });
+        fillDevice(prefix, saved.length && same ? saved[0] : null);
+        if (!saved.length) {
+            showDevice(prefix, false, 'keep', false);
+        } else if (same) {
+            showDevice(prefix, true, 'keep', false);
+        } else {
+            showDevice(prefix, true, 'keep', true);
+        }
+    }
+
+    document.getElementById('modalAdd').addEventListener('show.bs.modal', function () {
+        fillDevice('add', null);
+        showDevice('add', false, 'keep', false);
+    });
 
     var now = Date.now();
     var expiries = document.getElementsByName("expiryString");
@@ -220,6 +356,7 @@
         document.getElementById('deleteId').value = id;
         document.getElementById('deleteName').value = name;
         document.getElementById('retest').checked = false;
+        loadDevice('edit', macs.split(','));
     })
 
     function retestSave() {

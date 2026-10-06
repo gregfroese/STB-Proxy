@@ -26,7 +26,7 @@
    - `HOST`: this machine's LAN address and port, e.g. `192.168.1.10:8001`. It goes into the playlist, XMLTV and tuner links, so players must be able to reach it.
    - `TZ`: your time zone, e.g. `America/Edmonton`.
 3. Start it: `docker compose up -d`
-4. Open `http://<HOST>/` in a browser and add your portal under **Portals**.
+4. Open `http://<HOST>/` in a browser and add your portal under **Portals**. Paste the portal address your box or STB Emulator uses; STB-Proxy finds the API address behind it.
 
 Settings and edits are kept in `./config/config.json`. If a portal locks its MACs to a device, put `devices.json` in the same folder. The container runs as root, so files it creates there belong to root.
 
@@ -100,15 +100,23 @@ When STB-Proxy is added to Plex as an HDHomeRun tuner, it can keep the Plex DVR'
 
 # Device-locked portals
 
-Some portals only accept a MAC from the device that registered it. To use one, capture what that device sends when it logs in (its serial, model and related values). Add them to `devices.json` next to `config.json`, keyed by MAC:
+Some portals only accept a MAC from the device that registered it. If adding a portal says it refused your MAC, but the MAC works on your box or in STB Emulator:
+
+1. Edit the portal (or add it again) and switch on **Device lock**.
+2. Copy the box's details into the fields. In STB Emulator they're under Settings → Profiles → your profile → STB configuration: model, serial number, device ID, device ID 2 and signature. On a MAG box, the serial number is in Settings → System information.
+3. Save. STB-Proxy logs in with those details from then on.
+
+Some portals check more than that: values only the box's own login reveals, captured from its traffic. Put those in **Advanced** as JSON.
+
+The details are saved in `devices.json` next to `config.json`, keyed by MAC. You can also edit that file directly:
 
 ```json
 {
   "00:1A:79:XX:XX:XX": {
-    "cookies": {"timezone": "America/Toronto"},
-    "headers": {"User-Agent": "...", "X-User-Agent": "Model: MAG270; Link: WiFi"},
+    "cookies": {"timezone": "Europe/London"},
+    "headers": {"User-Agent": "...", "X-User-Agent": "Model: MAG254; Link: Ethernet"},
     "handshake": {"token": "", "prehash": "..."},
-    "profile": {"sn": "...", "stb_type": "MAG270", "device_id": "", "device_id2": "", "signature": "", "hw_version_2": "..."}
+    "profile": {"sn": "...", "stb_type": "MAG254", "device_id": "", "device_id2": "", "signature": "", "hw_version_2": "..."}
   }
 }
 ```
