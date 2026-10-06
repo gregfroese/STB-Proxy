@@ -1,4 +1,5 @@
 <!-- Channel preview, docked in the corner so the page stays usable while it plays.
+     Also shows the playing channel's guide, and guideButton(row) opens any listed channel's guide.
      Shared by the editor, blocks and guide pages.
      A page that includes this defines rowFor(ch), returning the channel's data row
      ({portal, channelId, channelName, customChannelName, link, dead, favourite, blocks}) or null,
@@ -31,6 +32,30 @@
     }
     .play-button.playing {
         box-shadow: 0 0 0 0.2rem #ffc107;
+    }
+    .player-guide {
+        max-height: 220px;
+        overflow-y: auto;
+        border-bottom: 1px solid #495057;
+    }
+    .player-panel.minimised .player-guide {
+        display: none;
+    }
+    .programme {
+        padding: 0.35rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .programme:last-child {
+        border-bottom: 0;
+    }
+    .programme-desc {
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    .channel-guide-modal .text-muted {
+        color: #adb5bd !important;
     }
 
     /* Full screen: the whole panel fills the screen, its title bar and controls float over the video. */
@@ -77,15 +102,31 @@
         border-radius: 0.5rem;
         background-color: rgba(33, 37, 41, 0.85);
     }
+    .player-panel.fullscreen .player-guide {
+        position: absolute;
+        top: 5rem;
+        right: 1rem;
+        z-index: 2;
+        width: min(420px, calc(100vw - 2rem));
+        max-height: calc(100vh - 11rem);
+        border: 0;
+        border-radius: 0.5rem;
+        background-color: rgba(33, 37, 41, 0.85);
+    }
+    .player-panel.fullscreen.minimised .player-guide:not(.d-none) {
+        display: block;
+    }
     .player-panel.fullscreen #minimiseButton {
         display: none;
     }
     .player-panel.fullscreen .player-header,
-    .player-panel.fullscreen .player-controls {
+    .player-panel.fullscreen .player-controls,
+    .player-panel.fullscreen .player-guide {
         transition: opacity 0.3s;
     }
     .player-panel.fullscreen.idle .player-header,
-    .player-panel.fullscreen.idle .player-controls {
+    .player-panel.fullscreen.idle .player-controls,
+    .player-panel.fullscreen.idle .player-guide {
         opacity: 0;
         pointer-events: none;
     }
@@ -96,11 +137,16 @@
 
 <div class="player-panel text-light d-none" id="playerPanel" role="region" aria-labelledby="channelLabel">
     <div class="player-header d-flex align-items-center p-2">
-        <span class="fw-bold text-truncate me-2" id="channelLabel">Channel</span>
+        <div class="text-truncate me-2">
+            <div class="fw-bold text-truncate" id="channelLabel">Channel</div>
+            <div class="small text-muted text-truncate" id="nowShowing"></div>
+        </div>
         <button type="button" class="btn btn-sm btn-outline-light ms-auto" id="channelDown"
             onclick="changeChannel(-1)" title="Channel down: previous in the list (Page Down)"><i class="fa fa-chevron-down"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="channelUp"
             onclick="changeChannel(1)" title="Channel up: next in the list (Page Up)"><i class="fa fa-chevron-up"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-info ms-1" id="guideButton"
+            onclick="togglePlayerGuide()" title="This channel's guide (G)"><i class="fa fa-list-alt"></i></button>
         <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="favouriteButton"
             onclick="toggleFavourite()" title="Favourite"><i class="fa fa-star-o"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="fullscreenButton"
@@ -114,6 +160,7 @@
     <video width="100%" id="player" class="d-block bg-black" controls controlslist="nofullscreen" autoplay playsinline>
         Your browser does not support HTML video.
     </video>
+    <div class="player-guide p-2 d-none" id="playerGuide"></div>
     <div class="player-controls p-2">
         <div class="small text-muted mb-1">Blocks</div>
         <div id="blockChoices" data-blocks='{{ allBlocks|tojson }}'></div>
@@ -128,6 +175,22 @@
             </span>
             <span id="deadStatus" class="me-auto small"></span>
             <button type="button" class="btn btn-sm btn-danger ms-auto mt-1" id="deadButton" onclick="toggleDead()">Mark dead</button>
+        </div>
+    </div>
+</div>
+
+<!-- One channel's schedule, opened from a channel list without playing it. -->
+<div class="modal fade" id="channelGuideModal" tabindex="-1" aria-labelledby="channelGuideTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-light channel-guide-modal">
+            <div class="modal-header">
+                <h5 class="modal-title text-truncate" id="channelGuideTitle">Guide</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="channelGuideBody"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-success" onclick="playFromGuide()"><i class="fa fa-play"></i> Play</button>
+            </div>
         </div>
     </div>
 </div>
@@ -155,6 +218,12 @@
             'onclick="selectChannel(this)" data-key="' + escapeAttr(channelKey(row)) + '" ' +
             'data-portal="' + escapeAttr(row.portal) + '" data-channelId="' + escapeAttr(row.channelId) + '">' +
             '<i class="fa fa-play"></i></button>';
+    }
+
+    function guideButton(row) {
+        return '<button class="btn btn-link p-0 text-info guide-button" title="Guide" onclick="showChannelGuide(this)" ' +
+            'data-portal="' + escapeAttr(row.portal) + '" data-channelId="' + escapeAttr(row.channelId) + '">' +
+            '<i class="fa fa-list-alt"></i></button>';
     }
 
     function deadToggle(row) {
@@ -264,6 +333,8 @@
             changeChannel(event.key == "PageUp" ? 1 : -1);
         } else if (event.key == "f" || event.key == "F") {
             toggleFullscreen();
+        } else if (event.key == "g" || event.key == "G") {
+            togglePlayerGuide();
         }
         wakeOverlay();
     });
@@ -295,6 +366,8 @@
         startStream(0);
         showPlayer();
         title.textContent = row.customChannelName || row.channelName;
+        document.getElementById("nowShowing").textContent = "";
+        showPlayerGuide(true);
         showDeadState(row.dead);
         showFavouriteState(row.favourite);
         renderBlockChoices(row);
@@ -385,7 +458,7 @@
     }
 
     function goIdle() {
-        var overlays = panel.querySelectorAll(".player-header, .player-controls");
+        var overlays = panel.querySelectorAll(".player-header, .player-controls, .player-guide");
         var inUse = Array.prototype.some.call(overlays, function (e) { return e.matches(":hover"); }) ||
             document.activeElement == document.getElementById("newBlock");
         if (inUse) {
@@ -657,5 +730,146 @@
                 }
                 setBlockControlsDisabled(false);
             });
+    }
+
+    // ---- One channel's guide: in the player (now/next and a schedule) and from channel lists.
+    var guides = {};
+    var GUIDE_KEEP_MS = 600000;
+    var guideOpen = false;
+    var guideModal = null;
+    var guideModalSource = null;
+
+    function channelGuide(ch) {
+        var key = channelKey(ch);
+        var cached = guides[key];
+        if (cached && Date.now() - cached.time < GUIDE_KEEP_MS) {
+            return $.Deferred().resolve(cached.programmes).promise();
+        }
+        return $.getJSON("/channel/guide", { portal: ch.portal, channelId: ch.channelId }).then(function (res) {
+            guides[key] = { time: Date.now(), programmes: res.programmes };
+            return res.programmes;
+        });
+    }
+
+    function clock(seconds) {
+        return new Date(seconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    }
+
+    function dayLabel(seconds) {
+        var day = new Date(seconds * 1000);
+        var today = new Date();
+        var tomorrow = new Date();
+        tomorrow.setDate(today.getDate() + 1);
+        return day.toDateString() == today.toDateString() ? "Today"
+            : day.toDateString() == tomorrow.toDateString() ? "Tomorrow"
+                : day.toLocaleDateString([], { weekday: "short" });
+    }
+
+    function upcomingProgrammes(programmes) {
+        var now = Date.now() / 1000;
+        return programmes.filter(function (p) { return p.stop > now; });
+    }
+
+    function programmeList(programmes) {
+        var now = Date.now() / 1000;
+        var upcoming = upcomingProgrammes(programmes);
+        if (!upcoming.length) {
+            return '<p class="small text-muted mb-0">No guide information for this channel.</p>';
+        }
+        return upcoming.map(function (p) {
+            var when = p.start <= now
+                ? '<span class="badge bg-success me-1">Now</span>until ' + clock(p.stop)
+                : escapeAttr(dayLabel(p.start) + " " + clock(p.start) + " - " + clock(p.stop));
+            return '<div class="programme"><div class="small text-muted">' + when + '</div>' +
+                '<div class="fw-bold">' + escapeAttr(p.title) + '</div>' +
+                (p.desc ? '<div class="small text-muted programme-desc">' + escapeAttr(p.desc) + '</div>' : '') + '</div>';
+        }).join("");
+    }
+
+    function nowAndNext(programmes) {
+        var now = Date.now() / 1000;
+        var upcoming = upcomingProgrammes(programmes);
+        var current = upcoming.length && upcoming[0].start <= now ? upcoming[0] : null;
+        var next = current ? upcoming[1] : upcoming[0];
+        var parts = [];
+        if (current) {
+            parts.push("Now: " + current.title + " (until " + clock(current.stop) + ")");
+        }
+        if (next) {
+            parts.push("Next: " + clock(next.start) + " " + next.title);
+        }
+        return parts.join("  \u00b7  ");
+    }
+
+    // Fill in the player's now/next line, and its schedule if that's open.
+    function showPlayerGuide(loading) {
+        var ch = currentChannel;
+        if (!ch) {
+            return;
+        }
+        var line = document.getElementById("nowShowing");
+        var box = document.getElementById("playerGuide");
+        if (guideOpen && loading) {
+            box.innerHTML = '<p class="small text-muted mb-0"><i class="fa fa-spinner fa-spin"></i> Loading the guide...</p>';
+        }
+        var stillPlaying = function () { return currentChannel && channelKey(currentChannel) == channelKey(ch); };
+        channelGuide(ch)
+            .done(function (programmes) {
+                if (!stillPlaying()) {
+                    return;
+                }
+                line.textContent = nowAndNext(programmes);
+                line.title = line.textContent;
+                if (guideOpen) {
+                    box.innerHTML = programmeList(programmes);
+                }
+            })
+            .fail(function () {
+                if (stillPlaying() && guideOpen) {
+                    box.innerHTML = '<p class="small text-danger mb-0">Couldn\'t load the guide. Try again in a moment.</p>';
+                }
+            });
+    }
+
+    function togglePlayerGuide() {
+        guideOpen = !guideOpen;
+        document.getElementById("playerGuide").classList.toggle("d-none", !guideOpen);
+        var button = document.getElementById("guideButton");
+        button.classList.toggle("btn-info", guideOpen);
+        button.classList.toggle("btn-outline-info", !guideOpen);
+        showPlayerGuide(true);
+        wakeOverlay();
+    }
+
+    // Keep "Now" and "Next" current as programmes end (from the kept copy, no request).
+    setInterval(function () { showPlayerGuide(false); }, 60000);
+
+    function showChannelGuide(ele) {
+        var ch = { portal: ele.getAttribute("data-portal"), channelId: ele.getAttribute("data-channelId") };
+        var row = rowFor(ch);
+        guideModalSource = ele;
+        document.getElementById("channelGuideTitle").textContent = row ? (row.customChannelName || row.channelName) : "Guide";
+        var body = document.getElementById("channelGuideBody");
+        body.innerHTML = '<p class="small text-muted mb-0"><i class="fa fa-spinner fa-spin"></i> Loading the guide...</p>';
+        if (!guideModal) {
+            guideModal = new bootstrap.Modal(document.getElementById("channelGuideModal"));
+        }
+        guideModal.show();
+        channelGuide(ch)
+            .done(function (programmes) {
+                if (guideModalSource == ele) {
+                    body.innerHTML = programmeList(programmes);
+                }
+            })
+            .fail(function () {
+                if (guideModalSource == ele) {
+                    body.innerHTML = '<p class="small text-danger mb-0">Couldn\'t load the guide. Try again in a moment.</p>';
+                }
+            });
+    }
+
+    function playFromGuide() {
+        guideModal.hide();
+        selectChannel(guideModalSource);
     }
 </script>

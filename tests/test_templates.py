@@ -58,8 +58,9 @@ class PreviewPromptTest(unittest.TestCase):
 
     def test_player_does_not_block_the_page(self):
         # A docked panel, not a modal, so the guide and editor stay usable while it plays.
-        self.assertNotIn("modal", self.html)
-        self.assertIn('id="playerPanel"', self.html)
+        panel = self.html.split('id="playerPanel"')[1].split('<!-- One channel')[0]
+        self.assertNotIn("modal", panel)
+        self.assertNotIn("modal", self.script.split("function playChannel")[1].split("\n    }\n")[0])
 
     def test_closing_the_player_drops_the_stream(self):
         self.assertRegex(self.script, r'function stopStream\(\) \{[^}]*player\.removeAttribute\("src"\);\s*player\.load\(\);')
@@ -101,6 +102,13 @@ class PreviewPromptTest(unittest.TestCase):
         self.assertIn('controlslist="nofullscreen"', self.html)
         self.assertIn(".player-panel.fullscreen .player-controls", self.html)
         self.assertIn('id="fullscreenButton"', self.html)
+
+    def test_channel_guide_in_player_and_lists(self):
+        self.assertIn('id="nowShowing"', self.html)
+        self.assertIn('onclick="togglePlayerGuide()"', self.html)
+        self.assertIn(".player-panel.fullscreen .player-guide", self.html)
+        for template in ("editor.html", "blocks.html", "guide.html"):
+            self.assertIn("guideButton(", inlineScripts(template), template)
 
     def test_preview_failure_tolerates_missing_row(self):
         self.assertRegex(self.script, r"var row = rowFor\(currentChannel\);\s*if \(!row \|\| row\.dead\)")

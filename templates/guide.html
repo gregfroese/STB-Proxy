@@ -186,6 +186,7 @@
         res.results.forEach(function (r) {
             var channel = channelsByKey[channelKey(r)];
             html += '<tr><td class="text-nowrap">' + playButton(channel) + ' <span class="ms-1">' + favouriteStar(channel) + '</span>' +
+                ' <span class="ms-1">' + guideButton(channel) + '</span>' +
                 ' <span class="ms-1">' + deadToggle(channel) + '</span></td>' +
                 '<td class="text-nowrap">' + formatWhen(r, now) + '</td>' +
                 '<td><div class="fw-bold">' + escapeAttr(r.title) + '</div>' +

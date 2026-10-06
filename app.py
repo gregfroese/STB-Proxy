@@ -893,6 +893,63 @@ def loadGuide(force=False):
         return guideCache
 
 
+# One channel's schedule, for the player and the channel lists. The portal's per-channel
+# EPG is one quick request and often covers several days, unlike the 24 h bulk guide.
+CHANNEL_GUIDE_TTL = 900
+channelGuides = {}
+channelGuidesLock = threading.Lock()
+
+
+def channelProgrammes(portalId, channelId):
+    key = (portalId, channelId)
+    with channelGuidesLock:
+        cached = channelGuides.get(key)
+        if cached and time.time() - cached["time"] < CHANNEL_GUIDE_TTL:
+            return cached["programmes"]
+
+    portal = getPortals()[portalId]
+    url = portal["url"]
+    proxy = portal["proxy"]
+    now = int(time.time())
+    programmes = []
+    for mac in portal["macs"].keys():
+        try:
+            token = stb.getToken(url, mac, proxy)
+            if not token:
+                continue
+            stb.getProfile(url, mac, token, proxy)
+            epg = stb.getShortEpg(url, mac, token, [channelId], proxy)
+            if epg:
+                programmes = guide.programmes(portalId, epg, now)
+            break
+        except Exception:
+            continue
+    if not programmes:
+        # The portal had nothing for this channel: use the full guide if it's already loaded.
+        programmes = [p for p in guideCache["programmes"] if p[4] == portalId and p[5] == channelId]
+    programmes.sort()
+
+    with channelGuidesLock:
+        for k in [k for k, v in channelGuides.items() if time.time() - v["time"] >= CHANNEL_GUIDE_TTL]:
+            del channelGuides[k]
+        channelGuides[key] = {"time": time.time(), "programmes": programmes}
+    return programmes
+
+
+@app.route("/channel/guide", methods=["GET"])
+@authorise
+def channelGuide():
+    portalId = request.args["portal"]
+    channelId = request.args["channelId"]
+    if portalId not in getPortals():
+        return flask.jsonify({"error": "Unknown portal"}), 404
+    now = int(time.time())
+    upcoming = [p for p in channelProgrammes(portalId, channelId) if p[1] > now][:60]
+    return flask.jsonify(
+        {"programmes": [{"start": p[0], "stop": p[1], "title": p[2], "desc": p[3]} for p in upcoming]}
+    )
+
+
 @app.route("/guide", methods=["GET"])
 @authorise
 def guidePage():
