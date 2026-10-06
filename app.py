@@ -52,6 +52,9 @@ else:
     configFile = os.path.join(basePath, "config.json")
 
 occupied = {}
+# The browser preview each viewer is watching, by (portal, viewer IP), so picking
+# another channel can stop it at once instead of waiting for its connection to close.
+previews = {}
 config = {}
 
 d_ffmpegcmd = "ffmpeg -re -http_proxy <proxy> -timeout <timeout> -i <url> -map 0 -codec copy -f mpegts pipe:"
@@ -97,11 +100,33 @@ defaultPortal = {
 }
 
 
+configLock = threading.Lock()
+
+
+def writeConfig(data):
+    """Write to a temporary file and swap it in, so a crash mid-write leaves the old config intact."""
+    with configLock:
+        tmp = configFile + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=4)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, configFile)
+
+
 def loadConfig():
-    try:
-        with open(configFile) as f:
-            data = json.load(f)
-    except:
+    if os.path.exists(configFile):
+        try:
+            with open(configFile) as f:
+                data = json.load(f)
+        except (OSError, ValueError) as e:
+            # Never replace a config we can't read: it holds every portal and edit.
+            logger.critical(
+                "Can't read config {} ({}). Not starting, so it isn't overwritten. "
+                "Fix or restore it, then restart.".format(configFile, e)
+            )
+            raise SystemExit(1)
+    else:
         logger.warning("No existing config found. Creating a new one")
         data = {}
 
@@ -136,8 +161,7 @@ def loadConfig():
 
     data["portals"] = portalsOut
 
-    with open(configFile, "w") as f:
-        json.dump(data, f, indent=4)
+    writeConfig(data)
 
     return data
 
@@ -147,9 +171,8 @@ def getPortals():
 
 
 def savePortals(portals):
-    with open(configFile, "w") as f:
-        config["portals"] = portals
-        json.dump(config, f, indent=4)
+    config["portals"] = portals
+    writeConfig(config)
 
 
 def getSettings():
@@ -157,9 +180,8 @@ def getSettings():
 
 
 def saveSettings(settings):
-    with open(configFile, "w") as f:
-        config["settings"] = settings
-        json.dump(config, f, indent=4)
+    config["settings"] = settings
+    writeConfig(config)
 
 
 def getBlocks():
@@ -167,9 +189,8 @@ def getBlocks():
 
 
 def saveBlocks(blocks):
-    with open(configFile, "w") as f:
-        config["blocks"] = blocks
-        json.dump(config, f, indent=4)
+    config["blocks"] = blocks
+    writeConfig(config)
 
 
 def authorise(f):
@@ -751,7 +772,7 @@ def loadGuide(force=False):
                 try:
                     token = stb.getToken(url, mac, proxy)
                     stb.getProfile(url, mac, token, proxy)
-                    allChannels = stb.getAllChannels(url, mac, token, proxy)
+                    allChannels = stb.getAllChannels(url, mac, token, proxy, refresh=force)
                     epg = stb.getEpg(url, mac, token, 24, proxy)
                     if not epg:
                         # No bulk guide: fetching every channel one by one would take too long,
@@ -984,6 +1005,12 @@ def playlist():
 @app.route("/xmltv", methods=["GET"])
 @authorise
 def xmltv():
+    # The bulk EPG takes a few hundred MB to parse: never build this and the guide at once.
+    with guideLock:
+        return buildXmltv()
+
+
+def buildXmltv():
     channels = ET.Element("tv")
     programmes = ET.Element("tv")
     portals = getPortals()
@@ -1073,6 +1100,18 @@ def xmltv():
     )
 
 
+def stopPreview(portalId, ip):
+    """Stop this viewer's last preview so its portal connection is free for the next one."""
+    preview = previews.get((portalId, ip))
+    if not preview:
+        return
+    preview["stop"].set()
+    process = preview["process"]
+    if process:
+        process.kill()
+    preview["done"].wait(3)
+
+
 @app.route("/play/<portalId>/<channelId>", methods=["GET"])
 def channel(portalId, channelId):
     def streamData():
@@ -1103,6 +1142,14 @@ def channel(portalId, channelId):
             )
             logger.info("Unoccupied Portal({}):MAC({})".format(portalId, mac))
 
+        preview = None
+        if web:
+            preview = {"stop": threading.Event(), "done": threading.Event(), "process": None}
+            previews[(portalId, ip)] = preview
+
+        def stopped():
+            return preview is not None and preview["stop"].is_set()
+
         try:
             startTime = datetime.now(timezone.utc).timestamp()
             occupy()
@@ -1112,10 +1159,13 @@ def channel(portalId, channelId):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             ) as ffmpeg_sp:
-                while True:
+                if preview:
+                    preview["process"] = ffmpeg_sp
+                while not stopped():
                     chunk = ffmpeg_sp.stdout.read(1024)
                     if len(chunk) == 0:
-                        if ffmpeg_sp.poll() != 0:
+                        # A preview stopped for the next channel isn't a fault of the MAC.
+                        if ffmpeg_sp.poll() != 0 and not stopped():
                             logger.info("Ffmpeg closed with error({}). Moving MAC({}) for Portal({})".format(str(ffmpeg_sp.poll()), mac, portalName))
                             moveMac(portalId, mac)
                         break
@@ -1125,6 +1175,10 @@ def channel(portalId, channelId):
         finally:
             unoccupy()
             ffmpeg_sp.kill()
+            if preview:
+                if previews.get((portalId, ip)) is preview:
+                    previews.pop((portalId, ip), None)
+                preview["done"].set()
 
     def testStream():
         timeout = int(getSettings()["ffmpeg timeout"]) * int(1000000)
@@ -1169,6 +1223,9 @@ def channel(portalId, channelId):
         "IP({}) requested Portal({}):Channel({})".format(ip, portalId, channelId)
     )
 
+    if web:
+        stopPreview(portalId, ip)
+
     freeMac = False
 
     for mac in macs:
@@ -1184,6 +1241,9 @@ def channel(portalId, channelId):
             if token:
                 stb.getProfile(url, mac, token, proxy)
                 channels = stb.getAllChannels(url, mac, token, proxy)
+                if channels and not any(str(c["id"]) == channelId for c in channels):
+                    # The cached list may be older than the channel.
+                    channels = stb.getAllChannels(url, mac, token, proxy, refresh=True)
 
         if channels:
             for c in channels:
@@ -1201,7 +1261,8 @@ def channel(portalId, channelId):
                 link = cmd.split(" ")[1]
 
         if link:
-            if getSettings().get("test streams", "true") == "false" or testStream():
+            # Previews skip the test: the browser retries, then offers Mark dead, by itself.
+            if web or getSettings().get("test streams", "true") == "false" or testStream():
                 if web:
                     ffmpegcmd = [
                         "ffmpeg",

@@ -2,6 +2,8 @@ FROM alpine:latest
 
 ENV HOST=localhost
 ENV CONFIG=/config/config.json
+# Stops a threaded Python server holding on to memory it has freed.
+ENV MALLOC_ARENA_MAX=2
 
 RUN apk add \
 	ffmpeg \
