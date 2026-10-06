@@ -78,6 +78,12 @@ class PreviewTest(unittest.TestCase):
         self.startStreaming("/play/{}/2?web=true".format(PORTAL))
         self.assertEqual(self.programs(), ["ffmpeg"])
 
+    def test_previews_use_short_fragments_for_a_quick_start(self):
+        self.startStreaming("/play/{}/2?web=true".format(PORTAL))
+        cmd = self.processes[-1].cmd
+        self.assertEqual(cmd[cmd.index("-frag_duration") + 1], "500000")
+        self.assertIn("frag_keyframe", cmd[cmd.index("-movflags") + 1])
+
     def test_other_players_still_test_the_stream(self):
         self.startStreaming("/play/{}/2".format(PORTAL))
         self.assertEqual(self.programs(), ["ffprobe", "ffmpeg"])

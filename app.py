@@ -1275,8 +1275,13 @@ def channel(portalId, channelId):
                         "copy",
                         "-f",
                         "mp4",
+                        # Half-second fragments as well as one per keyframe: the browser
+                        # can start once it has a whole fragment, and keyframes can be
+                        # seconds apart.
                         "-movflags",
-                        "frag_keyframe+empty_moov",
+                        "frag_keyframe+empty_moov+default_base_moof",
+                        "-frag_duration",
+                        "500000",
                         "pipe:",
                     ]
                     if proxy:
