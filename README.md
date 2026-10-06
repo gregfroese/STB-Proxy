@@ -30,7 +30,7 @@
 
 Settings and edits are kept in `./config/config.json`. If a portal locks its MACs to a device, put `devices.json` in the same folder. The container runs as root, so files it creates there belong to root.
 
-To update: `git pull && docker compose up -d --build`
+To update: `git pull && docker compose up -d` (the compose file rebuilds the image from the new code each time).
 
 ## Docker without Compose
 
@@ -103,8 +103,9 @@ When STB-Proxy is added to Plex as an HDHomeRun tuner, it can keep the Plex DVR'
 Some portals only accept a MAC from the device that registered it. If adding a portal says it refused your MAC, but the MAC works on your box or in STB Emulator:
 
 1. Edit the portal (or add it again) and switch on **Device lock**.
-2. Copy the box's details into the fields. In STB Emulator they're under Settings → Profiles → your profile → STB configuration: model, serial number, device ID, device ID 2 and signature. On a MAG box, the serial number is in Settings → System information.
-3. Save. STB-Proxy logs in with those details from then on.
+2. Fill in the box's **model and serial number**; many portals check only those. In STB Emulator they're under Settings → Profiles → your profile → STB configuration. On a MAG box, the serial number is in Settings → System information.
+3. Save. If the portal still refuses the MAC, add the device ID, device ID 2 and signature from the same screen. Make one change at a time: some portals briefly refuse logins after several in quick succession.
+4. Once it's accepted, STB-Proxy logs in with those details from then on.
 
 Some portals check more than that: values only the box's own login reveals, captured from its traffic. Put those in **Advanced** as JSON.
 
