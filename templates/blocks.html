@@ -80,7 +80,7 @@
                         </td>
                     </tr>
                     <tr class="d-none">
-                        <td colspan="4" class="block-channels" data-block="{{ block.name }}"></td>
+                        <td colspan="4" class="block-channels channel-list" data-block="{{ block.name }}"></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -94,7 +94,7 @@
         </div>
 
         <div class="tab-pane fade" id="favouritesTab" role="tabpanel">
-            <div id="favouriteChannels"></div>
+            <div id="favouriteChannels" class="channel-list"></div>
         </div>
     </div>
 
@@ -152,7 +152,7 @@
             '<th>Genre</th>' + (showBlock ? '<th>Block</th>' : '') + '<th>Portal</th></tr></thead><tbody>';
         rows.forEach(function (row) {
             html += '<tr><td>' + playButton(row) + '</td>' +
-                '<td>' + favouriteStar(row) + '</td>' +
+                '<td class="text-nowrap">' + favouriteStar(row) + ' <span class="ms-1">' + deadToggle(row) + '</span></td>' +
                 '<td>' + escapeAttr(channelNumber(row)) + '</td>' +
                 '<td>' + escapeAttr(row.customChannelName || row.channelName) + deadBadge(row) + '</td>' +
                 '<td>' + escapeAttr(row.customGenre || row.genre) + '</td>' +

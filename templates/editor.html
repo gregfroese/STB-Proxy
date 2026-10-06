@@ -150,10 +150,30 @@
         table.draw(false);
     }
 
+    // Channel up/down follows the table as filtered and sorted.
+    function channelList() {
+        return table.rows({ search: 'applied', order: 'applied' }).data().toArray();
+    }
+
+    function channelNodes() {
+        return table.rows().nodes().toArray();
+    }
+
+    // Turn to the table page the playing channel is on.
+    function channelShown(ch) {
+        var length = table.page.len();
+        var index = indexIn(channelList(), ch);
+        if (length > 0 && index != -1 && Math.floor(index / length) != table.page()) {
+            table.page(Math.floor(index / length)).draw('page');
+        }
+    }
+
     var hideDead = true;
     var favouritesOnly = false;
+    var hideInBlocks = false;
     $.fn.dataTable.ext.search.push(function (settings, data, dataIndex, rowData) {
-        return (!hideDead || !rowData.dead) && (!favouritesOnly || rowData.favourite);
+        return (!hideDead || !rowData.dead) && (!favouritesOnly || rowData.favourite) &&
+            (!hideInBlocks || !rowData.blocks.length);
     });
 
     /* Create an array with the values of all the checkboxes in a column */
@@ -196,7 +216,11 @@
                     '<div class="form-check form-switch text-light mb-0 ms-3">' +
                     '<input type="checkbox" class="form-check-input" id="favouritesOnly" ' +
                     'onchange="favouritesOnly = this.checked; table.draw(false);">' +
-                    '<label class="form-check-label" for="favouritesOnly"><i class="fa fa-star text-warning"></i> Favourites only</label></div>'
+                    '<label class="form-check-label" for="favouritesOnly"><i class="fa fa-star text-warning"></i> Favourites only</label></div>' +
+                    '<div class="form-check form-switch text-light mb-0 ms-3">' +
+                    '<input type="checkbox" class="form-check-input" id="hideInBlocks" ' +
+                    'onchange="hideInBlocks = this.checked; table.draw(false);">' +
+                    '<label class="form-check-label" for="hideInBlocks">Hide channels in blocks</label></div>'
                 );
             },
             lengthMenu: [[25, 50, 100, 250, 500, 1000, -1], [25, 50, 100, 250, 500, 1000, "All"]],
@@ -268,7 +292,8 @@
                     data: "link",
                     render: function (data, type, row, meta) {
                         return '<div class="d-flex align-items-center">' + playButton(row) +
-                            '<span class="ms-2">' + favouriteStar(row) + '</span></div>'
+                            '<span class="ms-2">' + favouriteStar(row) + '</span>' +
+                            '<span class="ms-2">' + deadToggle(row) + '</span></div>'
                     }
                 },
                 {
