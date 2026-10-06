@@ -46,12 +46,53 @@ devicesFile = os.getenv(
 )
 
 
-def device(mac):
+def loadDevices():
     try:
         with open(devicesFile) as f:
-            return json.load(f).get(mac, {})
+            return json.load(f)
     except (OSError, ValueError):
         return {}
+
+
+def device(mac):
+    return loadDevices().get(mac, {})
+
+
+devicesLock = threading.Lock()
+
+
+def writeDevices(devices):
+    # Swap in a complete file, as with config.json: a crash mid-write leaves the old one.
+    tmp = devicesFile + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(devices, f, indent=4)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, devicesFile)
+
+
+def saveDevice(mac, details):
+    with devicesLock:
+        devices = loadDevices()
+        devices[mac] = details
+        writeDevices(devices)
+    dropSession(mac)
+
+
+def removeDevice(mac):
+    with devicesLock:
+        devices = loadDevices()
+        if mac in devices:
+            del devices[mac]
+            writeDevices(devices)
+    dropSession(mac)
+
+
+def dropSession(mac):
+    # A session opened with the old device details may not suit the new ones.
+    with sessionsLock:
+        for key in [k for k in sessions if k[1] == mac]:
+            sessions.pop(key, None)
 
 
 def deviceCookies(mac):
@@ -121,6 +162,61 @@ def getUrl(url, proxy=None):
                 return parseResponse(url + i, response)
     except:
         pass
+
+
+def portalUrlCandidates(url):
+    """Where a portal's API might be, given whatever address was typed for it.
+
+    People copy the address their box or STB Emulator uses (often ending in /c/),
+    the bare server, or the API address itself (ending in .php).
+    """
+    if "://" not in url:
+        url = "http://" + url
+    parsed = urlparse(url.strip())
+    base = parsed.scheme + "://" + parsed.netloc
+    path = parsed.path.rstrip("/")
+    candidates = []
+    if path.endswith(".php"):
+        candidates.append(base + path)
+    # The folder typed, without a file name, the /c folder the box's web app lives in,
+    # or the /server folder the API lives in.
+    folder = re.sub(r"/[^/]*\.(php|html?)$", "", path)
+    folder = re.sub(r"/(c|c_|client|server)$", "", folder)
+    for prefix in (folder, "/stalker_portal", ""):
+        for api in ("/server/load.php", "/portal.php"):
+            candidates.append(base + prefix + api)
+    unique = []
+    for c in candidates:
+        if c not in unique:
+            unique.append(c)
+    return unique
+
+
+def findPortal(url, macs, proxy=None):
+    """The first likely API address where one of the MACs can log in.
+
+    Returns (address or None, every address tried, in order).
+    """
+    full = url.strip() if "://" in url else "http://" + url.strip()
+    candidates = portalUrlCandidates(full)
+    tried = []
+
+    def works(candidate):
+        if not candidate or candidate in tried:
+            return False
+        tried.append(candidate)
+        return any(getToken(candidate, mac, proxy) for mac in macs)
+
+    if urlparse(full).path.rstrip("/").endswith(".php") and works(candidates[0]):
+        return candidates[0], tried
+    # The portal's own web app says where its API is.
+    advertised = getUrl(full, proxy)
+    if works(advertised):
+        return advertised, tried
+    for candidate in candidates:
+        if works(candidate):
+            return candidate, tried
+    return None, tried
 
 
 def getToken(url, mac, proxy=None):
