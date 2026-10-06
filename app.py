@@ -84,6 +84,7 @@ defaultSettings = {
     "plex url": "",
     "plex token": "",
     "match logos": "true",
+    "api token": "",
 }
 
 defaultPortal = {
@@ -156,6 +157,8 @@ def loadConfig():
             value = default
         settingsOut[setting] = value
 
+    if not settingsOut["api token"]:
+        settingsOut["api token"] = secrets.token_urlsafe(24)
     data["settings"] = settingsOut
 
     portals = data["portals"]
@@ -1233,6 +1236,7 @@ def save():
         value = request.form.get(setting, "false")
         settings[setting] = value
 
+    settings["api token"] = getSettings()["api token"]  # changed only by "New token"
     settings["plex url"] = request.form.get("plex url", "").strip().rstrip("/")
     # The token field is never pre-filled, so blank means "keep the saved token".
     if request.form.get("clear plex token") == "true":
@@ -1243,6 +1247,17 @@ def save():
     saveSettings(settings)
     logger.info("Settings saved!")
     flash("Settings saved!", "success")
+    return redirect("/settings", code=302)
+
+
+@app.route("/settings/api-token", methods=["POST"])
+@authorise
+def newApiToken():
+    settings = dict(getSettings())
+    settings["api token"] = secrets.token_urlsafe(24)
+    saveSettings(settings)
+    logger.info("New API token made; the old one no longer works")
+    flash("New API token made. Update it wherever you use the API (e.g. Home Assistant).", "success")
     return redirect("/settings", code=302)
 
 
@@ -1868,6 +1883,122 @@ def saveFilter(page):
     return flask.jsonify(pageFilters)
 
 
+# ---- API for integrations such as Home Assistant. JSON in and out, and every call needs
+# the API token from Settings: "Authorization: Bearer <token>" (or an "X-API-Key" header).
+def apiAuth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = getSettings()["api token"]
+        given = request.headers.get("X-API-Key") or ""
+        auth = request.headers.get("Authorization", "")
+        if auth.lower().startswith("bearer "):
+            given = auth[7:].strip()
+        if not token or not secrets.compare_digest(given, token):
+            return flask.jsonify({"error": "Missing or wrong API token (see Settings)"}), 401
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def plexStatus():
+    return {
+        "configured": plexConfigured(),
+        "ok": lastPlexSync["ok"],
+        "message": lastPlexSync["message"],
+        "time": lastPlexSync["time"],
+        "retryAt": lastPlexSync["retryAt"],
+    }
+
+
+def blockStates():
+    return [
+        {"name": b["name"], "enabled": b["enabled"], "channels": b["channels"], "dead": b["dead"]}
+        for b in availability.blockSummaries(getPortals(), getBlocks())
+    ]
+
+
+def findBlock(name):
+    """The block called name, ignoring case if there's exactly one such; else None."""
+    names = availability.blockNames(getPortals())
+    if name in names:
+        return name
+    matches = [n for n in names if n.lower() == name.lower()]
+    return matches[0] if len(matches) == 1 else None
+
+
+def setBlock(name, enabled):
+    blocks = getBlocks()
+    changed = (blocks.get(name) == "true") != enabled
+    if changed:
+        blocks = dict(blocks)
+        blocks[name] = "true" if enabled else "false"
+        saveBlocks(blocks)
+        logger.info("Block({}) switched {} (API)".format(name, "on" if enabled else "off"))
+        syncPlex()
+    block = next(b for b in blockStates() if b["name"] == name)
+    return dict(block, changed=changed, plex=plexStatus())
+
+
+@app.route("/api/status", methods=["GET"])
+@apiAuth
+def apiStatus():
+    portals = getPortals()
+    blocks = getBlocks()
+    lineup = sum(len(availability.availableChannels(portals[p], blocks)) for p in portals if portals[p]["enabled"] == "true")
+    activity = [macActivity(portals[p], mac) for p in portals if portals[p]["enabled"] == "true" for mac in portals[p]["macs"]]
+    return flask.jsonify({
+        "lineup": lineup,
+        "streams": sum(len(v) for v in occupied.values()),
+        "blocks": blockStates(),
+        "plex": plexStatus(),
+        "otherLogins": sum(len(a.get("otherLogins", [])) for a in activity),
+        "boxOn": any(a.get("boxOn") for a in activity),
+    })
+
+
+@app.route("/api/blocks", methods=["GET"])
+@apiAuth
+def apiBlocks():
+    return flask.jsonify(blockStates())
+
+
+@app.route("/api/blocks/<path:name>", methods=["GET", "POST"])
+@apiAuth
+def apiBlock(name):
+    found = findBlock(name)
+    if not found:
+        return flask.jsonify({"error": "No block called {}".format(name)}), 404
+    if request.method == "GET":
+        return flask.jsonify(next(b for b in blockStates() if b["name"] == found))
+    data = request.get_json(force=True, silent=True) or {}
+    if not isinstance(data.get("enabled"), bool):
+        return flask.jsonify({"error": 'Send {"enabled": true} or {"enabled": false}'}), 400
+    return flask.jsonify(setBlock(found, data["enabled"]))
+
+
+@app.route("/api/blocks/<path:name>/<any(on, off, toggle):action>", methods=["POST"])
+@apiAuth
+def apiBlockAction(name, action):
+    found = findBlock(name)
+    if not found:
+        return flask.jsonify({"error": "No block called {}".format(name)}), 404
+    enabled = {"on": True, "off": False}.get(action, getBlocks().get(found) != "true")
+    return flask.jsonify(setBlock(found, enabled))
+
+
+@app.route("/api/plex", methods=["GET"])
+@apiAuth
+def apiPlex():
+    return flask.jsonify(plexStatus())
+
+
+@app.route("/api/plex/sync", methods=["POST"])
+@apiAuth
+def apiPlexSync():
+    syncPlex()
+    return flask.jsonify(plexStatus())
+
+
 @app.route("/dashboard")
 @authorise
 def dashboard():
@@ -2011,7 +2142,12 @@ def buildLineup():
     return entries, failedPortals
 
 
-lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}
+lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None, "retryAt": None}
+# Syncs run one at a time. A failed one is retried in the background (Plex may be restarting)
+# after each of these delays in turn, about an hour in all; any new sync starts the count again.
+PLEX_RETRY_DELAYS = [60, 120, 300, 600, 900, 1200]
+plexSyncLock = threading.Lock()
+plexRetry = {"timer": None, "attempt": 0}
 
 
 def plexConfigured():
@@ -2019,11 +2155,48 @@ def plexConfigured():
     return bool(settings["plex url"] and settings["plex token"])
 
 
-def syncPlex():
-    """Make the Plex DVR match the available channels. Returns (flashCategory, message)."""
-    if not plexConfigured():
-        return "info", "Plex sync is off (add the Plex address and token in Settings)"
+def cancelPlexRetry():
+    if plexRetry["timer"]:
+        plexRetry["timer"].cancel()
+    plexRetry["timer"] = None
+    lastPlexSync["retryAt"] = None
 
+
+def schedulePlexRetry():
+    if plexRetry["attempt"] >= len(PLEX_RETRY_DELAYS):
+        logger.error("Plex still not updated after retrying for an hour; giving up until the next change")
+        lastPlexSync["retryAt"] = None
+        return
+    delay = PLEX_RETRY_DELAYS[plexRetry["attempt"]]
+    plexRetry["attempt"] += 1
+    timer = threading.Timer(delay, syncPlex, kwargs={"retry": True})
+    timer.daemon = True
+    plexRetry["timer"] = timer
+    lastPlexSync["retryAt"] = time.time() + delay
+    timer.start()
+    logger.info("Retrying the Plex sync in {} min".format(delay // 60))
+
+
+def syncPlex(retry=False):
+    """Make the Plex DVR match the available channels. Returns (flashCategory, message).
+
+    One sync at a time: callers wait for a running one, then sync again with the latest
+    state. A failure is retried in the background (see PLEX_RETRY_DELAYS).
+    """
+    if not plexConfigured():
+        cancelPlexRetry()
+        return "info", "Plex sync is off (add the Plex address and token in Settings)"
+    with plexSyncLock:
+        if not retry:
+            plexRetry["attempt"] = 0
+        cancelPlexRetry()
+        category, message = runPlexSync()
+        if category != "success":
+            schedulePlexRetry()
+        return category, message
+
+
+def runPlexSync():
     settings = getSettings()
     entries, failedPortals = buildLineup()
     try:

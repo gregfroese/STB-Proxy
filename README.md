@@ -150,6 +150,60 @@ MACs that aren't listed log in as before.
 
 The **Dashboard** shows, for each MAC, whether anything else is using it: another STB-Proxy, an app, or a box or emulator. Portals don't say who else is connected, but each profile request reports when the account's previous one was, and real boxes check in and report what they're playing. STB-Proxy compares that with its own requests whenever it logs in. **Check now** asks the portal straight away.
 
+# Home Assistant and other integrations
+
+STB-Proxy has a small JSON API under `/api/`. Every call needs the API token from **Settings → Integrations**, sent as `Authorization: Bearer <token>` (or an `X-API-Key` header). **New token** there replaces it.
+
+| Call | What it does |
+| --- | --- |
+| `GET /api/status` | Lineup size, active streams, blocks, last Plex sync, and whether anything else is using your MACs |
+| `GET /api/blocks` | Every block: name, on or off, channel and dead counts |
+| `GET /api/blocks/<name>` | One block (the name ignores case) |
+| `POST /api/blocks/<name>` with `{"enabled": true}` or `false` | Switch a block on or off |
+| `POST /api/blocks/<name>/on`, `/off`, `/toggle` | The same, without a body |
+| `GET /api/plex` | The last Plex sync, and when it will try again if it failed |
+| `POST /api/plex/sync` | Sync Plex now |
+
+Switching a block syncs Plex, and the reply says whether that worked. If Plex can't be reached (say it's restarting), STB-Proxy tries again after 1, 2, 5, 10, 15 and 20 minutes. Syncs run one at a time, so a burst of changes ends in one sync with the final state.
+
+Example `configuration.yaml` (put `Bearer <your token>` in `secrets.yaml` as `stb_proxy_auth`):
+
+```yaml
+switch:
+  - platform: rest
+    name: NHL block
+    resource: http://192.168.1.10:8001/api/blocks/NHL
+    body_on: '{"enabled": true}'
+    body_off: '{"enabled": false}'
+    is_on_template: "{{ value_json.enabled }}"
+    headers:
+      Authorization: !secret stb_proxy_auth
+      Content-Type: application/json
+
+rest_command:
+  stb_proxy_sync_plex:
+    url: http://192.168.1.10:8001/api/plex/sync
+    method: post
+    headers:
+      Authorization: !secret stb_proxy_auth
+
+rest:
+  - resource: http://192.168.1.10:8001/api/status
+    scan_interval: 60
+    headers:
+      Authorization: !secret stb_proxy_auth
+    sensor:
+      - name: STB-Proxy lineup channels
+        value_template: "{{ value_json.lineup }}"
+      - name: STB-Proxy active streams
+        value_template: "{{ value_json.streams }}"
+    binary_sensor:
+      - name: STB-Proxy Plex in sync
+        value_template: "{{ value_json.plex.ok }}"
+      - name: STB-Proxy account shared
+        value_template: "{{ value_json.otherLogins > 0 or value_json.boxOn }}"
+```
+
 # Development
 
 ```
