@@ -59,7 +59,15 @@ class PreviewPromptTest(unittest.TestCase):
         self.assertIn('id="playerPanel"', self.html)
 
     def test_closing_the_player_drops_the_stream(self):
-        self.assertRegex(self.script, r'function closePlayer\(\) \{[^}]*player\.removeAttribute\("src"\);\s*player\.load\(\);')
+        self.assertRegex(self.script, r'function stopStream\(\) \{[^}]*player\.removeAttribute\("src"\);\s*player\.load\(\);')
+        self.assertRegex(self.script, r'function closePlayer\(\) \{[^}]*stopStream\(\);')
+
+    def test_switching_channels_lets_the_last_stream_close_first(self):
+        # Otherwise the new stream finds the portal connection busy ("No free MAC").
+        self.assertRegex(self.script, r'function selectChannel\(ele\) \{[\s\S]*?stopStream\(\);[\s\S]*?startStream\(wasPlaying \? \d+ : 0\);[\s\S]*?\n    \}')
+
+    def test_failed_preview_retries_once_before_offering_mark_dead(self):
+        self.assertRegex(self.script, r'if \(!retried\) \{[^}]*startStream\(\d+\);\s*return;')
 
     def test_preview_failure_tolerates_missing_row(self):
         self.assertRegex(self.script, r"var row = rowFor\(currentChannel\);\s*if \(!row \|\| row\.dead\)")

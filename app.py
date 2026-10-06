@@ -97,11 +97,33 @@ defaultPortal = {
 }
 
 
+configLock = threading.Lock()
+
+
+def writeConfig(data):
+    """Write to a temporary file and swap it in, so a crash mid-write leaves the old config intact."""
+    with configLock:
+        tmp = configFile + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(data, f, indent=4)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, configFile)
+
+
 def loadConfig():
-    try:
-        with open(configFile) as f:
-            data = json.load(f)
-    except:
+    if os.path.exists(configFile):
+        try:
+            with open(configFile) as f:
+                data = json.load(f)
+        except (OSError, ValueError) as e:
+            # Never replace a config we can't read: it holds every portal and edit.
+            logger.critical(
+                "Can't read config {} ({}). Not starting, so it isn't overwritten. "
+                "Fix or restore it, then restart.".format(configFile, e)
+            )
+            raise SystemExit(1)
+    else:
         logger.warning("No existing config found. Creating a new one")
         data = {}
 
@@ -136,8 +158,7 @@ def loadConfig():
 
     data["portals"] = portalsOut
 
-    with open(configFile, "w") as f:
-        json.dump(data, f, indent=4)
+    writeConfig(data)
 
     return data
 
@@ -147,9 +168,8 @@ def getPortals():
 
 
 def savePortals(portals):
-    with open(configFile, "w") as f:
-        config["portals"] = portals
-        json.dump(config, f, indent=4)
+    config["portals"] = portals
+    writeConfig(config)
 
 
 def getSettings():
@@ -157,9 +177,8 @@ def getSettings():
 
 
 def saveSettings(settings):
-    with open(configFile, "w") as f:
-        config["settings"] = settings
-        json.dump(config, f, indent=4)
+    config["settings"] = settings
+    writeConfig(config)
 
 
 def getBlocks():
@@ -167,9 +186,8 @@ def getBlocks():
 
 
 def saveBlocks(blocks):
-    with open(configFile, "w") as f:
-        config["blocks"] = blocks
-        json.dump(config, f, indent=4)
+    config["blocks"] = blocks
+    writeConfig(config)
 
 
 def authorise(f):
@@ -751,7 +769,7 @@ def loadGuide(force=False):
                 try:
                     token = stb.getToken(url, mac, proxy)
                     stb.getProfile(url, mac, token, proxy)
-                    allChannels = stb.getAllChannels(url, mac, token, proxy)
+                    allChannels = stb.getAllChannels(url, mac, token, proxy, refresh=force)
                     epg = stb.getEpg(url, mac, token, 24, proxy)
                     if not epg:
                         # No bulk guide: fetching every channel one by one would take too long,
@@ -984,6 +1002,12 @@ def playlist():
 @app.route("/xmltv", methods=["GET"])
 @authorise
 def xmltv():
+    # The bulk EPG takes a few hundred MB to parse: never build this and the guide at once.
+    with guideLock:
+        return buildXmltv()
+
+
+def buildXmltv():
     channels = ET.Element("tv")
     programmes = ET.Element("tv")
     portals = getPortals()
@@ -1184,6 +1208,9 @@ def channel(portalId, channelId):
             if token:
                 stb.getProfile(url, mac, token, proxy)
                 channels = stb.getAllChannels(url, mac, token, proxy)
+                if channels and not any(str(c["id"]) == channelId for c in channels):
+                    # The cached list may be older than the channel.
+                    channels = stb.getAllChannels(url, mac, token, proxy, refresh=True)
 
         if channels:
             for c in channels:
