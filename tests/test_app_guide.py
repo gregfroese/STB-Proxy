@@ -53,7 +53,7 @@ class GuideTest(unittest.TestCase):
         self.assertTrue(r["favourite"])
         self.assertFalse(r["available"])
         self.assertEqual(r["blocks"], ["NHL"])
-        self.assertEqual(r["link"], "http://proxy.test:8001/play/p1/2?web=true")
+        self.assertEqual(r["link"], "/play/p1/2?web=true")  # relative: works through a reverse proxy
 
     def test_searches_channels_outside_the_lineup(self):
         self.assertEqual(self.titles(q="hockey"), ["Oilers at Flames"])  # 3 is dead, hidden by default

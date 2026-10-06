@@ -245,6 +245,22 @@
             'data-key="' + escapeAttr(channelKey(row)) + '">dead</span>';
     }
 
+    // Identifies this browser to the server, so a new preview stops only its own last one
+    // (behind a reverse proxy, every viewer arrives from the same address).
+    var viewerId = (function () {
+        var id = null;
+        try {
+            id = localStorage.getItem("stbViewer");
+        } catch (e) { }
+        if (!id) {
+            id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+            try {
+                localStorage.setItem("stbViewer", id);
+            } catch (e) { }
+        }
+        return id;
+    })();
+
     var streamSeq = 0;
     var retried = false;
     var BUSY_MESSAGE = "Portal busy, trying again...";
@@ -264,7 +280,7 @@
             if (seq != streamSeq) {
                 return;  // another channel was picked, or the player closed, meanwhile
             }
-            player.src = currentLink;
+            player.src = currentLink + "&viewer=" + encodeURIComponent(viewerId);
             previewTimer = setTimeout(previewFailed, 15000);
         }, delay);
     }

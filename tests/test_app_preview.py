@@ -98,6 +98,16 @@ class PreviewTest(unittest.TestCase):
         self.moveMac.assert_not_called()  # stopping a preview isn't a fault of the MAC
         self.assertEqual([o["channel id"] for o in self.app.occupied[PORTAL]], ["3"])
 
+    def test_viewers_behind_one_proxy_are_told_apart(self):
+        # Through a reverse proxy every browser has the proxy's IP; each sends its own ID.
+        self.startStreaming("/play/{}/2?web=true&viewer=alice".format(PORTAL))
+        alice = self.processes[-1]
+        response = self.client.get("/play/{}/3?web=true&viewer=bob".format(PORTAL))
+        self.assertEqual(response.status_code, 503)  # one stream per MAC, and it's alice's
+        self.assertFalse(alice.killed.is_set())
+        self.startStreaming("/play/{}/3?web=true&viewer=alice".format(PORTAL))
+        self.assertTrue(alice.killed.is_set())
+
     def test_preview_never_stops_another_players_stream(self):
         self.startStreaming("/play/{}/2".format(PORTAL))  # e.g. Plex
         plex = self.processes[-1]
