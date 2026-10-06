@@ -64,4 +64,9 @@ def loadApp(testCase, config):
         patcher = mock.patch.object(appModule.stb, name, return_value=value)
         patcher.start()
         testCase.addCleanup(patcher.stop)
+    # Never download the logo database in tests; tests that need one set logoIndex themselves.
+    appModule.realRefreshLogoIndex = appModule.refreshLogoIndex
+    patcher = mock.patch.object(appModule, "refreshLogoIndex", return_value=None)
+    patcher.start()
+    testCase.addCleanup(patcher.stop)
     return appModule

@@ -191,10 +191,11 @@
                 '<td class="text-nowrap">' + formatWhen(r, now) + '</td>' +
                 '<td><div class="fw-bold">' + escapeAttr(r.title) + '</div>' +
                 (r.desc ? '<div class="small text-muted programme-desc">' + escapeAttr(r.desc) + '</div>' : '') + '</td>' +
-                '<td class="text-nowrap">' + escapeAttr(channel.channelNumber) + ' ' +
+                '<td class="text-nowrap"><div class="d-flex align-items-center">' + logoImage(channel) + '<div class="ms-2">' +
+                escapeAttr(channel.channelNumber) + ' ' +
                 escapeAttr(channel.customChannelName || channel.channelName) + deadBadge(channel) +
                 (channel.available ? ' <span class="badge bg-secondary">in lineup</span>' : '') +
-                '<div class="small text-muted">' + escapeAttr(channel.portalName) + '</div></td></tr>';
+                '<div class="small text-muted">' + escapeAttr(channel.portalName) + '</div></div></div></td></tr>';
         });
         document.getElementById('results').innerHTML = html + '</tbody></table>';
     }

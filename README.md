@@ -78,6 +78,13 @@ Make sets of channels available only when you want them.
 - Every channel list (Playlist Editor, Blocks, Guide results) has a ☰ button that shows a channel's schedule without playing it.
 - **Full screen** (the ⤢ button, **F**, or double-click the video) keeps the channel buttons, blocks and **Mark dead** on screen as an overlay. It fades after a few seconds; move the mouse to bring it back.
 
+# Channel logos
+
+- STB-Proxy shows channel logos in the Playlist Editor, Blocks, Guide and player, and puts them in the playlist and XMLTV (so Plex shows them too).
+- Many portals send no logos. STB-Proxy then matches channels by name to the [iptv-org](https://github.com/iptv-org/database) database, which it downloads in the background when it starts and refreshes weekly (`logo-index.json` next to `config.json`). It only uses clear matches, so some channels get none.
+- To set or fix one, paste an image URL into the channel's **Logo** column in the Playlist Editor and **Save**. Clearing it goes back to the automatic logo.
+- **Settings → Find channel logos** turns the matching (and the download) off.
+
 # Guide
 
 - The **Guide** page searches the next 24 hours of programmes on every channel the portals carry, not just the ones in your lineup. Every word you type must appear in the title or description.
