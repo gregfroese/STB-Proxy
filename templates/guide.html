@@ -43,7 +43,7 @@
 
     <p id="guideStatus" class="text-muted small mt-2 mb-2">Search the next 24 hours on every channel, or switch on a filter
         to browse.</p>
-    <div id="results" class="table-responsive"></div>
+    <div id="results" class="table-responsive channel-list"></div>
 
 </div>
 
@@ -185,7 +185,8 @@
             '<th style="width: 0%;"></th><th>When</th><th>Programme</th><th>Channel</th></tr></thead><tbody>';
         res.results.forEach(function (r) {
             var channel = channelsByKey[channelKey(r)];
-            html += '<tr><td class="text-nowrap">' + playButton(channel) + ' <span class="ms-1">' + favouriteStar(channel) + '</span></td>' +
+            html += '<tr><td class="text-nowrap">' + playButton(channel) + ' <span class="ms-1">' + favouriteStar(channel) + '</span>' +
+                ' <span class="ms-1">' + deadToggle(channel) + '</span></td>' +
                 '<td class="text-nowrap">' + formatWhen(r, now) + '</td>' +
                 '<td><div class="fw-bold">' + escapeAttr(r.title) + '</div>' +
                 (r.desc ? '<div class="small text-muted programme-desc">' + escapeAttr(r.desc) + '</div>' : '') + '</td>' +

@@ -43,6 +43,7 @@ Make sets of channels available only when you want them.
 
 - In the **Playlist Editor**, type a name in the **Block** column for each channel in the set, then **Save**. Channels with the same name form one block. A channel can be in several blocks: separate the names with commas.
 - Or preview a channel and tick the blocks it belongs to, or type a new block name and click **Add**. Changes save right away.
+- To sort channels into blocks quickly, switch on **Hide channels in blocks** in the editor, play the first channel, tick its block (it leaves the list) and press channel up to go on to the next one.
 - On the **Blocks** page, switch a block on or off. A channel is available when it's enabled on its own **or** in any block that's on, and it isn't marked dead.
 - Clear a channel's block name to take it out of the block. A block disappears when no channel uses its name.
 - Click **View** next to a block to list its channels, and play any of them right there.
@@ -52,6 +53,12 @@ Make sets of channels available only when you want them.
 - Click the star next to a channel (on the **Blocks** page, in the **Playlist Editor**, or in the preview) to make it a favourite. Click it again to remove it.
 - The **Favourites** tab on the **Blocks** page lists your favourites so you can watch them quickly. **Favourites only**, above the editor table, filters the editor to them.
 - Favourites are just for finding channels. They don't change what's in the playlist or Plex.
+
+# Preview player
+
+- Play a channel from the editor, a block, your favourites or the guide. It plays in a panel in the corner, so the page stays usable.
+- **Channel up / down** (or **Page Up / Page Down**) moves through the list you started from, as currently filtered and sorted.
+- Picking another channel stops the one playing straight away, so switching is quick.
 
 # Guide
 
@@ -63,7 +70,7 @@ Make sets of channels available only when you want them.
 
 # Dead channels
 
-- Preview a channel in the editor and click **Mark dead** if it doesn't work. Dead channels are left out of the playlist, XMLTV, HDHomeRun lineup and Plex, even if they're enabled or in a block that's on.
+- Preview a channel and click **Mark dead** if it doesn't work, or click ⊘ next to a channel in any list to mark it dead (or working again) without playing it. Dead channels are left out of the playlist, XMLTV, HDHomeRun lineup and Plex, even if they're enabled or in a block that's on.
 - **Hide dead**, above the editor table, hides them from the list. Turn it off to find them again, and use **Mark working** in the preview to bring one back.
 - If a preview doesn't start, the editor suggests trying again first, since the portal may just be busy with another stream.
 
