@@ -3,6 +3,8 @@ services:
   stb-proxy:
     build: .
     image: stb-proxy
+    # Rebuild from the code on every `up`, so `git pull && docker compose up -d` updates it.
+    pull_policy: build
     container_name: stb-proxy
     restart: unless-stopped
     ports:

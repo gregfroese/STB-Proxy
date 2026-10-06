@@ -14,7 +14,10 @@
 <div class="border rounded p-2 mt-2 d-none" id="{{ p }}DeviceFields" oninput="deviceEdited('{{ p }}')">
     <p class="small text-muted mb-2">Copy these from the box the MAC belongs to. In STB Emulator they're under
         Settings &rarr; Profiles &rarr; your profile &rarr; STB configuration. On a MAG box the serial number is in
-        Settings &rarr; System information. Leave out anything your box doesn't show.</p>
+        Settings &rarr; System information.<br>
+        <strong>Start with just the model and serial number</strong>: many portals only check those. If the portal
+        still refuses the MAC, add the device IDs and signature. Try one change at a time: some portals briefly
+        refuse logins after several in a row.</p>
     <div class="row g-2">
         <div class="col-6">
             <label class="form-label small mb-0">Model</label>
