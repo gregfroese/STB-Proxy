@@ -50,6 +50,10 @@ class EditorTest(unittest.TestCase):
         self.assertEqual(before, snapshot)
         self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"], {"1": ["NHL"]})
 
+    def test_preview_links_are_relative(self):
+        rows = {r["channelId"]: r for r in self.client.get("/editor_data").get_json()["data"]}
+        self.assertEqual(rows["2"]["link"], "/play/{}/2?web=true".format(PORTAL))
+
     def test_editor_data_has_block_and_dead(self):
         rows = {r["channelId"]: r for r in self.client.get("/editor_data").get_json()["data"]}
         self.assertEqual(rows["2"]["blocks"], ["NHL"])

@@ -114,6 +114,12 @@ def writeConfig(data):
         os.replace(tmp, configFile)
 
 
+def previewLink(portal, channelId):
+    # Relative, so the browser plays it from whatever address it's using: the LAN, or a
+    # reverse proxy (with its login and HTTPS). Plex and players get full links built from HOST.
+    return "/play/{}/{}?web=true".format(portal, channelId)
+
+
 def loadConfig():
     if os.path.exists(configFile):
         try:
@@ -555,13 +561,7 @@ def editor_data():
                             "blocks": channelBlocks.get(channelId, []),
                             "dead": channelId in deadChannels,
                             "favourite": channelId in favouriteChannels,
-                            "link": "http://"
-                            + host
-                            + "/play/"
-                            + portal
-                            + "/"
-                            + channelId
-                            + "?web=true",
+                            "link": previewLink(portal, channelId),
                         }
                     )
             else:
@@ -1005,7 +1005,7 @@ def guideSearch():
                 "favourite": channelId in p.get("favourite channels", []),
                 "blocks": p.get("channel blocks", {}).get(channelId, []),
                 "available": channelId in available[portal],
-                "link": "http://" + host + "/play/" + portal + "/" + channelId + "?web=true",
+                "link": previewLink(portal, channelId),
             }
         )
 
@@ -1240,9 +1240,9 @@ def buildXmltv():
     )
 
 
-def stopPreview(portalId, ip):
+def stopPreview(portalId, viewer):
     """Stop this viewer's last preview so its portal connection is free for the next one."""
-    preview = previews.get((portalId, ip))
+    preview = previews.get((portalId, viewer))
     if not preview:
         return
     preview["stop"].set()
@@ -1285,7 +1285,7 @@ def channel(portalId, channelId):
         preview = None
         if web:
             preview = {"stop": threading.Event(), "done": threading.Event(), "process": None}
-            previews[(portalId, ip)] = preview
+            previews[(portalId, viewer)] = preview
 
         def stopped():
             return preview is not None and preview["stop"].is_set()
@@ -1316,8 +1316,8 @@ def channel(portalId, channelId):
             unoccupy()
             ffmpeg_sp.kill()
             if preview:
-                if previews.get((portalId, ip)) is preview:
-                    previews.pop((portalId, ip), None)
+                if previews.get((portalId, viewer)) is preview:
+                    previews.pop((portalId, viewer), None)
                 preview["done"].set()
 
     def testStream():
@@ -1358,13 +1358,15 @@ def channel(portalId, channelId):
     proxy = portal.get("proxy")
     web = request.args.get("web")
     ip = request.remote_addr
+    # Each browser sends its own ID: behind a reverse proxy every viewer has the proxy's IP.
+    viewer = request.args.get("viewer") or ip
 
     logger.info(
         "IP({}) requested Portal({}):Channel({})".format(ip, portalId, channelId)
     )
 
     if web:
-        stopPreview(portalId, ip)
+        stopPreview(portalId, viewer)
 
     freeMac = False
 
