@@ -119,13 +119,12 @@
 
     function selectChannel(ele) {
         var row = rowFor({ portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') });
-        var wasPlaying = !!player.getAttribute("src");
         stopStream();
         currentChannel = { portal: row.portal, channelId: row.channelId };
         currentLink = row.link;
         retried = false;
-        // The last stream holds the portal connection until the server notices it closed.
-        startStream(wasPlaying ? 1500 : 0);
+        // No need to wait for the last stream to close: the server stops it for us.
+        startStream(0);
         showPlayer();
         title.textContent = row.customChannelName || row.channelName;
         showDeadState(row.dead);

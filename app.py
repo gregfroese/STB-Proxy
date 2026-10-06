@@ -52,6 +52,9 @@ else:
     configFile = os.path.join(basePath, "config.json")
 
 occupied = {}
+# The browser preview each viewer is watching, by (portal, viewer IP), so picking
+# another channel can stop it at once instead of waiting for its connection to close.
+previews = {}
 config = {}
 
 d_ffmpegcmd = "ffmpeg -re -http_proxy <proxy> -timeout <timeout> -i <url> -map 0 -codec copy -f mpegts pipe:"
@@ -1097,6 +1100,18 @@ def buildXmltv():
     )
 
 
+def stopPreview(portalId, ip):
+    """Stop this viewer's last preview so its portal connection is free for the next one."""
+    preview = previews.get((portalId, ip))
+    if not preview:
+        return
+    preview["stop"].set()
+    process = preview["process"]
+    if process:
+        process.kill()
+    preview["done"].wait(3)
+
+
 @app.route("/play/<portalId>/<channelId>", methods=["GET"])
 def channel(portalId, channelId):
     def streamData():
@@ -1127,6 +1142,14 @@ def channel(portalId, channelId):
             )
             logger.info("Unoccupied Portal({}):MAC({})".format(portalId, mac))
 
+        preview = None
+        if web:
+            preview = {"stop": threading.Event(), "done": threading.Event(), "process": None}
+            previews[(portalId, ip)] = preview
+
+        def stopped():
+            return preview is not None and preview["stop"].is_set()
+
         try:
             startTime = datetime.now(timezone.utc).timestamp()
             occupy()
@@ -1136,10 +1159,13 @@ def channel(portalId, channelId):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             ) as ffmpeg_sp:
-                while True:
+                if preview:
+                    preview["process"] = ffmpeg_sp
+                while not stopped():
                     chunk = ffmpeg_sp.stdout.read(1024)
                     if len(chunk) == 0:
-                        if ffmpeg_sp.poll() != 0:
+                        # A preview stopped for the next channel isn't a fault of the MAC.
+                        if ffmpeg_sp.poll() != 0 and not stopped():
                             logger.info("Ffmpeg closed with error({}). Moving MAC({}) for Portal({})".format(str(ffmpeg_sp.poll()), mac, portalName))
                             moveMac(portalId, mac)
                         break
@@ -1149,6 +1175,10 @@ def channel(portalId, channelId):
         finally:
             unoccupy()
             ffmpeg_sp.kill()
+            if preview:
+                if previews.get((portalId, ip)) is preview:
+                    previews.pop((portalId, ip), None)
+                preview["done"].set()
 
     def testStream():
         timeout = int(getSettings()["ffmpeg timeout"]) * int(1000000)
@@ -1193,6 +1223,9 @@ def channel(portalId, channelId):
         "IP({}) requested Portal({}):Channel({})".format(ip, portalId, channelId)
     )
 
+    if web:
+        stopPreview(portalId, ip)
+
     freeMac = False
 
     for mac in macs:
@@ -1228,7 +1261,8 @@ def channel(portalId, channelId):
                 link = cmd.split(" ")[1]
 
         if link:
-            if getSettings().get("test streams", "true") == "false" or testStream():
+            # Previews skip the test: the browser retries, then offers Mark dead, by itself.
+            if web or getSettings().get("test streams", "true") == "false" or testStream():
                 if web:
                     ffmpegcmd = [
                         "ffmpeg",
