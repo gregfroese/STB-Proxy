@@ -60,7 +60,7 @@ class PreviewPromptTest(unittest.TestCase):
 
     def test_closing_the_player_drops_the_stream(self):
         self.assertRegex(self.script, r'function stopStream\(\) \{[^}]*player\.removeAttribute\("src"\);\s*player\.load\(\);')
-        self.assertRegex(self.script, r'function closePlayer\(\) \{[^}]*stopStream\(\);')
+        self.assertRegex(self.script, r'function closePlayer\(\) \{[\s\S]*?stopStream\(\);[\s\S]*?\n    \}')
 
     def test_switching_channels_starts_the_next_stream_at_once(self):
         # The server stops this viewer's last preview itself (see stopPreview), so no waiting.
@@ -91,6 +91,13 @@ class PreviewPromptTest(unittest.TestCase):
 
     def test_editor_can_hide_channels_in_blocks(self):
         self.assertIn("hideInBlocks || !rowData.blocks.length", inlineScripts("editor.html"))
+
+    def test_full_screen_keeps_the_controls(self):
+        # The whole panel goes full screen, so its channel, block and dead controls float over the video.
+        self.assertIn("(panel.requestFullscreen || panel.webkitRequestFullscreen).call(panel)", self.script)
+        self.assertIn('controlslist="nofullscreen"', self.html)
+        self.assertIn(".player-panel.fullscreen .player-controls", self.html)
+        self.assertIn('id="fullscreenButton"', self.html)
 
     def test_preview_failure_tolerates_missing_row(self):
         self.assertRegex(self.script, r"var row = rowFor\(currentChannel\);\s*if \(!row \|\| row\.dead\)")
