@@ -155,7 +155,8 @@
                 '<td class="text-nowrap">' + favouriteStar(row) + ' <span class="ms-1">' + guideButton(row) + '</span>' +
                 ' <span class="ms-1">' + deadToggle(row) + '</span></td>' +
                 '<td>' + escapeAttr(channelNumber(row)) + '</td>' +
-                '<td>' + escapeAttr(row.customChannelName || row.channelName) + deadBadge(row) + '</td>' +
+                '<td><div class="d-flex align-items-center">' + logoImage(row) + '<span class="ms-2">' +
+                escapeAttr(row.customChannelName || row.channelName) + '</span>' + deadBadge(row) + '</div></td>' +
                 '<td>' + escapeAttr(row.customGenre || row.genre) + '</td>' +
                 (showBlock ? '<td>' + escapeAttr(row.blocks.join(", ")) + '</td>' : '') +
                 '<td>' + escapeAttr(row.portalName) + '</td></tr>';

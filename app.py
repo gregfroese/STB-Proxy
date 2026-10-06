@@ -3,6 +3,7 @@ import stb
 import availability
 import plex
 import guide
+import logos
 import os
 import json
 import subprocess
@@ -10,6 +11,8 @@ import uuid
 import logging
 import threading
 import time
+import requests
+from urllib.parse import urlparse
 import xml.etree.cElementTree as ET
 from flask import (
     Flask,
@@ -79,6 +82,7 @@ defaultSettings = {
     "hdhr tuners": "1",
     "plex url": "",
     "plex token": "",
+    "match logos": "true",
 }
 
 defaultPortal = {
@@ -94,6 +98,7 @@ defaultPortal = {
     "custom genres": {},
     "custom epg ids": {},
     "fallback channels": {},
+    "custom logos": {},
     "channel blocks": {},
     "dead channels": [],
     "favourite channels": [],
@@ -481,6 +486,100 @@ def portalRemove():
     return redirect("/portals", code=302)
 
 
+# Channel logos: your own (set in the Playlist Editor), else the portal's, else one matched
+# by name from the iptv-org database (downloaded in the background, refreshed weekly).
+LOGO_INDEX_MAX_AGE = 7 * 24 * 3600
+LOGO_RETRY_AGE = 3600
+logoIndex = {"index": None, "time": 0, "tried": 0}
+logoIndexLock = threading.Lock()
+portalLogos = {}
+
+
+def logoIndexFile():
+    return os.path.join(os.path.dirname(os.path.abspath(configFile)), "logo-index.json")
+
+
+def refreshLogoIndex():
+    """Load the logo index from disk, downloading a fresh one if it's missing or a week old."""
+    with logoIndexLock:
+        path = logoIndexFile()
+        try:
+            with open(path) as f:
+                logoIndex.update(index=json.load(f), time=os.path.getmtime(path))
+            portalLogos.clear()
+        except (OSError, ValueError):
+            pass
+        if logoIndex["index"] is not None and time.time() - logoIndex["time"] < LOGO_INDEX_MAX_AGE:
+            return
+        try:
+            # Tens of MB of JSON to parse: never at the same time as the guide.
+            with guideLock:
+                data = [requests.get(u, timeout=60).json() for u in (logos.CHANNELS_URL, logos.LOGOS_URL, logos.FEEDS_URL)]
+                index = logos.buildIndex(*data)
+                del data
+            tmp = path + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(index, f)
+            os.replace(tmp, path)
+            logoIndex.update(index=index, time=time.time())
+            portalLogos.clear()
+            logger.info("Channel logos downloaded from iptv-org: {} names".format(len(index)))
+        except Exception as e:
+            logger.error("Couldn't download channel logos from iptv-org ({}); trying again later".format(e))
+
+
+def currentLogoIndex():
+    """The logo index if it's ready (None if not, or if matching is off). Loads it in the background."""
+    if getSettings().get("match logos") != "true":
+        return None
+    now = time.time()
+    stale = logoIndex["index"] is None or now - logoIndex["time"] > LOGO_INDEX_MAX_AGE
+    if stale and now - logoIndex["tried"] > LOGO_RETRY_AGE and not logoIndexLock.locked():
+        logoIndex["tried"] = now
+        threading.Thread(target=refreshLogoIndex, daemon=True).start()
+    return logoIndex["index"]
+
+
+def matchedLogos(portalId, allChannels, genres=None):
+    """{channel id: logo URL} matched by name for a portal's channels (worked out once per list)."""
+    index = currentLogoIndex()
+    if not index or not allChannels:
+        return {}
+    cached = portalLogos.get(portalId)
+    if cached and cached[0] == id(allChannels) and cached[1] == id(index):
+        return cached[2]
+    genres = genres or {}
+    entries = [(str(c["id"]), str(c["name"]), genres.get(str(c.get("tv_genre_id")), "")) for c in allChannels]
+    result = logos.matchAll(index, entries)
+    portalLogos[portalId] = (id(allChannels), id(index), result)
+    return result
+
+
+def knownLogos(portalId):
+    """The matched logos last worked out for a portal (for places without its channel list)."""
+    cached = portalLogos.get(portalId)
+    return cached[2] if cached and getSettings().get("match logos") == "true" else {}
+
+
+def channelLogo(portal, channelId, portalLogo, matched, yours=True):
+    """The logo to show for a channel: yours, else the portal's, else the matched one."""
+    custom = portal.get("custom logos", {}).get(channelId) if yours else None
+    if custom:
+        return custom
+    portalLogo = str(portalLogo or "")
+    if portalLogo:
+        if "://" in portalLogo:
+            return portalLogo
+        parsed = urlparse(portal["url"])
+        base = parsed.scheme + "://" + parsed.netloc
+        if portalLogo.startswith("/"):
+            return base + portalLogo
+        # A bare file name: Stalker portals keep logos under misc/logos/320 next to server/.
+        root = parsed.path.split("/server/")[0] if "/server/" in parsed.path else ""
+        return base + root + "/misc/logos/320/" + portalLogo
+    return matched.get(channelId, "")
+
+
 @app.route("/editor", methods=["GET"])
 @authorise
 def editor():
@@ -503,6 +602,7 @@ def editor_data():
             customGenres = portals[portal].get("custom genres", {})
             customChannelNumbers = portals[portal].get("custom channel numbers", {})
             customEpgIds = portals[portal].get("custom epg ids", {})
+            customLogos = portals[portal].get("custom logos", {})
             fallbackChannels = portals[portal].get("fallback channels", {})
             channelBlocks = portals[portal].get("channel blocks", {})
             deadChannels = portals[portal].get("dead channels", [])
@@ -520,6 +620,7 @@ def editor_data():
                     genres = None
 
             if allChannels and genres:
+                matched = matchedLogos(portal, allChannels, genres)
                 for channel in allChannels:
                     channelId = str(channel["id"])
                     channelName = str(channel["name"])
@@ -557,6 +658,9 @@ def editor_data():
                             "customGenre": customGenre,
                             "channelId": channelId,
                             "customEpgId": customEpgId,
+                            "logo": channelLogo(portals[portal], channelId, channel.get("logo"), matched),
+                            "customLogo": customLogos.get(channelId, ""),
+                            "autoLogo": channelLogo(portals[portal], channelId, channel.get("logo"), matched, yours=False),
                             "fallbackChannel": fallbackChannel,
                             "blocks": channelBlocks.get(channelId, []),
                             "dead": channelId in deadChannels,
@@ -588,6 +692,7 @@ def editorSave():
     epgEdits = json.loads(request.form["epgEdits"])
     fallbackEdits = json.loads(request.form["fallbackEdits"])
     blockEdits = json.loads(request.form.get("blockEdits", "[]"))
+    logoEdits = json.loads(request.form.get("logoEdits", "[]"))
     portals = getPortals()
     blocks = getBlocks()
     availableBefore = {p: availability.availableChannels(portals[p], blocks) for p in portals}
@@ -653,6 +758,15 @@ def editorSave():
         else:
             portals[portal]["fallback channels"].pop(channelId)
 
+    for edit in logoEdits:
+        portal = edit["portal"]
+        customLogos = dict(portals[portal].get("custom logos", {}))
+        if edit["logo"].strip():
+            customLogos[edit["channel id"]] = edit["logo"].strip()
+        else:
+            customLogos.pop(edit["channel id"], None)
+        portals[portal]["custom logos"] = customLogos
+
     # Build new dicts rather than mutating: other threads may be iterating the old ones.
     newChannelBlocks = {}
     for edit in blockEdits:
@@ -693,6 +807,7 @@ def editorReset():
         portals[portal]["custom genres"] = {}
         portals[portal]["custom epg ids"] = {}
         portals[portal]["fallback channels"] = {}
+        portals[portal]["custom logos"] = {}
 
     savePortals(portals)
     logger.info("Playlist reset!")
@@ -877,7 +992,11 @@ def loadGuide(force=False):
             if short:
                 partial.append(name)
             for c in allChannels:
-                channels[(portal, str(c["id"]))] = {"name": str(c["name"]), "number": str(c["number"])}
+                channels[(portal, str(c["id"]))] = {
+                    "name": str(c["name"]),
+                    "number": str(c["number"]),
+                    "logo": str(c.get("logo") or ""),
+                }
             programmes.extend(guide.programmes(portal, epg, now))
 
         logger.info("Guide loaded: {} programmes on {} channels".format(len(programmes), len(channels)))
@@ -1001,6 +1120,7 @@ def guideSearch():
                 "channelName": channel["name"],
                 "customChannelName": p.get("custom channel names", {}).get(channelId, ""),
                 "channelNumber": p.get("custom channel numbers", {}).get(channelId) or channel["number"],
+                "logo": channelLogo(p, channelId, channel.get("logo"), knownLogos(portal)),
                 "dead": channelId in p.get("dead channels", []),
                 "favourite": channelId in p.get("favourite channels", []),
                 "blocks": p.get("channel blocks", {}).get(channelId, []),
@@ -1082,9 +1202,11 @@ def playlist():
                         genres = None
 
                 if allChannels and genres:
+                    matched = matchedLogos(portal, allChannels, genres)
                     for channel in allChannels:
                         channelId = str(channel.get("id"))
                         if channelId in enabledChannels:
+                            logo = channelLogo(portals[portal], channelId, channel.get("logo"), matched)
                             channelName = customChannelNames.get(channelId)
                             if channelName == None:
                                 channelName = str(channel.get("name"))
@@ -1102,6 +1224,7 @@ def playlist():
                                 "#EXTINF:-1"
                                 + ' tvg-id="'
                                 + epgId
+                                + ('" tvg-logo="' + logo.replace('"', "%22") if logo else "")
                                 + (
                                     '" tvg-chno="' + channelNumber
                                     if getSettings().get("use channel numbers", "true")
@@ -1128,7 +1251,8 @@ def playlist():
                     logger.error("Error making playlist for {}, skipping".format(name))
 
     if getSettings().get("sort playlist by channel name", "true") == "true":
-        channels.sort(key=lambda k: k.split(",")[1].split("\n")[0])
+        # The name follows the last '",' of the #EXTINF line (a logo URL may hold commas).
+        channels.sort(key=lambda k: k.split("\n")[0].rsplit('",', 1)[1])
     if getSettings().get("use channel numbers", "true") == "true":
         if getSettings().get("sort playlist by channel number", "false") == "true":
             channels.sort(key=lambda k: k.split('tvg-chno="')[1].split('"')[0])
@@ -1170,6 +1294,7 @@ def buildXmltv():
                         token = stb.getToken(url, mac, proxy)
                         stb.getProfile(url, mac, token, proxy)
                         allChannels = stb.getAllChannels(url, mac, token, proxy)
+                        genres = stb.getGenreNames(url, mac, token, proxy)
                         epg = stb.getEpg(url, mac, token, 24, proxy)
                         if not epg:
                             epg = stb.getShortEpg(url, mac, token, enabledChannels, proxy)
@@ -1179,6 +1304,7 @@ def buildXmltv():
                         epg = None
 
                 if allChannels and epg:
+                    matched = matchedLogos(portal, allChannels, genres)
                     for c in allChannels:
                         try:
                             channelId = c.get("id")
@@ -1195,7 +1321,9 @@ def buildXmltv():
                                 ET.SubElement(
                                     channelEle, "display-name"
                                 ).text = channelName
-                                ET.SubElement(channelEle, "icon", src=c.get("logo"))
+                                logo = channelLogo(portals[portal], str(channelId), c.get("logo"), matched)
+                                if logo:
+                                    ET.SubElement(channelEle, "icon", src=logo)
                                 for p in epg.get(channelId) or []:
                                     try:
                                         start = (
@@ -1770,6 +1898,7 @@ def lineup():
 
 if __name__ == "__main__":
     config = loadConfig()
+    currentLogoIndex()  # start fetching channel logos in the background
     if "TERM_PROGRAM" in os.environ.keys() and os.environ["TERM_PROGRAM"] == "vscode":
         app.run(host="0.0.0.0", port=8001, debug=True)
     else:

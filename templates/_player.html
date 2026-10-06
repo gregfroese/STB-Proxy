@@ -33,6 +33,18 @@
     .play-button.playing {
         box-shadow: 0 0 0 0.2rem #ffc107;
     }
+    .channel-logo {
+        width: 48px;
+        height: 28px;
+        object-fit: contain;
+        flex-shrink: 0;
+    }
+    /* Most logos are made for a light background; dark ones vanish on this page's. */
+    img.channel-logo {
+        padding: 2px;
+        border-radius: 3px;
+        background-color: #f8f9fa;
+    }
     .player-guide {
         max-height: 220px;
         overflow-y: auto;
@@ -137,6 +149,7 @@
 
 <div class="player-panel text-light d-none" id="playerPanel" role="region" aria-labelledby="channelLabel">
     <div class="player-header d-flex align-items-center p-2">
+        <img class="channel-logo me-2 d-none" id="playerLogo" alt="" onerror="this.classList.add('d-none')">
         <div class="text-truncate me-2">
             <div class="fw-bold text-truncate" id="channelLabel">Channel</div>
             <div class="small text-muted text-truncate" id="nowShowing"></div>
@@ -218,6 +231,15 @@
             'onclick="selectChannel(this)" data-key="' + escapeAttr(channelKey(row)) + '" ' +
             'data-portal="' + escapeAttr(row.portal) + '" data-channelId="' + escapeAttr(row.channelId) + '">' +
             '<i class="fa fa-play"></i></button>';
+    }
+
+    // A channel's logo, or an empty space the same size so names line up.
+    function logoImage(row) {
+        if (!row.logo) {
+            return '<span class="channel-logo d-inline-block"></span>';
+        }
+        return '<img class="channel-logo" loading="lazy" alt="" src="' + escapeAttr(row.logo) + '" ' +
+            'onerror="this.style.visibility=\'hidden\'">';
     }
 
     function guideButton(row) {
@@ -382,6 +404,13 @@
         startStream(0);
         showPlayer();
         title.textContent = row.customChannelName || row.channelName;
+        var logo = document.getElementById("playerLogo");
+        logo.classList.toggle("d-none", !row.logo);
+        if (row.logo) {
+            logo.src = row.logo;
+        } else {
+            logo.removeAttribute("src");
+        }
         document.getElementById("nowShowing").textContent = "";
         showPlayerGuide(true);
         showDeadState(row.dead);

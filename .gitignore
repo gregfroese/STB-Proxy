@@ -9,3 +9,5 @@ config/
 # Holds device serials, IDs and signatures: never commit.
 devices.json
 *.tmp
+# Downloaded channel logo index (lives next to config.json).
+logo-index.json

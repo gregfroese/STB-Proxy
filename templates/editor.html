@@ -18,6 +18,7 @@
                 <th>EPG ID</th>
                 <th>Fallback For</th>
                 <th>Portal</th>
+                <th>Logo</th>
             </tr>
         </thead>
         <tbody>
@@ -32,6 +33,7 @@
         <input type="text" id="epgEdits" name="epgEdits" value="">
         <input type="text" id="fallbackEdits" name="fallbackEdits" value="">
         <input type="text" id="blockEdits" name="blockEdits" value="">
+        <input type="text" id="logoEdits" name="logoEdits" value="">
     </form>
 
     <form action="/editor/reset" method="post" id="reset" hidden>
@@ -49,6 +51,7 @@
     var epgEdits = [];
     var fallbackEdits = [];
     var blockEdits = [];
+    var logoEdits = [];
     var table;
 
     function editAll(ele) {
@@ -117,6 +120,16 @@
         blockEdits.push(j);
     }
 
+    function editLogo(ele) {
+        var p = ele.getAttribute('data-portal');
+        var i = ele.getAttribute('data-channelId');
+        logoEdits.push({ "portal": p, "channel id": i, "logo": ele.value });
+        // Show the new logo straight away (or the automatic one again, if cleared).
+        var row = rowFor({ portal: p, channelId: i });
+        row.logo = ele.value.trim() || row.autoLogo;
+        $(table.rows().nodes()).find('.name-logo[data-key="' + channelKey(row) + '"]').html(logoImage(row));
+    }
+
     function save() {
         document.getElementById("enabledEdits").value = JSON.stringify(enabledEdits);
         document.getElementById("numberEdits").value = JSON.stringify(numberEdits);
@@ -125,6 +138,7 @@
         document.getElementById("epgEdits").value = JSON.stringify(epgEdits);
         document.getElementById("fallbackEdits").value = JSON.stringify(fallbackEdits);
         document.getElementById("blockEdits").value = JSON.stringify(blockEdits);
+        document.getElementById("logoEdits").value = JSON.stringify(logoEdits);
         document.getElementById("save edits").submit();
     }
 
@@ -234,7 +248,8 @@
                 { targets: 5, className: "align-middle", orderDataType: "dom-text-numeric" },
                 { targets: 6, className: "align-middle", orderDataType: "dom-text", type: 'string' },
                 { targets: 7, className: "align-middle", orderDataType: "dom-text", type: 'string' },
-                { targets: 8, className: "align-middle" }
+                { targets: 8, className: "align-middle" },
+                { targets: 9, className: "align-middle", orderable: false, searchable: false }
             ],
             language: {
                 search: "",
@@ -300,7 +315,8 @@
                 {
                     data: "channelName",
                     render: function (data, type, row, meta) {
-                        return '<div class="d-flex align-items-center"><input \
+                        return '<div class="d-flex align-items-center"><span class="name-logo me-2" data-key="' +
+                                escapeAttr(channelKey(row)) + '">' + logoImage(row) + '</span><input \
                                 type="text" \
                                 class="form-control" \
                                 style="min-width: 200px;" \
@@ -396,6 +412,15 @@
                     }
                 },
                 { data: "portalName" },
+                {
+                    data: "customLogo",
+                    render: function (data, type, row, meta) {
+                        return '<input type="text" class="form-control" style="min-width: 220px;" onchange="editLogo(this)" ' +
+                            'data-portal="' + escapeAttr(row.portal) + '" data-channelId="' + escapeAttr(row.channelId) + '" ' +
+                            'placeholder="' + (row.autoLogo ? 'Automatic' : 'No logo found: paste an image URL') + '" ' +
+                            'title="' + escapeAttr(row.autoLogo || '') + '" value="' + escapeAttr(data) + '">';
+                    }
+                },
             ],
         });
     });

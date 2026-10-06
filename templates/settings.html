@@ -117,6 +117,15 @@
         <span class="text-muted">Sorting options stack and are applied: Genre > Number > Name.<br>Without any sorting
             the channels are listed as the server lists them.</span>
 
+        <br><br>
+
+        <h6>Find channel logos:</h6>
+        <div class="form-check form-switch">
+            <input form="save" type="checkbox" class="checkbox form-check-input" name="match logos" value="true" {{ "checked" if settings['match logos']=='true' }}>
+        </div>
+        <span class="text-muted">Matches channels by name to logos in the <a href="https://github.com/iptv-org/database"
+            target="_blank">iptv-org</a> database, downloaded weekly. A logo you set in the Playlist Editor always wins.</span>
+
     </div>
 
     <br>
