@@ -74,6 +74,8 @@ Make sets of channels available only when you want them.
 - Play a channel from the editor, a block, your favourites or the guide. It plays in a panel in the corner, so the page stays usable.
 - **Channel up / down** (or **Page Up / Page Down**) moves through the list you started from, as currently filtered and sorted.
 - Picking another channel stops the one playing straight away, so switching is quick.
+- The player shows what's on now and next under the channel name. The ☰ button (or **G**) opens the channel's schedule; in full screen it sits down the right-hand side.
+- Every channel list (Playlist Editor, Blocks, Guide results) has a ☰ button that shows a channel's schedule without playing it.
 - **Full screen** (the ⤢ button, **F**, or double-click the video) keeps the channel buttons, blocks and **Mark dead** on screen as an overlay. It fades after a few seconds; move the mouse to bring it back.
 
 # Guide

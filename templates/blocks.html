@@ -152,7 +152,8 @@
             '<th>Genre</th>' + (showBlock ? '<th>Block</th>' : '') + '<th>Portal</th></tr></thead><tbody>';
         rows.forEach(function (row) {
             html += '<tr><td>' + playButton(row) + '</td>' +
-                '<td class="text-nowrap">' + favouriteStar(row) + ' <span class="ms-1">' + deadToggle(row) + '</span></td>' +
+                '<td class="text-nowrap">' + favouriteStar(row) + ' <span class="ms-1">' + guideButton(row) + '</span>' +
+                ' <span class="ms-1">' + deadToggle(row) + '</span></td>' +
                 '<td>' + escapeAttr(channelNumber(row)) + '</td>' +
                 '<td>' + escapeAttr(row.customChannelName || row.channelName) + deadBadge(row) + '</td>' +
                 '<td>' + escapeAttr(row.customGenre || row.genre) + '</td>' +
