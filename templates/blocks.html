@@ -27,6 +27,8 @@
         {% elif lastPlexSync.time %}
         Last Plex sync {{ lastPlexSync.time }}:
         <span class="{{ 'text-success' if lastPlexSync.ok else 'text-danger' }}">{{ lastPlexSync.message }}</span>
+        {% if lastPlexSync.retryAt %}<span class="text-warning">Trying again at
+            <span class="plex-retry" data-at="{{ lastPlexSync.retryAt|int }}"></span>.</span>{% endif %}
         {% else %}
         {{ lastPlexSync.message }}
         {% endif %}
@@ -103,6 +105,10 @@
 {% include "_player.html" %}
 
 <script>
+    document.querySelectorAll('.plex-retry').forEach(function (e) {
+        e.textContent = new Date(e.getAttribute('data-at') * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    });
+
     var channels = null;
     var loading = null;
 

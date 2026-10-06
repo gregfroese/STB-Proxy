@@ -227,9 +227,40 @@
 
     </div>
 
+    <br>
+
+    <h4>Integrations</h4>
+    <hr>
+    <div class="p-sm-3">
+
+        <h6>API token:</h6>
+        <div class="input-group" style="max-width: 560px;">
+            <input type="text" class="form-control font-monospace" id="apiToken" value="{{ settings['api token'] }}" readonly>
+            <button type="button" class="btn btn-outline-light" onclick="copyApiToken(this)">Copy</button>
+            <button type="submit" form="newApiToken" class="btn btn-outline-danger">New token</button>
+        </div>
+        <span class="text-muted">For Home Assistant and other integrations using the <code>/api/</code> endpoints: send it as
+            <code>Authorization: Bearer &lt;token&gt;</code>. <b>New token</b> stops the old one working. See the README for
+            examples.</span>
+        <form id="newApiToken" action="/settings/api-token" method="post"
+            onsubmit="return confirm('Make a new API token? Anything using the old one will stop working until you update it.');"></form>
+
+    </div>
+
 </div>
 
 <script>
+    function copyApiToken(button) {
+        var input = document.getElementById('apiToken');
+        input.select();
+        (navigator.clipboard ? navigator.clipboard.writeText(input.value) : Promise.reject())
+            .catch(function () { document.execCommand('copy'); })
+            .then(function () {
+                button.textContent = 'Copied';
+                setTimeout(function () { button.textContent = 'Copy'; }, 1500);
+            });
+    }
+
     function resetDefault(ele) {
         var d = ele.getAttribute('data-default');
         var i = ele.getAttribute('data-input');
