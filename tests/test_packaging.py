@@ -22,5 +22,28 @@ class PackagingTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, "config.json (holds the Plex token) must be git-ignored")
 
 
+class NoPersonalDetailsTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("git"), "git not installed")
+    def test_devices_json_is_git_ignored(self):
+        result = subprocess.run(["git", "check-ignore", "-q", "devices.json"], cwd=ROOT)
+        self.assertEqual(result.returncode, 0, "devices.json (device serials, IDs, signatures) must be git-ignored")
+
+    @unittest.skipUnless(shutil.which("git"), "git not installed")
+    def test_only_placeholder_macs_are_committed(self):
+        # A real MAC would identify someone's subscription; examples use 00:1A:79:00:00:0X or XX.
+        files = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.split()
+        found = {}
+        for name in files:
+            try:
+                with open(os.path.join(ROOT, name), errors="ignore") as f:
+                    text = f.read()
+            except OSError:
+                continue
+            for mac in re.findall(r"\b(?:[0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\b", text):
+                if not re.match(r"(?i)00[:-]1A[:-]79[:-]00[:-]00[:-]0[0-9]$", mac):
+                    found.setdefault(name, set()).add(mac)
+        self.assertEqual(found, {})
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -34,6 +34,9 @@ class TemplateScriptTest(unittest.TestCase):
     def test_blocks_script_is_valid_javascript(self):
         self.assertValidJavaScript("blocks.html")
 
+    def test_portals_script_is_valid_javascript(self):
+        self.assertValidJavaScript("portals.html")
+
     def test_guide_script_is_valid_javascript(self):
         self.assertValidJavaScript("guide.html")
 
