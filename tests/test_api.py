@@ -94,12 +94,12 @@ class PlexRetryTest(unittest.TestCase):
     def test_failure_is_retried_later_then_given_up(self):
         self.app.syncPlex()
         self.assertEqual(self.Timer.call_args.args[0], 60)
-        self.assertIsNotNone(self.app.lastPlexSync["retryAt"])
+        self.assertIsNotNone(self.app.syncRetry["at"])
         self.app.syncPlex(retry=True)
         self.assertEqual(self.Timer.call_args.args[0], 120)
         self.app.syncPlex(retry=True)  # out of retries
         self.assertEqual(self.Timer.call_count, 2)
-        self.assertIsNone(self.app.lastPlexSync["retryAt"])
+        self.assertIsNone(self.app.syncRetry["at"])
 
     def test_a_new_change_starts_the_retries_again(self):
         self.app.syncPlex()
@@ -113,7 +113,7 @@ class PlexRetryTest(unittest.TestCase):
         self.plexSync.return_value = "Plex updated: 1 channels enabled"
         self.app.syncPlex(retry=True)
         self.Timer.return_value.cancel.assert_called()
-        self.assertIsNone(self.app.lastPlexSync["retryAt"])
+        self.assertIsNone(self.app.syncRetry["at"])
         self.assertTrue(self.app.lastPlexSync["ok"])
 
 

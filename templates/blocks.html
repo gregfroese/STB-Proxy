@@ -17,21 +17,24 @@
     <div class="d-flex align-items-center mb-2">
         <h4 class="mb-0">Blocks</h4>
         <form action="/blocks/sync" method="post" class="ms-auto">
-            <button class="btn btn-primary" {{ "disabled" if not plexConfigured }}><i class="fa fa-refresh"></i> Sync Plex now</button>
+            <button class="btn btn-primary" {{ "disabled" if not (plexConfigured or jellyfinConfigured) }}
+                title="Update Plex and Jellyfin with the current lineup"><i class="fa fa-refresh"></i> Sync now</button>
         </form>
     </div>
 
-    <p class="text-muted">
-        {% if not plexConfigured %}
-        Plex sync is off. Add the Plex address and token in Settings.
-        {% elif lastPlexSync.time %}
-        Last Plex sync {{ lastPlexSync.time }}:
-        <span class="{{ 'text-success' if lastPlexSync.ok else 'text-danger' }}">{{ lastPlexSync.message }}</span>
-        {% if lastPlexSync.retryAt %}<span class="text-warning">Trying again at
-            <span class="plex-retry" data-at="{{ lastPlexSync.retryAt|int }}"></span>.</span>{% endif %}
-        {% else %}
-        {{ lastPlexSync.message }}
+    <p class="text-muted mb-1">
+        {% if not plexConfigured and not jellyfinConfigured %}
+        Plex and Jellyfin updates are off. Add either in Settings.
         {% endif %}
+        {% for name, configured, last in [("Plex", plexConfigured, lastPlexSync), ("Jellyfin", jellyfinConfigured, lastJellyfinSync)] if configured %}
+        <span class="d-block">
+            {% if last.time %}Last {{ name }} update {{ last.time }}:
+            <span class="{{ 'text-success' if last.ok else 'text-danger' }}">{{ last.message }}</span>
+            {% else %}{{ last.message }}{% endif %}
+        </span>
+        {% endfor %}
+        {% if retryAt %}<span class="text-warning d-block">Trying again at
+            <span class="plex-retry" data-at="{{ retryAt|int }}"></span>.</span>{% endif %}
     </p>
 
     <ul class="nav nav-tabs mb-3" role="tablist">

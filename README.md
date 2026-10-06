@@ -117,8 +117,19 @@ Make sets of channels available only when you want them.
 When STB-Proxy is added to Plex as an HDHomeRun tuner, it can keep the Plex DVR's channel list up to date.
 
 - In **Settings → Plex**, enter the Plex address (eg `http://192.168.1.10:32400`) and your Plex token. The token is never shown again; leave the field blank to keep it.
-- Switching a block, marking a channel dead or working, or saving editor changes that alter which channels are available then maps those channels in Plex and reloads its guide. The **Blocks** page shows the result of the last update and has a **Sync Plex now** button.
+- Switching a block, marking a channel dead or working, or saving editor changes that alter which channels are available then maps those channels in Plex and reloads its guide. The **Blocks** page shows the result of the last update and has a **Sync now** button (Plex and Jellyfin).
 - If a portal can't be reached, or no channels would be left, Plex is left unchanged rather than emptied.
+- If Plex can't be reached, STB-Proxy tries again after 1, 2, 5, 10, 15 and 20 minutes.
+
+# Jellyfin
+
+STB-Proxy can be Jellyfin's Live TV source and keep it up to date.
+
+1. In Jellyfin, make an API key under **Dashboard → API Keys**.
+2. In STB-Proxy's **Settings → Jellyfin**, enter the Jellyfin address (eg `http://192.168.1.10:8096`) and the key, and **Save**.
+3. Press **Set up Jellyfin Live TV**. It adds STB-Proxy to Jellyfin as an M3U tuner (`/playlist`) and an XMLTV guide (`/xmltv`), unless they're there already, and loads the channels.
+
+From then on, anything that changes the lineup (blocks, dead marks, editor saves, the API) also has Jellyfin reload its channels and guide, with the same retries as Plex. Pressing **Set up** again reloads them too.
 
 # Device-locked portals
 
@@ -161,10 +172,10 @@ STB-Proxy has a small JSON API under `/api/`. Every call needs the API token fro
 | `GET /api/blocks/<name>` | One block (the name ignores case) |
 | `POST /api/blocks/<name>` with `{"enabled": true}` or `false` | Switch a block on or off |
 | `POST /api/blocks/<name>/on`, `/off`, `/toggle` | The same, without a body |
-| `GET /api/plex` | The last Plex sync, and when it will try again if it failed |
-| `POST /api/plex/sync` | Sync Plex now |
+| `GET /api/plex`, `GET /api/jellyfin` | The last Plex sync or Jellyfin refresh, and when it will try again if it failed |
+| `POST /api/sync` | Update Plex and Jellyfin now (`/api/plex/sync` does the same) |
 
-Switching a block syncs Plex, and the reply says whether that worked. If Plex can't be reached (say it's restarting), STB-Proxy tries again after 1, 2, 5, 10, 15 and 20 minutes. Syncs run one at a time, so a burst of changes ends in one sync with the final state.
+Switching a block updates Plex and Jellyfin, and the reply says whether that worked. If one can't be reached (say it's restarting), STB-Proxy tries again after 1, 2, 5, 10, 15 and 20 minutes. Syncs run one at a time, so a burst of changes ends in one sync with the final state.
 
 Example `configuration.yaml` (put `Bearer <your token>` in `secrets.yaml` as `stb_proxy_auth`):
 
@@ -182,7 +193,7 @@ switch:
 
 rest_command:
   stb_proxy_sync_plex:
-    url: http://192.168.1.10:8001/api/plex/sync
+    url: http://192.168.1.10:8001/api/sync
     method: post
     headers:
       Authorization: !secret stb_proxy_auth

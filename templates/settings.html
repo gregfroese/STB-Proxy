@@ -229,6 +229,44 @@
 
     <br>
 
+    <h4>Jellyfin</h4>
+    <hr>
+    <div class="p-sm-3">
+
+        <h6>Jellyfin address:</h6>
+        <div class="col-md-4">
+            <input form="save" type="text" name="jellyfin url" class="form-control"
+                placeholder="http://192.168.1.10:8096" value="{{ settings['jellyfin url'] }}">
+        </div>
+        <span class="text-muted">Lets block switches and dead marks update Jellyfin's Live TV. Leave blank to turn this off.</span>
+
+        <br>
+        <br>
+
+        <h6>Jellyfin API key:</h6>
+        <div class="col-md-4">
+            <input form="save" type="password" name="jellyfin api key" class="form-control" autocomplete="off"
+                placeholder="{{ 'Saved, leave blank to keep' if settings['jellyfin api key'] else 'Not set' }}">
+        </div>
+        <div class="form-check mt-1">
+            <input form="save" type="checkbox" class="form-check-input" name="clear jellyfin api key" id="clear jellyfin api key" value="true">
+            <label class="form-check-label" for="clear jellyfin api key">Clear key</label>
+        </div>
+        <span class="text-muted">Make one in Jellyfin under Dashboard &rarr; API Keys.</span>
+
+        <br>
+        <br>
+
+        <button type="submit" form="jellyfinSetup" class="btn btn-outline-light" {{ "disabled" if not (settings['jellyfin url'] and settings['jellyfin api key']) }}>
+            Set up Jellyfin Live TV</button>
+        <div class="text-muted mt-1">Adds STB-Proxy to Jellyfin as a tuner (the playlist) and a guide (the XMLTV), if it
+            isn't there already. Save the address and key first.</div>
+        <form id="jellyfinSetup" action="/settings/jellyfin-setup" method="post"></form>
+
+    </div>
+
+    <br>
+
     <h4>Integrations</h4>
     <hr>
     <div class="p-sm-3">

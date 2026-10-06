@@ -1,0 +1,109 @@
+"""Keep Jellyfin's Live TV in step with STB-Proxy's lineup.
+
+Jellyfin reads STB-Proxy as an M3U tuner (/playlist) with an XMLTV guide (/xmltv). When
+the lineup changes, its "Refresh Guide" task re-reads both, so channels come and go.
+"""
+import json as jsonlib
+
+import requests
+
+TIMEOUT = 30
+REFRESH_TASK = "RefreshGuide"
+
+
+class JellyfinError(Exception):
+    pass
+
+
+def call(method, jellyfinUrl, path, apiKey, json=None, params=None):
+    jellyfinUrl = jellyfinUrl.rstrip("/")
+    try:
+        response = requests.request(
+            method,
+            jellyfinUrl + path,
+            json=json,
+            params=params,
+            headers={
+                "Authorization": 'MediaBrowser Client="STB-Proxy", Token="{}"'.format(apiKey),
+                "Accept": "application/json",
+            },
+            timeout=TIMEOUT,
+        )
+    except requests.RequestException as e:
+        raise JellyfinError("couldn't reach Jellyfin at {} ({})".format(jellyfinUrl, e.__class__.__name__))
+    if response.status_code in (401, 403):
+        raise JellyfinError("Jellyfin rejected the API key (HTTP {})".format(response.status_code))
+    if not 200 <= response.status_code < 300:
+        raise JellyfinError("Jellyfin returned HTTP {} for {} {}".format(response.status_code, method, path))
+    return response
+
+
+def reply(response):
+    # Jellyfin may start JSON with a byte-order mark.
+    return jsonlib.loads(response.content.decode("utf-8-sig"))
+
+
+def liveTvConfig(jellyfinUrl, apiKey):
+    try:
+        return reply(call("GET", jellyfinUrl, "/System/Configuration/livetv", apiKey))
+    except ValueError:
+        raise JellyfinError("unexpected reply from Jellyfin when reading its Live TV settings")
+
+
+def ours(url, stbBase):
+    return str(url or "").rstrip("/").startswith(stbBase.rstrip("/"))
+
+
+def status(jellyfinUrl, apiKey, stbBase):
+    """Whether Jellyfin has STB-Proxy as a tuner and as a guide."""
+    config = liveTvConfig(jellyfinUrl, apiKey)
+    return {
+        "tuner": any(ours(t.get("Url"), stbBase) for t in config.get("TunerHosts") or []),
+        "guide": any(ours(p.get("Path"), stbBase) for p in config.get("ListingProviders") or []),
+    }
+
+
+def setup(jellyfinUrl, apiKey, stbBase, tunerCount=1):
+    """Add STB-Proxy to Jellyfin as an M3U tuner and an XMLTV guide, unless it's there. Returns a message."""
+    have = status(jellyfinUrl, apiKey, stbBase)
+    stbBase = stbBase.rstrip("/")
+    added = []
+    if not have["tuner"]:
+        call("POST", jellyfinUrl, "/LiveTv/TunerHosts", apiKey, json={
+            "Type": "m3u",
+            "Url": stbBase + "/playlist",
+            "FriendlyName": "STB-Proxy",
+            "TunerCount": tunerCount,
+            "ImportFavoritesOnly": False,
+            "AllowHWTranscoding": True,
+            "AllowFmp4TranscodingContainer": False,
+            "AllowStreamSharing": True,
+            "EnableStreamLooping": False,
+            "IgnoreDts": True,
+        })
+        added.append("tuner ({}/playlist)".format(stbBase))
+    if not have["guide"]:
+        call("POST", jellyfinUrl, "/LiveTv/ListingProviders", apiKey,
+             params={"validateListings": "false", "validateLogin": "false"},
+             json={"Type": "xmltv", "Path": stbBase + "/xmltv", "EnableAllTuners": True})
+        added.append("guide ({}/xmltv)".format(stbBase))
+    refresh(jellyfinUrl, apiKey)
+    if not added:
+        return "Jellyfin already has STB-Proxy as a tuner and guide; it's reloading the channels and guide"
+    return "Added STB-Proxy to Jellyfin's Live TV ({}); it's loading the channels and guide".format(" and ".join(added))
+
+
+def refresh(jellyfinUrl, apiKey):
+    """Run Jellyfin's Refresh Guide task, which re-reads the tuner's channels and the guide."""
+    try:
+        tasks = reply(call("GET", jellyfinUrl, "/ScheduledTasks", apiKey))
+    except ValueError:
+        raise JellyfinError("unexpected reply from Jellyfin when listing its tasks")
+    task = next((t for t in tasks if t.get("Key") == REFRESH_TASK), None)
+    if not task:
+        raise JellyfinError("Jellyfin has no Refresh Guide task (is Live TV set up?)")
+    if task.get("State") == "Running":
+        # It may already have read the old lineup: start it again so it sees the new one.
+        call("DELETE", jellyfinUrl, "/ScheduledTasks/Running/" + task["Id"], apiKey)
+    call("POST", jellyfinUrl, "/ScheduledTasks/Running/" + task["Id"], apiKey)
+    return "Jellyfin is refreshing its channels and guide"
