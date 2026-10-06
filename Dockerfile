@@ -16,6 +16,7 @@ RUN apk add --no-cache \
 	py3-flask \
 	py3-requests \
 	py3-waitress \
+	tini \
 	tzdata
 
 WORKDIR /app
@@ -32,4 +33,7 @@ COPY /static /app/static
 EXPOSE 8001
 VOLUME /config
 
-ENTRYPOINT ["python3","-u","/app/app.py"]
+# tini runs as PID 1: it passes Docker's stop signal on to STB-Proxy (a process that is
+# PID 1 itself ignores it, so every stop waited 10 s and was then killed) and cleans up
+# finished ffmpeg processes.
+ENTRYPOINT ["/sbin/tini","--","python3","-u","/app/app.py"]
