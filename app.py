@@ -145,6 +145,7 @@ def loadConfig():
     data.setdefault("portals", {})
     data.setdefault("settings", {})
     data.setdefault("blocks", {})
+    data.setdefault("saved filters", {})
 
     settings = data["settings"]
     settingsOut = {}
@@ -193,6 +194,15 @@ def getSettings():
 
 def saveSettings(settings):
     config["settings"] = settings
+    writeConfig(config)
+
+
+def getSavedFilters():
+    return config.setdefault("saved filters", {})
+
+
+def saveSavedFilters(saved):
+    config["saved filters"] = saved
     writeConfig(config)
 
 
@@ -1134,6 +1144,15 @@ def guideSearch():
     lineupOnly = request.args.get("lineup") == "true"
     favouritesOnly = request.args.get("favourites") == "true"
     hideDead = request.args.get("hideDead", "true") == "true"
+    mode = request.args.get("mode", "prefix")
+    if mode not in ("words", "prefix", "contains", "exact", "regex"):
+        mode = "prefix"
+    channelQuery = request.args.get("channel", "").strip()
+    try:
+        guide.parseQuery(query, mode)
+        channelTest = guide.parseQuery(channelQuery, request.args.get("channelMode", "words"))
+    except ValueError as e:
+        return flask.jsonify({"error": str(e)}), 400
 
     cache = loadGuide(force=request.args.get("refresh") == "true")
     portals = getPortals()
@@ -1149,11 +1168,15 @@ def guideSearch():
             return False
         if favouritesOnly and channelId not in portals[portal].get("favourite channels", []):
             return False
+        if channelTest:
+            custom = portals[portal].get("custom channel names", {}).get(channelId, "")
+            if not (channelTest(cache["channels"][(portal, channelId)]["name"]) or (custom and channelTest(custom))):
+                return False
         return True
 
     matches, total = [], 0
-    if query or onNow or lineupOnly or favouritesOnly:
-        matches, total = guide.search(cache["programmes"], query, int(time.time()), keep, onNow)
+    if query or onNow or lineupOnly or favouritesOnly or channelQuery:
+        matches, total = guide.search(cache["programmes"], query, int(time.time()), keep, onNow, mode=mode)
 
     results = []
     for start, stop, title, desc, portal, channelId in matches:
@@ -1813,6 +1836,36 @@ def accountCheck():
             if token:
                 stb.getProfile(portal["url"], mac, token, portal["proxy"], refresh=True)
     return accountActivity()
+
+
+# Named filters for the editor and guide pages, kept in config.json so every browser sees them.
+FILTER_PAGES = ("editor", "guide")
+
+
+@app.route("/filters/<page>", methods=["GET"])
+@authorise
+def savedFilters(page):
+    if page not in FILTER_PAGES:
+        return flask.jsonify({"error": "Unknown page"}), 404
+    return flask.jsonify(getSavedFilters().get(page, {}))
+
+
+@app.route("/filters/<page>", methods=["POST"])
+@authorise
+def saveFilter(page):
+    data = request.get_json(force=True, silent=True) or {}
+    name = str(data.get("name", "")).strip()[:60]
+    filters = data.get("filters")
+    if page not in FILTER_PAGES or not name or not isinstance(filters, dict) or len(json.dumps(filters)) > 4000:
+        return flask.jsonify({"error": "Give a name and the filters to save"}), 400
+    saved = json.loads(json.dumps(getSavedFilters()))
+    pageFilters = saved.setdefault(page, {})
+    if data.get("delete"):
+        pageFilters.pop(name, None)
+    else:
+        pageFilters[name] = filters
+    saveSavedFilters(saved)
+    return flask.jsonify(pageFilters)
 
 
 @app.route("/dashboard")

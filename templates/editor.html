@@ -43,6 +43,8 @@
 
 </div>
 
+<script src="{{ url_for('static', filename='channel-filter.js') }}"></script>
+<script src="{{ url_for('static', filename='saved-filters.js') }}"></script>
 <script>
     var enabledEdits = [];
     var numberEdits = [];
@@ -71,6 +73,10 @@
         var c = ele.checked;
         var j = { "portal": p, "channel id": i, "enabled": c };
         enabledEdits.push(j);
+        var row = rowFor({ portal: p, channelId: i });
+        if (row) {
+            row.enabled = c;  // so the Enabled filter follows the switch before saving
+        }
     }
 
     function editCustomNumber(ele) {
@@ -214,6 +220,7 @@
     }
 
     function refreshBlockNames() {
+        fillBlockFilter();
         var list = document.getElementById('blockNames');
         if (list) {
             list.innerHTML = allBlocks.map(function (name) { return '<option value="' + escapeAttr(name) + '">'; }).join('');
@@ -274,12 +281,138 @@
             });
     }
 
+    // ---- Filters: name (with match modes), genre, block and enabled, remembered between visits.
+    var nameTest = null;
+    var filters = { name: "", mode: "words", genre: "", block: "", enabled: "" };
+    // Block filter values that can't be block names (names can't contain commas).
+    var IN_A_BLOCK = ",in", NOT_IN_A_BLOCK = ",none";
+
+    function rowGenre(row) {
+        return row.customGenre || row.genre;
+    }
+
+    function filterMatches(row) {
+        if (nameTest && !(nameTest(row.channelName) || (row.customChannelName && nameTest(row.customChannelName)))) {
+            return false;
+        }
+        if (filters.genre && rowGenre(row) != filters.genre) {
+            return false;
+        }
+        if (filters.block == IN_A_BLOCK ? !row.blocks.length
+            : filters.block == NOT_IN_A_BLOCK ? row.blocks.length
+                : filters.block && row.blocks.indexOf(filters.block) == -1) {
+            return false;
+        }
+        if (filters.enabled && (filters.enabled == "on") != !!row.enabled) {
+            return false;
+        }
+        return true;
+    }
+
+    function fillGenreFilter() {
+        var counts = {};
+        table.rows().data().toArray().forEach(function (row) {
+            var g = rowGenre(row);
+            counts[g] = (counts[g] || 0) + 1;
+        });
+        var genres = Object.keys(counts).sort(function (a, b) { return a.localeCompare(b); });
+        document.getElementById("genreFilter").innerHTML = '<option value="">All genres</option>' +
+            genres.map(function (g) {
+                return '<option value="' + escapeAttr(g) + '">' + escapeAttr(g) + ' (' + counts[g] + ')</option>';
+            }).join("");
+        document.getElementById("genreFilter").value = filters.genre;
+    }
+
+    function fillBlockFilter() {
+        var select = document.getElementById("blockFilter");
+        if (!select) {
+            return;
+        }
+        select.innerHTML = '<option value="">Any block</option>' +
+            '<option value="' + IN_A_BLOCK + '">In a block</option>' +
+            '<option value="' + NOT_IN_A_BLOCK + '">Not in a block</option>' +
+            allBlocks.map(function (b) { return '<option value="' + escapeAttr(b) + '">Block: ' + escapeAttr(b) + '</option>'; }).join("");
+        select.value = filters.block;
+        if (select.value != filters.block) {
+            filters.block = "";  // that block is gone
+        }
+    }
+
+    function applyFilters() {
+        filters.name = document.getElementById("nameFilter").value;
+        filters.mode = document.getElementById("nameMode").value;
+        filters.genre = document.getElementById("genreFilter").value;
+        filters.block = document.getElementById("blockFilter").value;
+        filters.enabled = document.getElementById("enabledFilter").value;
+        var parsed = parseChannelQuery(filters.name, filters.mode);
+        var error = parsed && parsed.error;
+        document.getElementById("nameFilterError").textContent = error || "";
+        nameTest = error ? null : parsed;
+        try {
+            localStorage.setItem("editorFilters", JSON.stringify(filters));
+        } catch (e) { }
+        table.draw();
+    }
+
+    function resetFilters() {
+        document.getElementById("nameFilter").value = "";
+        document.getElementById("nameMode").value = "words";
+        document.getElementById("genreFilter").value = "";
+        document.getElementById("blockFilter").value = "";
+        document.getElementById("enabledFilter").value = "";
+        applyFilters();
+    }
+
+    function setUpFilters() {
+        try {
+            var saved = JSON.parse(localStorage.getItem("editorFilters") || "null");
+            if (saved) {
+                filters = Object.assign(filters, saved);
+            }
+        } catch (e) { }
+        fillGenreFilter();
+        fillBlockFilter();
+        document.getElementById("nameFilter").value = filters.name;
+        document.getElementById("nameMode").value = filters.mode;
+        document.getElementById("enabledFilter").value = filters.enabled;
+        var timer = null;
+        document.getElementById("nameFilter").addEventListener("input", function () {
+            clearTimeout(timer);
+            timer = setTimeout(applyFilters, 200);
+        });
+        ["nameMode", "genreFilter", "blockFilter", "enabledFilter"].forEach(function (id) {
+            document.getElementById(id).addEventListener("change", applyFilters);
+        });
+        applyFilters();
+        setUpSavedFilters("editor", document.getElementById("savedFilters"), currentView, showView);
+    }
+
+    // Everything a saved filter keeps: the filter bar and the switches.
+    function currentView() {
+        return Object.assign({}, filters, { hideDead: hideDead, favouritesOnly: favouritesOnly, hideInBlocks: hideInBlocks });
+    }
+
+    function showView(view) {
+        document.getElementById("nameFilter").value = view.name || "";
+        document.getElementById("nameMode").value = view.mode || "words";
+        document.getElementById("genreFilter").value = view.genre || "";
+        document.getElementById("blockFilter").value = view.block || "";
+        document.getElementById("enabledFilter").value = view.enabled || "";
+        hideDead = view.hideDead !== false;
+        favouritesOnly = !!view.favouritesOnly;
+        hideInBlocks = !!view.hideInBlocks;
+        document.getElementById("hideDead").checked = hideDead;
+        document.getElementById("favouritesOnly").checked = favouritesOnly;
+        document.getElementById("hideInBlocks").checked = hideInBlocks;
+        applyFilters();
+    }
+
     var hideDead = true;
     var favouritesOnly = false;
     var hideInBlocks = false;
     $.fn.dataTable.ext.search.push(function (settings, data, dataIndex, rowData) {
         return (!hideDead || !rowData.dead) && (!favouritesOnly || rowData.favourite) &&
-            (!hideInBlocks || !rowData.blocks.length);
+            (!hideInBlocks || !rowData.blocks.length) && filterMatches(rowData);
     });
 
     /* Create an array with the values of all the checkboxes in a column */
@@ -308,6 +441,7 @@
     $(document).ready(function () {
         table = $('#table').DataTable({
             dom: "<'row m-1'<'col-auto'B><'col-auto d-flex align-items-center dead-filter'><'col-auto ms-auto'f><'col-auto'l>>" +
+                "<'row m-1'<'col-12 filter-bar'>>" +
                 "<'row m-1'<'col-12 bulk-bar'>>" +
                 "<'row'<'col-12'tr>>" +
                 "<'row mb-1 mb-lg-0'<'col-auto text-light'i><'col-auto ms-auto'p>>",
@@ -315,6 +449,25 @@
             order: [[0, 'des'], [2, 'asc']],
             pageLength: 25,
             initComplete: function () {
+                $('div.filter-bar').html(
+                    '<div class="d-flex flex-wrap align-items-center text-light">' +
+                    '<input type="search" class="form-control form-control-sm me-1" style="width: 240px;" id="nameFilter" ' +
+                    'placeholder="Name, e.g. TSN, sportsnet -4k" title="Words must all match. Comma: or. -word: leave out. ' +
+                    '&quot;quotes&quot;: a phrase.">' +
+                    '<select class="form-select form-select-sm me-3" style="width: auto;" id="nameMode">' +
+                    '<option value="words">Whole words</option><option value="prefix">Word starts with</option>' +
+                    '<option value="contains">Contains</option><option value="exact">Exact name</option>' +
+                    '<option value="regex">Regex</option></select>' +
+                    '<select class="form-select form-select-sm me-2" style="width: auto;" id="genreFilter"></select>' +
+                    '<select class="form-select form-select-sm me-2" style="width: auto;" id="blockFilter"></select>' +
+                    '<select class="form-select form-select-sm me-2" style="width: auto;" id="enabledFilter">' +
+                    '<option value="">Enabled or not</option><option value="on">Enabled</option>' +
+                    '<option value="off">Not enabled</option></select>' +
+                    '<button type="button" class="btn btn-sm btn-outline-light me-3" onclick="resetFilters()">Clear filters</button>' +
+                    '<span class="d-flex align-items-center me-2" id="savedFilters"></span>' +
+                    '<span class="small text-danger" id="nameFilterError"></span></div>'
+                );
+                setUpFilters();
                 $('div.bulk-bar').html(
                     '<div class="d-flex flex-wrap align-items-center text-light">' +
                     '<span class="me-2" id="selectedCount">0 selected</span>' +
@@ -360,7 +513,7 @@
             ],
             language: {
                 search: "",
-                searchPlaceholder: 'Filter',
+                searchPlaceholder: 'Search all columns',
                 lengthMenu: "_MENU_",
             },
             buttons: {

@@ -52,6 +52,15 @@ docker run -d --name stb-proxy --restart unless-stopped \
 Needs Python 3 with Flask, Requests and Waitress, plus ffmpeg and ffprobe. Run `python3 app.py` with `HOST` set as above and `CONFIG` pointing at where `config.json` should live. It serves on port 8001.
 
 
+# Finding channels in the Playlist Editor
+
+The bar above the table filters by name, genre, block and whether a channel is enabled. Your browser remembers the filters.
+
+- **Whole words** (the default): `TSN` finds "TSN 1 FHD" but not "SPORTSNET". **Word starts with**: `sport` finds "Sportsnet" and "Sports Max". **Contains**, **Exact name** and **Regex** are there too.
+- Words must all match; a comma means "or"; `-word` leaves out; quotes keep a phrase together. For example: `TSN, "sportsnet one" -4k`.
+- **Select all shown** and channel up/down follow the filters.
+- **Save** keeps the current filters (and switches) under a name; pick it from **Saved filters** to apply it again, or **Delete** it. Saved filters live in `config.json`, so every browser sees them.
+
 # Channel blocks
 
 Make sets of channels available only when you want them.
@@ -88,8 +97,11 @@ Make sets of channels available only when you want them.
 
 # Guide
 
-- The **Guide** page searches the next 24 hours of programmes on every channel the portals carry, not just the ones in your lineup. Every word you type must appear in the title or description.
+- The **Guide** page searches the next 24 hours of programmes on every channel the portals carry, not just the ones in your lineup.
+- The search uses the same language as the Playlist Editor's name filter: words must all match, a comma means "or", `-word` leaves out, quotes keep a phrase together. The default, **Words start with**, finds `oiler` in "Oilers" without matching `tsn` inside "Sportsnet". **Whole words**, **Contains**, **Exact title** and **Regex** are there too.
+- **Channel** limits results to channels whose names match, e.g. `TSN, sportsnet -4k`. With only a channel filled in, it lists what's on those channels.
 - Switch on **On now**, **In my lineup** or **Favourites** to narrow the results, or to browse without typing. **Hide dead** is on by default.
+- **Save** keeps the current search under a name, as in the Playlist Editor.
 - Click play on a result to preview the channel. The preview has the same favourite, dead and blocks controls as everywhere else.
 - The guide is fetched from the portal the first time you search (about 15 seconds) and kept for an hour. **Reload guide** fetches it again.
 - If a portal has no bulk guide, only the channels in your lineup are searched.
