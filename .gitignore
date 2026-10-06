@@ -5,3 +5,4 @@ changenotes.txt
 .vscode
 .venv/
 __pycache__/
+config/

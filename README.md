@@ -19,22 +19,37 @@
 
 # Setup
 
-Install the latest Docker image with...
+## Quick start with Docker Compose
+
+1. Get the code: `git clone https://github.com/gregfroese/STB-Proxy.git && cd STB-Proxy`
+2. Edit `docker-compose.yml`:
+   - `HOST`: this machine's LAN address and port, e.g. `192.168.1.10:8001`. It goes into the playlist, XMLTV and tuner links, so players must be able to reach it.
+   - `TZ`: your time zone, e.g. `America/Edmonton`.
+3. Start it: `docker compose up -d`
+4. Open `http://<HOST>/` in a browser and add your portal under **Portals**.
+
+Settings and edits are kept in `./config/config.json`. If a portal locks its MACs to a device, put `devices.json` in the same folder. The container runs as root, so files it creates there belong to root.
+
+To update: `git pull && docker compose up -d --build`
+
+## Docker without Compose
 
 ```
-docker create \
---name=STB-Proxy \
---restart=always \
--p 8084:8001 \
--e HOST=10.0.1.200:8084 \
--v </host/path>:/config \
-chris230291/stb-proxy:latest
+docker build -t stb-proxy .
+docker run -d --name stb-proxy --restart unless-stopped \
+  -p 8001:8001 \
+  -e HOST=192.168.1.10:8001 \
+  -e TZ=Etc/UTC \
+  -v /path/to/config:/config \
+  stb-proxy
 ```
 
-- Map whichever port you like to the default `8001`
-- `HOST` should be the docker hosts ip + the port you chose
-- Mounting `/config` is required for settings to persist through restarts
-- To configure go to the `HOST` in a browser eg 10.0.1.200:8084
+- Map whichever host port you like to `8001`, and use that port in `HOST`.
+- Mounting `/config` is required for settings to survive restarts.
+
+## Without Docker
+
+Needs Python 3 with Flask, Requests and Waitress, plus ffmpeg and ffprobe. Run `python3 app.py` with `HOST` set as above and `CONFIG` pointing at where `config.json` should live. It serves on port 8001.
 
 
 # Channel blocks
