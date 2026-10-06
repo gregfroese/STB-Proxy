@@ -62,9 +62,9 @@ class PreviewPromptTest(unittest.TestCase):
         self.assertRegex(self.script, r'function stopStream\(\) \{[^}]*player\.removeAttribute\("src"\);\s*player\.load\(\);')
         self.assertRegex(self.script, r'function closePlayer\(\) \{[^}]*stopStream\(\);')
 
-    def test_switching_channels_lets_the_last_stream_close_first(self):
-        # Otherwise the new stream finds the portal connection busy ("No free MAC").
-        self.assertRegex(self.script, r'function selectChannel\(ele\) \{[\s\S]*?stopStream\(\);[\s\S]*?startStream\(wasPlaying \? \d+ : 0\);[\s\S]*?\n    \}')
+    def test_switching_channels_starts_the_next_stream_at_once(self):
+        # The server stops this viewer's last preview itself (see stopPreview), so no waiting.
+        self.assertRegex(self.script, r'function selectChannel\(ele\) \{[\s\S]*?stopStream\(\);[\s\S]*?startStream\(0\);[\s\S]*?\n    \}')
 
     def test_failed_preview_retries_once_before_offering_mark_dead(self):
         self.assertRegex(self.script, r'if \(!retried\) \{[^}]*startStream\(\d+\);\s*return;')
