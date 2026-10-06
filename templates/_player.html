@@ -32,10 +32,70 @@
     .play-button.playing {
         box-shadow: 0 0 0 0.2rem #ffc107;
     }
+
+    /* Full screen: the whole panel fills the screen, its title bar and controls float over the video. */
+    .player-panel:fullscreen {
+        width: 100vw;
+        height: 100vh;
+        max-height: none;
+        overflow: hidden;
+        border: 0;
+        border-radius: 0;
+        background-color: #000;
+    }
+    .player-panel:-webkit-full-screen {
+        width: 100vw;
+        height: 100vh;
+        max-height: none;
+        overflow: hidden;
+        border: 0;
+        border-radius: 0;
+        background-color: #000;
+    }
+    .player-panel.fullscreen video {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+    .player-panel.fullscreen .player-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 2;
+        padding: 1rem !important;
+        font-size: 1.25rem;
+        background: linear-gradient(rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0));
+    }
+    .player-panel.fullscreen .player-controls {
+        display: block;
+        position: absolute;
+        left: 1rem;
+        bottom: 4.5rem;
+        z-index: 2;
+        width: min(520px, calc(100vw - 2rem));
+        border-radius: 0.5rem;
+        background-color: rgba(33, 37, 41, 0.85);
+    }
+    .player-panel.fullscreen #minimiseButton {
+        display: none;
+    }
+    .player-panel.fullscreen .player-header,
+    .player-panel.fullscreen .player-controls {
+        transition: opacity 0.3s;
+    }
+    .player-panel.fullscreen.idle .player-header,
+    .player-panel.fullscreen.idle .player-controls {
+        opacity: 0;
+        pointer-events: none;
+    }
+    .player-panel.fullscreen.idle {
+        cursor: none;
+    }
 </style>
 
 <div class="player-panel text-light d-none" id="playerPanel" role="region" aria-labelledby="channelLabel">
-    <div class="d-flex align-items-center p-2">
+    <div class="player-header d-flex align-items-center p-2">
         <span class="fw-bold text-truncate me-2" id="channelLabel">Channel</span>
         <button type="button" class="btn btn-sm btn-outline-light ms-auto" id="channelDown"
             onclick="changeChannel(-1)" title="Channel down: previous in the list (Page Down)"><i class="fa fa-chevron-down"></i></button>
@@ -43,12 +103,15 @@
             onclick="changeChannel(1)" title="Channel up: next in the list (Page Up)"><i class="fa fa-chevron-up"></i></button>
         <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="favouriteButton"
             onclick="toggleFavourite()" title="Favourite"><i class="fa fa-star-o"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-light ms-1" id="fullscreenButton"
+            onclick="toggleFullscreen()" title="Full screen (F)"><i class="fa fa-expand"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="minimiseButton"
             onclick="toggleMinimised()" title="Hide controls"><i class="fa fa-window-minimize"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="closePlayer"
             onclick="closePlayer()" title="Stop and close"><i class="fa fa-times"></i></button>
     </div>
-    <video width="100%" id="player" class="d-block bg-black" controls autoplay>
+    <!-- The browser's own full screen would show the video alone, without the controls above. -->
+    <video width="100%" id="player" class="d-block bg-black" controls controlslist="nofullscreen" autoplay playsinline>
         Your browser does not support HTML video.
     </video>
     <div class="player-controls p-2">
@@ -199,7 +262,10 @@
         if (event.key == "PageUp" || event.key == "PageDown") {
             event.preventDefault();
             changeChannel(event.key == "PageUp" ? 1 : -1);
+        } else if (event.key == "f" || event.key == "F") {
+            toggleFullscreen();
         }
+        wakeOverlay();
     });
 
     function markPlaying() {
@@ -269,14 +335,77 @@
 
     // Leave room under the page so the player never hides the last rows.
     function reservePlayerSpace() {
+        if (isFullscreen()) {
+            return;
+        }
         document.body.style.paddingBottom = panel.classList.contains("d-none") ? "" : (panel.offsetHeight + 32) + "px";
     }
+
+    function isFullscreen() {
+        return (document.fullscreenElement || document.webkitFullscreenElement) == panel;
+    }
+
+    function toggleFullscreen() {
+        if (isFullscreen()) {
+            (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        } else if (panel.requestFullscreen || panel.webkitRequestFullscreen) {
+            (panel.requestFullscreen || panel.webkitRequestFullscreen).call(panel);
+        }
+    }
+
+    function fullscreenChanged() {
+        if ((document.fullscreenElement || document.webkitFullscreenElement) == player) {
+            // The video's own full screen button (some browsers keep it): show the whole player instead.
+            var exit = document.exitFullscreen ? document.exitFullscreen() : document.webkitExitFullscreen();
+            Promise.resolve(exit).then(toggleFullscreen);
+            return;
+        }
+        var on = isFullscreen();
+        panel.classList.toggle("fullscreen", on);
+        var button = document.getElementById("fullscreenButton");
+        button.innerHTML = '<i class="fa ' + (on ? 'fa-compress' : 'fa-expand') + '"></i>';
+        button.title = on ? "Leave full screen (F)" : "Full screen (F)";
+        wakeOverlay();
+        reservePlayerSpace();
+    }
+
+    document.addEventListener("fullscreenchange", fullscreenChanged);
+    document.addEventListener("webkitfullscreenchange", fullscreenChanged);
+    player.addEventListener("dblclick", toggleFullscreen);
+
+    // In full screen the title bar and controls fade out after a few seconds without the mouse.
+    var idleTimer = null;
+
+    function wakeOverlay() {
+        panel.classList.remove("idle");
+        clearTimeout(idleTimer);
+        if (isFullscreen()) {
+            idleTimer = setTimeout(goIdle, 3000);
+        }
+    }
+
+    function goIdle() {
+        var overlays = panel.querySelectorAll(".player-header, .player-controls");
+        var inUse = Array.prototype.some.call(overlays, function (e) { return e.matches(":hover"); }) ||
+            document.activeElement == document.getElementById("newBlock");
+        if (inUse) {
+            idleTimer = setTimeout(goIdle, 3000);
+        } else if (isFullscreen()) {
+            panel.classList.add("idle");
+        }
+    }
+
+    panel.addEventListener("mousemove", wakeOverlay);
+    panel.addEventListener("touchstart", wakeOverlay);
 
     if (window.ResizeObserver) {
         new ResizeObserver(reservePlayerSpace).observe(panel);
     }
 
     function closePlayer() {
+        if (isFullscreen()) {
+            toggleFullscreen();
+        }
         currentChannel = null;
         markPlaying();
         stopStream();
