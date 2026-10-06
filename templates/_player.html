@@ -93,11 +93,38 @@
             'data-key="' + escapeAttr(channelKey(row)) + '">dead</span>';
     }
 
+    var streamSeq = 0;
+    var retried = false;
+    var BUSY_MESSAGE = "Portal busy, trying again...";
+
+    function stopStream() {
+        streamSeq++;
+        clearTimeout(previewTimer);
+        // Dropping the source closes the stream, which frees the portal connection.
+        player.pause();
+        player.removeAttribute("src");
+        player.load();
+    }
+
+    function startStream(delay) {
+        var seq = ++streamSeq;
+        setTimeout(function () {
+            if (seq != streamSeq) {
+                return;  // another channel was picked, or the player closed, meanwhile
+            }
+            player.src = currentLink;
+            previewTimer = setTimeout(previewFailed, 15000);
+        }, delay);
+    }
+
     function selectChannel(ele) {
         var row = rowFor({ portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') });
+        stopStream();
         currentChannel = { portal: row.portal, channelId: row.channelId };
         currentLink = row.link;
-        player.src = currentLink;
+        retried = false;
+        // No need to wait for the last stream to close: the server stops it for us.
+        startStream(0);
         showPlayer();
         title.textContent = row.customChannelName || row.channelName;
         showDeadState(row.dead);
@@ -107,16 +134,18 @@
         document.getElementById("newBlock").value = "";
         document.getElementById("previewProblem").classList.add("d-none");
         document.getElementById("deadStatus").textContent = "";
-        clearTimeout(previewTimer);
-        previewTimer = setTimeout(previewFailed, 15000);
     }
 
     player.addEventListener("playing", function () {
         clearTimeout(previewTimer);
+        var status = document.getElementById("deadStatus");
+        if (status.textContent == BUSY_MESSAGE) {
+            status.textContent = "";
+        }
     });
 
     player.addEventListener("error", function () {
-        if (currentChannel) {
+        if (currentChannel && player.getAttribute("src")) {
             previewFailed();
         }
     });
@@ -143,11 +172,7 @@
 
     function closePlayer() {
         currentChannel = null;
-        clearTimeout(previewTimer);
-        // Dropping the source closes the stream, which frees the portal connection.
-        player.pause();
-        player.removeAttribute("src");
-        player.load();
+        stopStream();
         panel.classList.add("d-none");
         reservePlayerSpace();
     }
@@ -172,15 +197,23 @@
         if (!row || row.dead) {
             return;
         }
+        if (!retried) {
+            // Usually the portal connection is still busy with the last stream: try once more.
+            retried = true;
+            stopStream();
+            document.getElementById("deadStatus").textContent = BUSY_MESSAGE;
+            startStream(3000);
+            return;
+        }
+        document.getElementById("deadStatus").textContent = "";
         document.getElementById("previewProblem").classList.remove("d-none");
         setMinimised(false);
     }
 
     function retryPreview() {
         document.getElementById("previewProblem").classList.add("d-none");
-        player.src = currentLink;
-        clearTimeout(previewTimer);
-        previewTimer = setTimeout(previewFailed, 15000);
+        stopStream();
+        startStream(0);
     }
 
     function showDeadState(dead) {

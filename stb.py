@@ -203,7 +203,27 @@ def getExpires(url, mac, token, proxy=None):
         pass
 
 
-def getAllChannels(url, mac, token, proxy=None):
+# The full channel list is large (about 50 MB to parse for ~10k channels) and
+# only changes when the portal adds or drops channels, so keep it for a day.
+# Its stream addresses are placeholders resolved by getLink on every play.
+CHANNELS_TTL = 24 * 3600
+channelLists = {}
+channelListsLock = threading.Lock()
+
+
+def getAllChannels(url, mac, token, proxy=None, refresh=False):
+    # One lock for all portals: fetching lists one at a time also caps the memory they take.
+    with channelListsLock:
+        cached = channelLists.get((url, mac))
+        if cached and not refresh and time.time() - cached["time"] < CHANNELS_TTL:
+            return cached["channels"]
+        channels = fetchAllChannels(url, mac, token, proxy)
+        if channels:
+            channelLists[(url, mac)] = {"channels": channels, "time": time.time()}
+        return channels
+
+
+def fetchAllChannels(url, mac, token, proxy=None):
     proxies = {"http": proxy, "https": proxy}
     cookies = deviceCookies(mac)
     headers = deviceHeaders(mac, token)
