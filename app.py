@@ -237,7 +237,124 @@ def home():
 @app.route("/portals", methods=["GET"])
 @authorise
 def portals():
-    return render_template("portals.html", portals=getPortals())
+    devices = {mac: deviceForForm(details) for mac, details in stb.loadDevices().items()}
+    return render_template("portals.html", portals=getPortals(), devices=devices)
+
+
+# The device details asked for in the portal form, and where each goes in devices.json.
+DEVICE_FIELDS = {
+    "model": ("profile", "stb_type"),
+    "serial": ("profile", "sn"),
+    "device id": ("profile", "device_id"),
+    "device id2": ("profile", "device_id2"),
+    "signature": ("profile", "signature"),
+    "timezone": ("cookies", "timezone"),
+}
+
+
+def modelHeader(model):
+    return "Model: {}; Link: Ethernet".format(model)
+
+
+def deviceFromForm(form):
+    """The devices.json entry described by the portal form, or (None, why not)."""
+    extra = form.get("device extra", "").strip()
+    try:
+        details = json.loads(extra) if extra else {}
+    except ValueError as e:
+        return None, "Device lock: the Advanced box isn't valid JSON ({})".format(e)
+    if not isinstance(details, dict) or not all(
+        isinstance(details.get(section, {}), dict) for section in ("cookies", "headers", "handshake", "profile")
+    ):
+        return None, 'Device lock: the Advanced box should look like {"headers": {...}, "profile": {...}}'
+    for field, (section, key) in DEVICE_FIELDS.items():
+        value = form.get("device " + field, "").strip()
+        if value:
+            details.setdefault(section, {})[key] = value
+    model = details.get("profile", {}).get("stb_type")
+    if model:
+        # What a MAG box sends; portals that check the model often check this too.
+        details.setdefault("headers", {}).setdefault("X-User-Agent", modelHeader(model))
+    if not details:
+        return None, "Device lock is on, but no device details were filled in"
+    return details, None
+
+
+def deviceForForm(details):
+    """Split a devices.json entry into the form's fields and the rest (for Advanced)."""
+    details = json.loads(json.dumps(details))
+    fields = {}
+    for field, (section, key) in DEVICE_FIELDS.items():
+        value = details.get(section, {}).pop(key, None)
+        if value is not None:
+            fields[field] = value
+    headers = details.get("headers", {})
+    if "model" in fields and headers.get("X-User-Agent") == modelHeader(fields["model"]):
+        del headers["X-User-Agent"]  # filled in from the model again on save
+    extra = {k: v for k, v in details.items() if v != {}}
+    return {"fields": fields, "extra": extra}
+
+
+def applyDeviceForm(form, macs):
+    """Save or clear the device details sent with a portal, before its MACs are tested.
+
+    "device state" is "on", "off", or "keep" (the form couldn't show them: leave as is).
+    Returns an error message, or None.
+    """
+    state = form.get("device state", "keep")
+    if state == "off":
+        for mac in macs:
+            stb.removeDevice(mac)
+    elif state == "on":
+        details, error = deviceFromForm(form)
+        if error:
+            return error
+        for mac in macs:
+            stb.saveDevice(mac, details)
+    return None
+
+
+def formMacs(form):
+    macs = []
+    for mac in form["macs"].split(","):
+        mac = mac.strip()
+        if mac and mac not in macs:
+            macs.append(mac)
+    return macs
+
+
+def locatePortal(name, url, macs, proxy):
+    """Find the portal's API address from whatever was typed, saying what happened."""
+    found, tried = stb.findPortal(url, macs, proxy)
+    if not found:
+        message = (
+            "Couldn't log in to Portal({}) at any of: {}. Check the address and MACs. "
+            "If the portal only accepts your MAC from one box, turn on Device lock.".format(name, ", ".join(tried))
+        )
+        logger.error(message)
+        flash(message, "danger")
+    elif found != url.strip():
+        flash("Found Portal({}) at {}".format(name, found), "info")
+    return found
+
+
+def testMac(name, url, mac, proxy, deviceLocked):
+    """The MAC's expiry if the portal accepts it, flashing the result either way."""
+    token = stb.getToken(url, mac, proxy)
+    if token:
+        stb.getProfile(url, mac, token, proxy)
+        expiry = stb.getExpires(url, mac, token, proxy)
+        if expiry:
+            logger.info("Successfully tested MAC({}) for Portal({})".format(mac, name))
+            flash("Successfully tested MAC({}) for Portal({})".format(mac, name), "success")
+            return expiry
+    message = "Portal({}) at {} refused MAC({}).".format(name, url, mac)
+    if not deviceLocked:
+        message += " If the portal only accepts this MAC from one box, turn on Device lock and add that box's details."
+    else:
+        message += " Check the device details: some portals check more than the main fields (see Advanced)."
+    logger.error(message)
+    flash(message, "danger")
 
 
 @app.route("/portal/add", methods=["POST"])
@@ -247,37 +364,25 @@ def portalsAdd():
     enabled = "true"
     name = request.form["name"]
     url = request.form["url"]
-    macs = list(set(request.form["macs"].split(",")))
+    macs = formMacs(request.form)
     streamsPerMac = request.form["streams per mac"]
     proxy = request.form["proxy"]
 
-    if not url.endswith(".php"):
-        url = stb.getUrl(url, proxy)
-        if not url:
-            logger.error("Error getting URL for Portal({})".format(name))
-            flash("Error getting URL for Portal({})".format(name), "danger")
-            return redirect("/portals", code=302)
+    error = applyDeviceForm(request.form, macs)
+    if error:
+        flash(error, "danger")
+        return redirect("/portals", code=302)
 
+    url = locatePortal(name, url, macs, proxy)
+    if not url:
+        return redirect("/portals", code=302)
+
+    deviceLocked = request.form.get("device state") == "on"
     macsd = {}
-
     for mac in macs:
-        token = stb.getToken(url, mac, proxy)
-        if token:
-            stb.getProfile(url, mac, token, proxy)
-            expiry = stb.getExpires(url, mac, token, proxy)
-            if expiry:
-                macsd[mac] = expiry
-                logger.info(
-                    "Successfully tested MAC({}) for Portal({})".format(mac, name)
-                )
-                flash(
-                    "Successfully tested MAC({}) for Portal({})".format(mac, name),
-                    "success",
-                )
-                continue
-
-        logger.error("Error testing MAC({}) for Portal({})".format(mac, name))
-        flash("Error testing MAC({}) for Portal({})".format(mac, name), "danger")
+        expiry = testMac(name, url, mac, proxy, deviceLocked)
+        if expiry:
+            macsd[mac] = expiry
 
     if len(macsd) > 0:
         portal = {
@@ -297,13 +402,10 @@ def portalsAdd():
         portals[id] = portal
         savePortals(portals)
         logger.info("Portal({}) added!".format(portal["name"]))
+        flash("Portal({}) added!".format(name), "success")
 
     else:
-        logger.error(
-            "None of the MACs tested OK for Portal({}). Adding not successfull".format(
-                name
-            )
-        )
+        logger.error("None of the MACs tested OK for Portal({}). Not added".format(name))
 
     return redirect("/portals", code=302)
 
@@ -315,48 +417,33 @@ def portalUpdate():
     enabled = request.form.get("enabled", "false")
     name = request.form["name"]
     url = request.form["url"]
-    newmacs = list(set(request.form["macs"].split(",")))
+    newmacs = formMacs(request.form)
     streamsPerMac = request.form["streams per mac"]
     proxy = request.form["proxy"]
     retest = request.form.get("retest", None)
 
-    if not url.endswith(".php"):
-        url = stb.getUrl(url, proxy)
-        if not url:
-            logger.error("Error getting URL for Portal({})".format(name))
-            flash("Error getting URL for Portal({})".format(name), "danger")
-            return redirect("/portals", code=302)
+    error = applyDeviceForm(request.form, newmacs)
+    if error:
+        flash(error, "danger")
+        return redirect("/portals", code=302)
 
     portals = getPortals()
+    if url.strip() != portals[id]["url"] or retest:
+        url = locatePortal(name, url, newmacs, proxy)
+        if not url:
+            return redirect("/portals", code=302)
+
+    deviceLocked = request.form.get("device state") == "on" or any(stb.device(mac) for mac in newmacs)
     oldmacs = portals[id]["macs"]
     macsout = {}
-    deadmacs = []
 
     for mac in newmacs:
         if retest or mac not in oldmacs.keys():
-            token = stb.getToken(url, mac, proxy)
-            if token:
-                stb.getProfile(url, mac, token, proxy)
-                expiry = stb.getExpires(url, mac, token, proxy)
-                if expiry:
-                    macsout[mac] = expiry
-                    logger.info(
-                        "Successfully tested MAC({}) for Portal({})".format(mac, name)
-                    )
-                    flash(
-                        "Successfully tested MAC({}) for Portal({})".format(mac, name),
-                        "success",
-                    )
-
-            if mac not in list(macsout.keys()):
-                deadmacs.append(mac)
-
-        if mac in oldmacs.keys() and mac not in deadmacs:
+            expiry = testMac(name, url, mac, proxy, deviceLocked)
+            if expiry:
+                macsout[mac] = expiry
+        else:
             macsout[mac] = oldmacs[mac]
-
-        if mac not in macsout.keys():
-            logger.error("Error testing MAC({}) for Portal({})".format(mac, name))
-            flash("Error testing MAC({}) for Portal({})".format(mac, name), "danger")
 
     if len(macsout) > 0:
         portals[id]["enabled"] = enabled
@@ -370,11 +457,7 @@ def portalUpdate():
         flash("Portal({}) updated!".format(name), "success")
 
     else:
-        logger.error(
-            "None of the MACs tested OK for Portal({}). Adding not successfull".format(
-                name
-            )
-        )
+        logger.error("None of the MACs tested OK for Portal({}). Not updated".format(name))
 
     return redirect("/portals", code=302)
 
