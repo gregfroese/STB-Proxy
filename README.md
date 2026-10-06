@@ -58,6 +58,7 @@ Make sets of channels available only when you want them.
 
 - In the **Playlist Editor**, type a name in the **Block** column for each channel in the set, then **Save**. Channels with the same name form one block. A channel can be in several blocks: separate the names with commas.
 - Or preview a channel and tick the blocks it belongs to, or type a new block name and click **Add**. Changes save right away.
+- To put many channels in a block at once, tick them in the Playlist Editor (or filter the list and press **Select all shown**), type or pick the block name above the table, and press **Add to block**. **Remove from block** takes them out. Both save straight away.
 - To sort channels into blocks quickly, switch on **Hide channels in blocks** in the editor, play the first channel, tick its block (it leaves the list) and press channel up to go on to the next one.
 - On the **Blocks** page, switch a block on or off. A channel is available when it's enabled on its own **or** in any block that's on, and it isn't marked dead.
 - Clear a channel's block name to take it out of the block. A block disappears when no channel uses its name.
@@ -132,6 +133,10 @@ The details are saved in `devices.json` next to `config.json`, keyed by MAC. You
 ```
 
 MACs that aren't listed log in as before.
+
+# Account activity
+
+The **Dashboard** shows, for each MAC, whether anything else is using it: another STB-Proxy, an app, or a box or emulator. Portals don't say who else is connected, but each profile request reports when the account's previous one was, and real boxes check in and report what they're playing. STB-Proxy compares that with its own requests whenever it logs in. **Check now** asks the portal straight away.
 
 # Development
 

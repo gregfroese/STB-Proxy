@@ -155,6 +155,7 @@
 
     function channelChanged(row, previousBlocks) {
         if (previousBlocks) {
+            refreshBlockNames();  // the preview may have made a new block
             // Saved from the preview: show it in the Block box and drop any unsaved edit there.
             $(table.rows().nodes()).find('.block-input[data-key="' + channelKey(row) + '"]').val(row.blocks.join(", "));
             blockEdits = blockEdits.filter(function (e) {
@@ -180,6 +181,97 @@
         if (length > 0 && index != -1 && Math.floor(index / length) != table.page()) {
             table.page(Math.floor(index / length)).draw('page');
         }
+    }
+
+    // ---- Picking several channels, to add them to a block (or take them out) at once.
+    var selected = new Set();
+
+    function showSelection() {
+        $(table.rows().nodes()).find('.select-channel').each(function () {
+            this.checked = selected.has(this.getAttribute('data-key'));
+        });
+        document.getElementById('selectedCount').textContent = selected.size + ' selected';
+    }
+
+    function toggleSelected(ele) {
+        var key = ele.getAttribute('data-key');
+        if (ele.checked) {
+            selected.add(key);
+        } else {
+            selected.delete(key);
+        }
+        showSelection();
+    }
+
+    function selectShown() {
+        channelList().forEach(function (row) { selected.add(channelKey(row)); });
+        showSelection();
+    }
+
+    function clearSelection() {
+        selected.clear();
+        showSelection();
+    }
+
+    function refreshBlockNames() {
+        var list = document.getElementById('blockNames');
+        if (list) {
+            list.innerHTML = allBlocks.map(function (name) { return '<option value="' + escapeAttr(name) + '">'; }).join('');
+        }
+    }
+
+    function bulkBlocks(action) {
+        var name = document.getElementById('bulkBlock').value.trim();
+        var status = document.getElementById('bulkStatus');
+        if (!selected.size || !name) {
+            status.className = 'small text-warning';
+            status.textContent = !selected.size ? 'Select some channels first.' : 'Type a block name.';
+            return;
+        }
+        var channels = Array.from(selected).map(function (key) {
+            var cut = key.indexOf('/');
+            return { portal: key.slice(0, cut), channelId: key.slice(cut + 1) };
+        });
+        document.getElementById('bulkAdd').disabled = true;
+        document.getElementById('bulkRemove').disabled = true;
+        status.className = 'small text-muted';
+        status.textContent = 'Saving...';
+        $.ajax({
+            url: '/channels/blocks', method: 'POST', contentType: 'application/json',
+            data: JSON.stringify({ channels: channels, block: name, action: action })
+        })
+            .done(function (res) {
+                var nodes = $(table.rows().nodes());
+                res.channels.forEach(function (c) {
+                    var row = rowFor(c);
+                    if (!row) {
+                        return;
+                    }
+                    row.blocks = c.blocks;
+                    // Show it in the Block box and drop any unsaved typing there.
+                    nodes.find('.block-input[data-key="' + channelKey(row) + '"]').val(row.blocks.join(', '));
+                    blockEdits = blockEdits.filter(function (e) {
+                        return !(e.portal == row.portal && e['channel id'] == row.channelId);
+                    });
+                    if (currentChannel && channelKey(currentChannel) == channelKey(row)) {
+                        renderBlockChoices(row);
+                    }
+                });
+                allBlocks = res.allBlocks;
+                refreshBlockNames();
+                status.className = 'small text-success';
+                status.textContent = (action == 'add' ? 'Added ' : 'Removed ') + res.channels.length + ' channel(s) ' +
+                    (action == 'add' ? 'to ' : 'from ') + name + '.' + (res.plex ? ' ' + res.plex : '');
+                table.draw(false);
+            })
+            .fail(function () {
+                status.className = 'small text-danger';
+                status.textContent = "Couldn't save. Try again.";
+            })
+            .always(function () {
+                document.getElementById('bulkAdd').disabled = false;
+                document.getElementById('bulkRemove').disabled = false;
+            });
     }
 
     var hideDead = true;
@@ -216,12 +308,27 @@
     $(document).ready(function () {
         table = $('#table').DataTable({
             dom: "<'row m-1'<'col-auto'B><'col-auto d-flex align-items-center dead-filter'><'col-auto ms-auto'f><'col-auto'l>>" +
+                "<'row m-1'<'col-12 bulk-bar'>>" +
                 "<'row'<'col-12'tr>>" +
                 "<'row mb-1 mb-lg-0'<'col-auto text-light'i><'col-auto ms-auto'p>>",
             orderFixed: [0, 'des'],
             order: [[0, 'des'], [2, 'asc']],
             pageLength: 25,
             initComplete: function () {
+                $('div.bulk-bar').html(
+                    '<div class="d-flex flex-wrap align-items-center text-light">' +
+                    '<span class="me-2" id="selectedCount">0 selected</span>' +
+                    '<button type="button" class="btn btn-sm btn-outline-light me-2" onclick="selectShown()" ' +
+                    'title="Select every channel the filter and switches show, on all pages">Select all shown</button>' +
+                    '<button type="button" class="btn btn-sm btn-outline-light me-3" onclick="clearSelection()">Clear</button>' +
+                    '<input type="text" class="form-control form-control-sm me-2" style="width: 180px;" id="bulkBlock" ' +
+                    'list="blockNames" placeholder="Block name">' +
+                    '<datalist id="blockNames"></datalist>' +
+                    '<button type="button" class="btn btn-sm btn-success me-2" id="bulkAdd" onclick="bulkBlocks(\'add\')">Add to block</button>' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger me-2" id="bulkRemove" onclick="bulkBlocks(\'remove\')">Remove from block</button>' +
+                    '<span class="small" id="bulkStatus"></span></div>'
+                );
+                refreshBlockNames();
                 $('div.dead-filter').html(
                     '<div class="form-check form-switch text-light mb-0">' +
                     '<input type="checkbox" class="form-check-input" id="hideDead" checked ' +
@@ -306,7 +413,10 @@
                 {
                     data: "link",
                     render: function (data, type, row, meta) {
-                        return '<div class="d-flex align-items-center">' + playButton(row) +
+                        return '<div class="d-flex align-items-center">' +
+                            '<input type="checkbox" class="form-check-input select-channel me-2" title="Select" ' +
+                            'onchange="toggleSelected(this)" data-key="' + escapeAttr(channelKey(row)) + '"' +
+                            (selected.has(channelKey(row)) ? ' checked' : '') + '>' + playButton(row) +
                             '<span class="ms-2">' + favouriteStar(row) + '</span>' +
                             '<span class="ms-2">' + guideButton(row) + '</span>' +
                             '<span class="ms-2">' + deadToggle(row) + '</span></div>'

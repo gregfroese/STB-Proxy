@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -16,7 +17,7 @@ def inlineScripts(template):
         end = html.index("</script>", start)
         scripts.append(html[start + len("<script>"):end])
         start = html.find("<script>", end)
-    return "\n".join(scripts).replace("{{ url_for('editor_data') }}", "/editor_data")
+    return re.sub(r"\{\{ url_for\('(\w+)'\) \}\}", r"/\1", "\n".join(scripts))
 
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")
@@ -36,6 +37,9 @@ class TemplateScriptTest(unittest.TestCase):
 
     def test_portals_script_is_valid_javascript(self):
         self.assertValidJavaScript("portals.html")
+
+    def test_dashboard_script_is_valid_javascript(self):
+        self.assertValidJavaScript("dashboard.html")
 
     def test_guide_script_is_valid_javascript(self):
         self.assertValidJavaScript("guide.html")

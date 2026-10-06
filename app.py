@@ -9,6 +9,7 @@ import json
 import subprocess
 import uuid
 import logging
+import re
 import threading
 import time
 import requests
@@ -917,6 +918,56 @@ def channelBlocks():
     )
 
 
+@app.route("/channels/blocks", methods=["POST"])
+@authorise
+def channelsBlocks():
+    """Add many channels to a block, or take them out of it, in one save.
+
+    JSON: {"channels": [{"portal", "channelId"}, ...], "block": "name(s)", "action": "add"|"remove"}
+    """
+    data = request.get_json(force=True, silent=True) or {}
+    names = availability.parseBlockNames(str(data.get("block", "")))
+    action = data.get("action")
+    if not names or action not in ("add", "remove"):
+        return flask.jsonify({"error": "Give a block name and add or remove"}), 400
+
+    portals = getPortals()
+    blocks = getBlocks()
+    before = {p: availability.availableChannels(portals[p], blocks) for p in portals}
+    # Build new dicts rather than mutating: other threads may be iterating the old ones.
+    newChannelBlocks = {}
+    changed = []
+    for channel in data.get("channels", []):
+        portal = channel.get("portal")
+        channelId = str(channel.get("channelId"))
+        if portal not in portals:
+            continue
+        channelBlocks = newChannelBlocks.setdefault(portal, dict(portals[portal].get("channel blocks", {})))
+        current = list(channelBlocks.get(channelId, []))
+        if action == "add":
+            current += [n for n in names if n not in current]
+        else:
+            current = [n for n in current if n not in names]
+        if current:
+            channelBlocks[channelId] = current
+        else:
+            channelBlocks.pop(channelId, None)
+        changed.append({"portal": portal, "channelId": channelId, "blocks": current})
+    for portal, channelBlocks in newChannelBlocks.items():
+        portals[portal]["channel blocks"] = channelBlocks
+    savePortals(portals)
+    saveBlocks(availability.pruneBlocks(portals, blocks))
+    logger.info("{} {} channel(s) {} block(s) {}".format(
+        "Added" if action == "add" else "Removed", len(changed), "to" if action == "add" else "from", names))
+
+    plexMessage = ""
+    if {p: availability.availableChannels(portals[p], getBlocks()) for p in portals} != before:
+        _, plexMessage = syncPlex()
+    return flask.jsonify(
+        {"channels": changed, "allBlocks": sorted(availability.blockNames(portals)), "plex": plexMessage}
+    )
+
+
 @app.route("/channel/favourite", methods=["POST"])
 @authorise
 def channelFavourite():
@@ -1703,6 +1754,65 @@ def channel(portalId, channelId):
         )
 
     return make_response("No streams available", 503)
+
+
+ACTIVITY_WINDOW = 24 * 3600
+NOW_PLAYING_TYPES = {"1": "TV", "2": "Video", "3": "Karaoke", "4": "Audio", "5": "Radio"}
+
+
+def macActivity(portal, mac):
+    """What the portal has told us about other use of this MAC, from our profile requests."""
+    log = stb.profileLog.get((portal["url"], mac))
+    if not log:
+        return {"mac": mac, "checked": None}
+    profile = log["profile"]
+    timezone = log["timezone"]
+    now = time.time()
+    watchdog = stb.portalTime(profile.get("last_watchdog"), timezone)
+    try:
+        timeout = int(profile.get("watchdog_timeout") or 900)
+    except ValueError:
+        timeout = 900
+    content = re.sub(r"<[^>]+>", "", str(profile.get("now_playing_content") or ""))
+    content = re.sub(r"^\w+:\s*", "", content)
+    content = re.sub(r"\s+from\s+\d{4}-.*$", "", content).strip()
+    return {
+        "mac": mac,
+        "checked": log.get("checked"),
+        # Logins by other devices or apps (another STB-Proxy, a box) since we started watching.
+        "otherLogins": [t for t in log["others"] if now - t < ACTIVITY_WINDOW],
+        "watchingSince": log["ours"][0] if log["ours"] else None,
+        # Only a real box or emulator checks in, so a recent check-in means one is on.
+        "boxCheckIn": watchdog,
+        "boxOn": bool(watchdog and log["checked"] - watchdog < timeout),
+        "boxWatching": content,
+        "boxWatchingType": NOW_PLAYING_TYPES.get(str(profile.get("now_playing_type")), ""),
+        "boxWatchingSince": stb.portalTime(profile.get("now_playing_start"), timezone),
+    }
+
+
+@app.route("/account/activity", methods=["GET"])
+@authorise
+def accountActivity():
+    portals = getPortals()
+    return flask.jsonify([
+        {"portal": portals[p]["name"], "macs": [macActivity(portals[p], mac) for mac in portals[p]["macs"]]}
+        for p in portals if portals[p]["enabled"] == "true"
+    ])
+
+
+@app.route("/account/check", methods=["POST"])
+@authorise
+def accountCheck():
+    """Ask the portal now (one profile request per MAC; a login only if ours has expired)."""
+    for portal in getPortals().values():
+        if portal["enabled"] != "true":
+            continue
+        for mac in portal["macs"]:
+            token = stb.getToken(portal["url"], mac, portal["proxy"])
+            if token:
+                stb.getProfile(portal["url"], mac, token, portal["proxy"], refresh=True)
+    return accountActivity()
 
 
 @app.route("/dashboard")

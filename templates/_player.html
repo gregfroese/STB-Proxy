@@ -3,8 +3,9 @@
      Shared by the editor, blocks and guide pages.
      A page that includes this defines rowFor(ch), returning the channel's data row
      ({portal, channelId, channelName, customChannelName, link, dead, favourite, blocks}) or null,
-     and channelChanged(row, previousBlocks), called after a dead mark, favourite or the
-     channel's blocks are saved (previousBlocks is only passed when the blocks changed).
+     and channelChanged(row, previousBlocks, before), called after a dead mark, favourite or the
+     channel's blocks are saved (previousBlocks only when the blocks changed; before = {dead}
+     only when the dead mark was saved).
      Channel up/down moves through the play buttons inside the .channel-list element the
      channel was started from, unless the page defines channelList(), returning its channels
      in order, and optionally channelShown(ch), called when a channel starts playing, and
@@ -589,6 +590,7 @@
         if (!row) {
             return;
         }
+        var wasDead = row.dead;
         button.disabled = true;
         $.post("/channel/dead", { portal: ch.portal, channelId: ch.channelId, dead: row.dead ? "false" : "true" })
             .done(function (res) {
@@ -609,7 +611,7 @@
                 if (done) {
                     done(res);
                 }
-                channelChanged(row);
+                channelChanged(row, undefined, { dead: wasDead });
             })
             .fail(function () {
                 if (done) {

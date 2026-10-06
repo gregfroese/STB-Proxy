@@ -1,7 +1,25 @@
 {% extends "base.html" %}
 {% block content %}
 
+<style>
+    #accountOut .text-muted {
+        color: #adb5bd !important;
+    }
+</style>
+
 <div class="container-fluid text-light p-lg-5">
+    <div class="d-flex align-items-center">
+        <h4 class="mb-0">Account activity</h4>
+        <button type="button" class="btn btn-outline-light btn-sm ms-auto" id="checkAccount" onclick="checkAccount()"
+            title="Ask the portal now (one request per MAC)"><i class="fa fa-refresh"></i> Check now</button>
+    </div>
+    <hr>
+    <p class="small text-muted">Whether anything else is using your MACs: another STB-Proxy, an app, or a box. Updated
+        whenever STB-Proxy logs in to the portal; <b>Check now</b> asks straight away.</p>
+    <div class="row row-cols-auto" id="accountOut"></div>
+
+    <br>
+
     <h4>Streaming</h4>
     <hr>
     <div class="container-fluid">
@@ -29,6 +47,74 @@
 </div>
 
 <script>
+    // Account activity
+    function ago(seconds) {
+        var s = Math.max(0, Date.now() / 1000 - seconds);
+        if (s < 90) return "just now";
+        if (s < 5400) return Math.round(s / 60) + " min ago";
+        if (s < 172800) return Math.round(s / 3600) + " h ago";
+        return Math.round(s / 86400) + " days ago";
+    }
+
+    function when(seconds) {
+        return new Date(seconds * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    }
+
+    function esc(s) {
+        return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function macCard(portal, m) {
+        var html = '<div class="col mb-3"><div class="card bg-dark border-secondary text-light" style="min-width: 300px;">' +
+            '<div class="card-header">' + esc(portal) + ' <span class="text-muted">MAC &hellip;' + esc(m.mac.slice(-5)) + '</span></div>' +
+            '<div class="card-body small">';
+        if (!m.checked) {
+            return html + '<span class="text-muted">Not checked yet. Press Check now.</span></div></div></div>';
+        }
+        var others = m.otherLogins.length;
+        html += others
+            ? '<div class="text-warning mb-2"><i class="fa fa-exclamation-triangle"></i> Something else logged in with this MAC ' +
+              (others == 1 ? 'once' : others + ' times') + ' in the last 24 h, most recently ' + esc(ago(m.otherLogins[others - 1])) +
+              ' (' + esc(when(m.otherLogins[others - 1])) + ').</div>'
+            : '<div class="text-success mb-2"><i class="fa fa-check"></i> No other logins with this MAC since ' + esc(when(m.watchingSince)) + '.</div>';
+        html += m.boxOn
+            ? '<div class="text-warning mb-2"><i class="fa fa-television"></i> A box or emulator is on: it checked in ' + esc(ago(m.boxCheckIn)) + '.</div>'
+            : '<div class="mb-2"><i class="fa fa-television"></i> No box or emulator on' +
+              (m.boxCheckIn ? ' (last checked in ' + esc(when(m.boxCheckIn)) + ')' : '') + '.</div>';
+        if (m.boxWatching) {
+            html += '<div class="text-muted mb-2">A box last watched ' + (m.boxWatchingType ? esc(m.boxWatchingType) + ': ' : '') +
+                '<b>' + esc(m.boxWatching) + '</b>' + (m.boxWatchingSince ? ' from ' + esc(when(m.boxWatchingSince)) : '') + '.</div>';
+        }
+        return html + '<div class="text-muted">Checked ' + esc(ago(m.checked)) + '.</div></div></div></div>';
+    }
+
+    function showAccount(portals) {
+        var html = '';
+        portals.forEach(function (p) {
+            p.macs.forEach(function (m) { html += macCard(p.portal, m); });
+        });
+        document.getElementById('accountOut').innerHTML = html || '<span class="text-muted">No enabled portals.</span>';
+    }
+
+    function loadAccount() {
+        fetch("/account/activity").then(function (r) { return r.json(); }).then(showAccount);
+    }
+
+    function checkAccount() {
+        var button = document.getElementById('checkAccount');
+        button.disabled = true;
+        fetch("/account/check", { method: "POST" })
+            .then(function (r) { return r.json(); })
+            .then(showAccount)
+            .finally(function () {
+                // Portals can refuse logins that come too close together.
+                setTimeout(function () { button.disabled = false; }, 30000);
+            });
+    }
+
+    loadAccount();
+    setInterval(loadAccount, 60000);
+
     // Log
     var logURL = "{{ url_for('log') }}";
     var logOut = document.getElementById('logOut');

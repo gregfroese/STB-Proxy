@@ -25,7 +25,7 @@ class BlocksPageTest(unittest.TestCase):
         body = self.client.get("/blocks").get_data(as_text=True)
         self.assertIn("NHL", body)
         self.assertIn('data-block="NHL">2</span> channels', body)
-        self.assertIn("1 dead", body)
+        self.assertIn('class="block-dead-count">1</span> dead', body)
         self.assertIn("Sync Plex now", body)
 
     def test_block_names_are_escaped(self):

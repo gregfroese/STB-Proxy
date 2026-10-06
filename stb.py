@@ -6,6 +6,8 @@ import json
 import os
 import threading
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 s = requests.Session()
 retries = Retry(total=3, backoff_factor=0.1, status_forcelist=[500, 502, 503, 504])
@@ -251,9 +253,43 @@ def handshake(url, mac, proxy=None):
         pass
 
 
-def getProfile(url, mac, token, proxy=None):
+# Each profile request also says when the account's previous one was, by anyone, and what
+# a real box last did (only boxes and emulators check in or report what they play). Kept
+# per (url, mac) to spot other devices or apps using the same MAC.
+PROFILE_FIELDS = ("keep_alive", "last_start", "last_watchdog", "watchdog_timeout", "last_active",
+                  "now_playing_content", "now_playing_start", "now_playing_type")
+OWN_REQUEST_SLACK = 3
+profileLog = {}
+profileLogLock = threading.Lock()
+
+
+def portalTime(value, timezone):
+    """A portal timestamp (local to the time zone we announce in our cookie) as epoch seconds."""
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo(timezone)).timestamp()
+    except (ValueError, KeyError, OSError):
+        return None
+
+
+def recordProfile(url, mac, sentAt, profile):
+    timezone = deviceCookies(mac)["timezone"]
+    with profileLogLock:
+        log = profileLog.setdefault((url, mac), {"ours": [], "others": [], "profile": {}, "timezone": timezone})
+        previous = portalTime(profile.get("keep_alive") or profile.get("last_start"), timezone)
+        # Someone else's request, if it came after we started watching and isn't one of ours.
+        if (previous and log["ours"] and log["ours"][0] - OWN_REQUEST_SLACK < previous < sentAt - OWN_REQUEST_SLACK
+                and not any(abs(previous - t) <= OWN_REQUEST_SLACK for t in log["ours"])
+                and previous not in log["others"]):
+            log["others"] = (log["others"] + [previous])[-50:]
+        log["ours"] = (log["ours"] + [sentAt])[-200:]
+        log["profile"] = {k: profile.get(k) for k in PROFILE_FIELDS}
+        log["timezone"] = timezone
+        log["checked"] = sentAt
+
+
+def getProfile(url, mac, token, proxy=None, refresh=False):
     session = cachedSession(url, mac)
-    if session and session["token"] == token and session.get("profile"):
+    if not refresh and session and session["token"] == token and session.get("profile"):
         return session["profile"]
     proxies = {"http": proxy, "https": proxy}
     cookies = deviceCookies(mac)
@@ -263,6 +299,7 @@ def getProfile(url, mac, token, proxy=None):
     if "timestamp" in params:
         params["timestamp"] = str(int(time.time()))
     try:
+        sentAt = time.time()
         response = s.get(
             url,
             params=params,
@@ -272,6 +309,7 @@ def getProfile(url, mac, token, proxy=None):
         )
         profile = response.json()["js"]
         if profile:
+            recordProfile(url, mac, sentAt, profile)
             if session and session["token"] == token:
                 session["profile"] = profile
             return profile
