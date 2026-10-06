@@ -4,6 +4,10 @@
      ({portal, channelId, channelName, customChannelName, link, dead, favourite, blocks}) or null,
      and channelChanged(row, previousBlocks), called after a dead mark, favourite or the
      channel's blocks are saved (previousBlocks is only passed when the blocks changed).
+     Channel up/down moves through the play buttons inside the .channel-list element the
+     channel was started from, unless the page defines channelList(), returning its channels
+     in order, and optionally channelShown(ch), called when a channel starts playing, and
+     channelNodes(), returning list rows that aren't in the page (other table pages).
      The page passes allBlocks, every block name, to the template. -->
 <style>
     .player-panel {
@@ -25,15 +29,22 @@
     .player-panel.minimised .player-controls {
         display: none;
     }
+    .play-button.playing {
+        box-shadow: 0 0 0 0.2rem #ffc107;
+    }
 </style>
 
 <div class="player-panel text-light d-none" id="playerPanel" role="region" aria-labelledby="channelLabel">
     <div class="d-flex align-items-center p-2">
         <span class="fw-bold text-truncate me-2" id="channelLabel">Channel</span>
-        <button type="button" class="btn btn-sm btn-outline-warning ms-auto" id="favouriteButton"
+        <button type="button" class="btn btn-sm btn-outline-light ms-auto" id="channelDown"
+            onclick="changeChannel(-1)" title="Channel down: previous in the list (Page Down)"><i class="fa fa-chevron-down"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-light ms-1" id="channelUp"
+            onclick="changeChannel(1)" title="Channel up: next in the list (Page Up)"><i class="fa fa-chevron-up"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="favouriteButton"
             onclick="toggleFavourite()" title="Favourite"><i class="fa fa-star-o"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="minimiseButton"
-            onclick="toggleMinimised()" title="Hide controls"><i class="fa fa-chevron-down"></i></button>
+            onclick="toggleMinimised()" title="Hide controls"><i class="fa fa-window-minimize"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="closePlayer"
             onclick="closePlayer()" title="Stop and close"><i class="fa fa-times"></i></button>
     </div>
@@ -76,9 +87,18 @@
     }
 
     function playButton(row) {
-        return '<button class="btn btn-success btn-block" title="Play" onclick="selectChannel(this)" ' +
+        var playing = currentChannel && channelKey(currentChannel) == channelKey(row);
+        return '<button class="btn btn-success btn-block play-button' + (playing ? ' playing' : '') + '" title="Play" ' +
+            'onclick="selectChannel(this)" data-key="' + escapeAttr(channelKey(row)) + '" ' +
             'data-portal="' + escapeAttr(row.portal) + '" data-channelId="' + escapeAttr(row.channelId) + '">' +
             '<i class="fa fa-play"></i></button>';
+    }
+
+    function deadToggle(row) {
+        return '<button class="btn btn-link p-0 dead-toggle ' + (row.dead ? 'text-danger' : 'text-secondary') + '" ' +
+            'title="' + (row.dead ? 'Dead: click to mark working' : 'Mark dead') + '" onclick="deadClicked(this)" ' +
+            'data-key="' + escapeAttr(channelKey(row)) + '" data-portal="' + escapeAttr(row.portal) + '" ' +
+            'data-channelId="' + escapeAttr(row.channelId) + '"><i class="fa fa-ban"></i></button>';
     }
 
     function favouriteStar(row) {
@@ -117,8 +137,90 @@
         }, delay);
     }
 
+    var currentList = null;
+    var lastListIndex = 0;
+
     function selectChannel(ele) {
-        var row = rowFor({ portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') });
+        currentList = ele.closest(".channel-list");
+        playChannel({ portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') });
+    }
+
+    // The channels channel up/down moves through, in order, each listed once.
+    function listedChannels() {
+        var channels;
+        if (typeof channelList == "function") {
+            channels = channelList();
+        } else {
+            var scope = currentList && document.body.contains(currentList) ? currentList : document;
+            channels = Array.prototype.map.call(scope.querySelectorAll(".play-button"), function (b) {
+                return { portal: b.getAttribute("data-portal"), channelId: b.getAttribute("data-channelId") };
+            });
+        }
+        var seen = {};
+        return channels.filter(function (ch) {
+            var key = channelKey(ch);
+            if (seen[key]) {
+                return false;  // the guide can list a channel once per programme
+            }
+            seen[key] = true;
+            return true;
+        });
+    }
+
+    function indexIn(channels, ch) {
+        for (var i = 0; i < channels.length; i++) {
+            if (channelKey(channels[i]) == channelKey(ch)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    function changeChannel(step) {
+        if (!currentChannel) {
+            return;
+        }
+        var channels = listedChannels();
+        if (!channels.length) {
+            return;
+        }
+        var index = indexIn(channels, currentChannel);
+        // If the channel has left the list (say it was just put in a block while blocks are
+        // hidden), carry on from the place it had.
+        var target = index == -1 ? (step > 0 ? lastListIndex : lastListIndex - 1) : index + step;
+        target = ((target % channels.length) + channels.length) % channels.length;
+        playChannel(channels[target]);
+    }
+
+    document.addEventListener("keydown", function (event) {
+        if (!currentChannel || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) {
+            return;
+        }
+        if (event.key == "PageUp" || event.key == "PageDown") {
+            event.preventDefault();
+            changeChannel(event.key == "PageUp" ? 1 : -1);
+        }
+    });
+
+    function markPlaying() {
+        var key = currentChannel ? channelKey(currentChannel) : null;
+        var roots = [document].concat(typeof channelNodes == "function" ? channelNodes() : []);
+        roots.forEach(function (root) {
+            root.querySelectorAll(".play-button").forEach(function (b) {
+                b.classList.toggle("playing", b.getAttribute("data-key") == key);
+            });
+        });
+    }
+
+    function playChannel(ch) {
+        var row = rowFor(ch);
+        if (!row) {
+            return;
+        }
+        var index = indexIn(listedChannels(), row);
+        if (index != -1) {
+            lastListIndex = index;
+        }
         stopStream();
         currentChannel = { portal: row.portal, channelId: row.channelId };
         currentLink = row.link;
@@ -134,6 +236,10 @@
         document.getElementById("newBlock").value = "";
         document.getElementById("previewProblem").classList.add("d-none");
         document.getElementById("deadStatus").textContent = "";
+        markPlaying();
+        if (typeof channelShown == "function") {
+            channelShown(row);
+        }
     }
 
     player.addEventListener("playing", function () {
@@ -172,6 +278,7 @@
 
     function closePlayer() {
         currentChannel = null;
+        markPlaying();
         stopStream();
         panel.classList.add("d-none");
         reservePlayerSpace();
@@ -184,7 +291,7 @@
     function setMinimised(minimised) {
         panel.classList.toggle("minimised", minimised);
         var button = document.getElementById("minimiseButton");
-        button.innerHTML = '<i class="fa ' + (minimised ? 'fa-chevron-up' : 'fa-chevron-down') + '"></i>';
+        button.innerHTML = '<i class="fa ' + (minimised ? 'fa-window-restore' : 'fa-window-minimize') + '"></i>';
         button.title = minimised ? "Show controls" : "Hide controls";
     }
 
@@ -226,32 +333,59 @@
         var button = document.getElementById("favouriteButton");
         button.innerHTML = '<i class="fa ' + (favourite ? 'fa-star' : 'fa-star-o') + '"></i>';
         button.title = favourite ? "Remove from favourites" : "Add to favourites";
-        button.className = favourite ? "btn btn-sm btn-warning ms-auto" : "btn btn-sm btn-outline-warning ms-auto";
+        button.className = favourite ? "btn btn-sm btn-warning ms-1" : "btn btn-sm btn-outline-warning ms-1";
     }
 
-    function toggleDead() {
-        var ch = currentChannel;
+    // Mark a channel dead or working (the opposite of what it is now), from the player or a list.
+    function setDead(ch, button, done) {
         var row = rowFor(ch);
-        var button = document.getElementById("deadButton");
-        var status = document.getElementById("deadStatus");
+        if (!row) {
+            return;
+        }
         button.disabled = true;
         $.post("/channel/dead", { portal: ch.portal, channelId: ch.channelId, dead: row.dead ? "false" : "true" })
             .done(function (res) {
                 row.dead = res.dead;
-                document.querySelectorAll('.dead-badge[data-key="' + channelKey(row) + '"]').forEach(function (badge) {
+                var key = channelKey(row);
+                document.querySelectorAll('.dead-badge[data-key="' + key + '"]').forEach(function (badge) {
                     badge.classList.toggle("d-none", !res.dead);
                 });
-                showDeadState(res.dead);
-                document.getElementById("previewProblem").classList.add("d-none");
-                status.textContent = (res.dead ? "Marked dead." : "Marked working.") + (res.plex ? " " + res.plex : "");
+                document.querySelectorAll('.dead-toggle[data-key="' + key + '"]').forEach(function (toggle) {
+                    toggle.classList.toggle("text-danger", res.dead);
+                    toggle.classList.toggle("text-secondary", !res.dead);
+                    toggle.title = res.dead ? "Dead: click to mark working" : "Mark dead";
+                });
+                if (currentChannel && channelKey(currentChannel) == key) {
+                    showDeadState(res.dead);
+                    document.getElementById("previewProblem").classList.add("d-none");
+                }
+                if (done) {
+                    done(res);
+                }
                 channelChanged(row);
             })
             .fail(function () {
-                status.textContent = "Couldn't save. Try again.";
+                if (done) {
+                    done(null);
+                } else {
+                    alert("Couldn't save. Try again.");
+                }
             })
             .always(function () {
                 button.disabled = false;
             });
+    }
+
+    function toggleDead() {
+        var status = document.getElementById("deadStatus");
+        setDead(currentChannel, document.getElementById("deadButton"), function (res) {
+            status.textContent = !res ? "Couldn't save. Try again."
+                : (res.dead ? "Marked dead." : "Marked working.") + (res.plex ? " " + res.plex : "");
+        });
+    }
+
+    function deadClicked(ele) {
+        setDead({ portal: ele.getAttribute('data-portal'), channelId: ele.getAttribute('data-channelId') }, ele);
     }
 
     function setFavourite(ch, button) {
