@@ -85,7 +85,6 @@ defaultSettings = {
     "hdhr tuners": "1",
     "plex url": "",
     "plex token": "",
-    "match logos": "true",
     "api token": "",
     "jellyfin url": "",
     "jellyfin api key": "",
@@ -105,6 +104,7 @@ defaultPortal = {
     "custom epg ids": {},
     "fallback channels": {},
     "custom logos": {},
+    "logos": "portal",
     "channel blocks": {},
     "dead channels": [],
     "favourite channels": [],
@@ -184,6 +184,11 @@ def loadConfig():
         portalsOut[portal]["channel blocks"] = availability.normaliseChannelBlocks(
             portalsOut[portal]["channel blocks"]
         )
+        if portalsOut[portal]["logos"] not in LOGO_SOURCES:
+            portalsOut[portal]["logos"] = defaultPortal["logos"]
+        if "logos" not in portals[portal] and settings.get("match logos") == "false":
+            # Looking logos up used to be one switch in Settings, for every portal.
+            portalsOut[portal]["logos"] = "portal only"
 
     data["portals"] = portalsOut
 
@@ -273,7 +278,10 @@ def home():
 @authorise
 def portals():
     devices = {mac: deviceForForm(details) for mac, details in stb.loadDevices().items()}
-    return render_template("portals.html", portals=getPortals(), devices=devices)
+    with logoRefreshesLock:
+        refreshes = dict(logoRefreshes)
+    return render_template("portals.html", portals=getPortals(), devices=devices,
+                           logoSources=LOGO_SOURCES, logoRefreshes=refreshes)
 
 
 # The device details asked for in the portal form, and where each goes in devices.json.
@@ -402,6 +410,9 @@ def portalsAdd():
     macs = formMacs(request.form)
     streamsPerMac = request.form["streams per mac"]
     proxy = request.form["proxy"]
+    logoSource = request.form.get("logos")
+    if logoSource not in LOGO_SOURCES:
+        logoSource = defaultPortal["logos"]
 
     error = applyDeviceForm(request.form, macs)
     if error:
@@ -427,6 +438,7 @@ def portalsAdd():
             "macs": macsd,
             "streams per mac": streamsPerMac,
             "proxy": proxy,
+            "logos": logoSource,
         }
 
         for setting, default in defaultPortal.items():
@@ -463,6 +475,9 @@ def portalUpdate():
         return redirect("/portals", code=302)
 
     portals = getPortals()
+    logoSource = request.form.get("logos")
+    if logoSource not in LOGO_SOURCES:
+        logoSource = portals[id].get("logos", defaultPortal["logos"])
     if url.strip() != portals[id]["url"] or retest:
         url = locatePortal(name, url, newmacs, proxy)
         if not url:
@@ -487,9 +502,16 @@ def portalUpdate():
         portals[id]["macs"] = macsout
         portals[id]["streams per mac"] = streamsPerMac
         portals[id]["proxy"] = proxy
+        logosChanged = logoSource != portals[id].get("logos")
+        portals[id]["logos"] = logoSource
         savePortals(portals)
         logger.info("Portal({}) updated!".format(name))
         flash("Portal({}) updated!".format(name), "success")
+        if logosChanged:
+            portalLogos.pop(id, None)
+            if looksUpLogos(portals[id]):
+                currentLogoIndex()  # may not have been needed before
+            threading.Thread(target=syncPlex, daemon=True).start()  # so Plex and Jellyfin show them
 
     else:
         logger.error("None of the MACs tested OK for Portal({}). Not updated".format(name))
@@ -510,8 +532,15 @@ def portalRemove():
     return redirect("/portals", code=302)
 
 
-# Channel logos: your own (set in the Playlist Editor), else the portal's, else one matched
-# by name from the iptv-org database (downloaded in the background, refreshed weekly).
+# Channel logos: your own (set in the Playlist Editor), else the portal's and one looked up
+# by name in the iptv-org database (downloaded in the background, refreshed weekly), in the
+# order each portal's "logos" setting picks.
+LOGO_SOURCES = {
+    "portal": "The portal's, looked up where it has none",
+    "lookup": "Looked up, the portal's where none is found",
+    "portal only": "The portal's only",
+    "lookup only": "Looked up only",
+}
 LOGO_INDEX_MAX_AGE = 7 * 24 * 3600
 LOGO_RETRY_AGE = 3600
 logoIndex = {"index": None, "time": 0, "tried": 0}
@@ -523,18 +552,20 @@ def logoIndexFile():
     return os.path.join(os.path.dirname(os.path.abspath(configFile)), "logo-index.json")
 
 
-def refreshLogoIndex():
-    """Load the logo index from disk, downloading a fresh one if it's missing or a week old."""
+def refreshLogoIndex(force=False):
+    """Load the logo index from disk, downloading a fresh one if it's missing or a week old
+    (or always, with force). False if a download was needed and failed."""
     with logoIndexLock:
         path = logoIndexFile()
-        try:
-            with open(path) as f:
-                logoIndex.update(index=json.load(f), time=os.path.getmtime(path))
-            portalLogos.clear()
-        except (OSError, ValueError):
-            pass
-        if logoIndex["index"] is not None and time.time() - logoIndex["time"] < LOGO_INDEX_MAX_AGE:
-            return
+        if not force:
+            try:
+                with open(path) as f:
+                    logoIndex.update(index=json.load(f), time=os.path.getmtime(path))
+                portalLogos.clear()
+            except (OSError, ValueError):
+                pass
+            if logoIndex["index"] is not None and time.time() - logoIndex["time"] < LOGO_INDEX_MAX_AGE:
+                return True
         try:
             # Tens of MB of JSON to parse: never at the same time as the guide.
             with guideLock:
@@ -548,14 +579,18 @@ def refreshLogoIndex():
             logoIndex.update(index=index, time=time.time())
             portalLogos.clear()
             logger.info("Channel logos downloaded from iptv-org: {} names".format(len(index)))
+            return True
         except Exception as e:
             logger.error("Couldn't download channel logos from iptv-org ({}); trying again later".format(e))
+            return False
+
+
+def looksUpLogos(portal):
+    return portal.get("logos", defaultPortal["logos"]) != "portal only"
 
 
 def currentLogoIndex():
-    """The logo index if it's ready (None if not, or if matching is off). Loads it in the background."""
-    if getSettings().get("match logos") != "true":
-        return None
+    """The logo index if it's ready (None if not). Loads it in the background."""
     now = time.time()
     stale = logoIndex["index"] is None or now - logoIndex["time"] > LOGO_INDEX_MAX_AGE
     if stale and now - logoIndex["tried"] > LOGO_RETRY_AGE and not logoIndexLock.locked():
@@ -566,6 +601,8 @@ def currentLogoIndex():
 
 def matchedLogos(portalId, allChannels, genres=None):
     """{channel id: logo URL} matched by name for a portal's channels (worked out once per list)."""
+    if not looksUpLogos(getPortals().get(portalId, {})):
+        return {}
     index = currentLogoIndex()
     if not index or not allChannels:
         return {}
@@ -582,26 +619,133 @@ def matchedLogos(portalId, allChannels, genres=None):
 def knownLogos(portalId):
     """The matched logos last worked out for a portal (for places without its channel list)."""
     cached = portalLogos.get(portalId)
-    return cached[2] if cached and getSettings().get("match logos") == "true" else {}
+    return cached[2] if cached and looksUpLogos(getPortals().get(portalId, {})) else {}
+
+
+def portalLogoUrl(portal, portalLogo):
+    """The full address of a logo as the portal lists it ("" if it has none)."""
+    portalLogo = str(portalLogo or "")
+    if not portalLogo or "://" in portalLogo:
+        return portalLogo
+    parsed = urlparse(portal["url"])
+    base = parsed.scheme + "://" + parsed.netloc
+    if portalLogo.startswith("/"):
+        return base + portalLogo
+    # A bare file name: Stalker portals keep logos under misc/logos/320 next to server/.
+    root = parsed.path.split("/server/")[0] if "/server/" in parsed.path else ""
+    return base + root + "/misc/logos/320/" + portalLogo
 
 
 def channelLogo(portal, channelId, portalLogo, matched, yours=True):
-    """The logo to show for a channel: yours, else the portal's, else the matched one."""
+    """The logo to show for a channel: yours, else the portal's and the matched one in the
+    order the portal's "logos" setting picks."""
     custom = portal.get("custom logos", {}).get(channelId) if yours else None
     if custom:
         return custom
-    portalLogo = str(portalLogo or "")
-    if portalLogo:
-        if "://" in portalLogo:
-            return portalLogo
-        parsed = urlparse(portal["url"])
-        base = parsed.scheme + "://" + parsed.netloc
-        if portalLogo.startswith("/"):
-            return base + portalLogo
-        # A bare file name: Stalker portals keep logos under misc/logos/320 next to server/.
-        root = parsed.path.split("/server/")[0] if "/server/" in parsed.path else ""
-        return base + root + "/misc/logos/320/" + portalLogo
-    return matched.get(channelId, "")
+    fromPortal = portalLogoUrl(portal, portalLogo)
+    lookedUp = matched.get(channelId, "")
+    source = portal.get("logos", defaultPortal["logos"])
+    if source == "portal only":
+        return fromPortal
+    if source == "lookup only":
+        return lookedUp
+    if source == "lookup":
+        return lookedUp or fromPortal
+    return fromPortal or lookedUp
+
+
+# "Refresh logos" on the Portals page: the latest result for each portal, by portal id.
+logoRefreshes = {}
+logoRefreshesLock = threading.Lock()
+
+
+def refreshPortalLogos(portalId):
+    """Load a portal's channels (and so its logos) afresh, download the logo index again and
+    match the names again, then update Plex and Jellyfin. The result goes in logoRefreshes."""
+    portal = getPortals()[portalId]
+    notes = []
+    try:
+        if looksUpLogos(portal) and refreshLogoIndex(force=True) is False:
+            notes.append("couldn't download logos from iptv-org, so the last ones were used")
+        allChannels = genres = None
+        for mac in portal["macs"]:
+            try:
+                token = stb.getToken(portal["url"], mac, portal["proxy"])
+                stb.getProfile(portal["url"], mac, token, portal["proxy"])
+                allChannels = stb.getAllChannels(portal["url"], mac, token, portal["proxy"], refresh=True)
+                genres = stb.getGenreNames(portal["url"], mac, token, portal["proxy"])
+                break
+            except Exception:
+                allChannels = None
+        if not allChannels:
+            message, ok = "Couldn't load the channels from the portal", False
+        else:
+            portalLogos.pop(portalId, None)
+            matched = matchedLogos(portalId, allChannels, genres)
+            enabled = set(portal.get("enabled channels", []))
+            channels = [c for c in allChannels if str(c["id"]) in enabled] or allChannels
+            counts = {"yours": 0, "portal": 0, "lookup": 0, "none": 0}
+            for c in channels:
+                channelId = str(c["id"])
+                logo = channelLogo(portal, channelId, c.get("logo"), matched)
+                if not logo:
+                    counts["none"] += 1
+                elif logo == portal.get("custom logos", {}).get(channelId):
+                    counts["yours"] += 1
+                elif logo == portalLogoUrl(portal, c.get("logo")):
+                    counts["portal"] += 1
+                else:
+                    counts["lookup"] += 1
+            message = "{} {}: {} from the portal, {} looked up, {} yours, {} without".format(
+                len(channels), "in the playlist" if enabled else "channels",
+                counts["portal"], counts["lookup"], counts["yours"], counts["none"])
+            ok = True
+            category, synced = syncPlex()
+            if category != "info":
+                notes.append(synced)
+    except Exception as e:
+        logger.exception("Refreshing logos for Portal({}) failed".format(portal["name"]))
+        message, ok = "Refreshing logos failed ({})".format(e.__class__.__name__), False
+    message = "; ".join([message] + notes)
+    (logger.info if ok else logger.error)("Logos for Portal({}): {}".format(portal["name"], message))
+    with logoRefreshesLock:
+        logoRefreshes[portalId] = {
+            "running": False,
+            "ok": ok,
+            "message": message,
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }
+
+
+@app.route("/portal/logos", methods=["POST"])
+@authorise
+def portalLogosRefresh():
+    id = request.form["id"]
+    portals = getPortals()
+    if id not in portals:
+        flash("That portal no longer exists", "danger")
+        return redirect("/portals", code=302)
+    source = request.form.get("logos")
+    if source in LOGO_SOURCES and source != portals[id].get("logos"):
+        portals[id]["logos"] = source
+        savePortals(portals)
+    with logoRefreshesLock:
+        if logoRefreshes.get(id, {}).get("running"):
+            flash("Logos for {} are already being refreshed".format(portals[id]["name"]), "info")
+            return redirect("/portals", code=302)
+        logoRefreshes[id] = {"running": True, "ok": True, "message": "Refreshing logos...",
+                             "time": datetime.now().strftime("%Y-%m-%d %H:%M")}
+    threading.Thread(target=refreshPortalLogos, args=(id,), daemon=True).start()
+    flash("Refreshing the channel logos for {}. It takes a minute or two; the result shows on its card."
+          .format(portals[id]["name"]), "info")
+    return redirect("/portals", code=302)
+
+
+@app.route("/portal/logos/status", methods=["GET"])
+@authorise
+def portalLogosStatus():
+    with logoRefreshesLock:
+        return flask.jsonify(logoRefreshes)
 
 
 @app.route("/editor", methods=["GET"])
@@ -2476,7 +2620,8 @@ def lineup():
 
 if __name__ == "__main__":
     config = loadConfig()
-    currentLogoIndex()  # start fetching channel logos in the background
+    if any(looksUpLogos(p) for p in config["portals"].values()):
+        currentLogoIndex()  # start fetching channel logos in the background
     if config.get("xmltv ids") != "short":
         # Channel guide ids got shorter: once Plex and Jellyfin can reach us, map them again.
         config["xmltv ids"] = "short"
