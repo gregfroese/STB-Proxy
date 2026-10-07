@@ -1637,11 +1637,14 @@ def buildXmltv():
     )
 
 
-# One portal connection per channel for players (Plex, Jellyfin, apps): a request for a
-# channel that's already streaming joins that stream instead of opening another, since
-# portals limit connections per account. (Previews in the browser use their own stream.)
+# One portal connection per channel: a request for a channel that's already streaming
+# (from Plex, Jellyfin, an app or a browser preview) joins that stream instead of opening
+# another, since portals limit connections per account.
 SHARE_GRACE = 5  # seconds an unwatched shared stream stays open, for a quick reconnect
-VIEWER_BACKLOG = 256  # chunks a viewer may fall behind before it's dropped
+# Chunks (ffmpeg writes about 32 KB at a time) a viewer may fall behind before it's
+# dropped: room for the burst a stream starts with, several seconds of 4K the portal
+# had buffered. Memory is only used while a viewer is behind.
+VIEWER_BACKLOG = 2048
 sharedStreams = {}
 sharedStreamsLock = threading.Lock()
 
@@ -1669,13 +1672,18 @@ class SharedStream:
             self.count()
         return viewer
 
-    def leave(self, viewer):
+    def leave(self, viewer, linger=True):
+        """linger: keep the stream open SHARE_GRACE seconds if that was its last viewer, in
+        case it comes back; otherwise close it at once."""
         with self.lock:
             if viewer in self.viewers:
                 self.viewers.remove(viewer)
-            if not self.viewers:
+            last = not self.viewers
+            if last:
                 self.idleSince = time.time()
             self.count()
+        if last and not linger and self.process is not None:
+            self.end()
 
     def count(self):
         if self.entry is not None:
@@ -1704,6 +1712,7 @@ class SharedStream:
                     try:
                         viewer["queue"].put_nowait(chunk)
                     except queue.Full:
+                        logger.info("A viewer ({}) fell too far behind Portal({}):Channel({}) and was dropped".format(viewer["ip"], *self.key))
                         self.leave(viewer)  # too far behind: let the others carry on
         except Exception:
             failed = True
@@ -1745,6 +1754,84 @@ def watchShared(stream, viewer):
         stream.leave(viewer)
 
 
+# Browsers play fragmented MP4, so a preview remuxes its copy of the shared stream here.
+# Half-second fragments as well as one per keyframe: the browser can start once it has a
+# whole fragment, and keyframes can be seconds apart.
+PREVIEW_REMUX = [
+    "ffmpeg", "-loglevel", "panic", "-hide_banner", "-f", "mpegts", "-i", "pipe:0",
+    "-vcodec", "copy", "-f", "mp4", "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+    "-frag_duration", "500000", "pipe:1",
+]
+
+
+def watchPreview(stream, viewer, portalId, browser):
+    """A browser preview of a shared stream, as fragmented MP4. The browser's next preview
+    stops it (see stopPreview), and the stream closes at once if nobody else watches."""
+    preview = {
+        "stop": threading.Event(),
+        "process": None,
+        "leave": lambda: stream.leave(viewer, linger=False),  # the next channel may need the connection now
+    }
+    previews[(portalId, browser)] = preview
+    remux = None
+    try:
+        remux = subprocess.Popen(PREVIEW_REMUX, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        preview["process"] = remux
+        threading.Thread(target=feedPreview, args=(viewer, remux, preview), daemon=True).start()
+        while not preview["stop"].is_set():
+            chunk = remux.stdout.read1(65536)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        if remux:
+            remux.kill()
+            remux.wait()
+        preview["leave"]()
+        try:
+            viewer["queue"].put_nowait(None)  # let feedPreview finish
+        except queue.Full:
+            pass
+        if previews.get((portalId, browser)) is preview:
+            previews.pop((portalId, browser), None)
+
+
+def feedPreview(viewer, remux, preview):
+    try:
+        while not preview["stop"].is_set():
+            try:
+                chunk = viewer["queue"].get(timeout=30)
+            except queue.Empty:
+                break
+            if chunk is None:
+                break
+            remux.stdin.write(chunk)
+            remux.stdin.flush()
+    except (OSError, ValueError):
+        pass  # the preview stopped
+    finally:
+        try:
+            remux.stdin.close()
+        except (OSError, ValueError):
+            pass
+
+
+def ffmpegCommand(link, proxy, realTime=True):
+    """The ffmpeg command from Settings for a stream at link, as a list."""
+    cmd = str(getSettings()["ffmpeg command"]).replace("<url>", link)
+    cmd = cmd.replace("<timeout>", str(int(getSettings()["ffmpeg timeout"]) * int(1000000)))
+    if proxy:
+        cmd = cmd.replace("<proxy>", proxy)
+    else:
+        cmd = cmd.replace("-http_proxy <proxy>", "")
+    cmd = cmd.split()
+    if not realTime:
+        # Without -re ffmpeg passes on what the portal has buffered at once, so a
+        # preview starts sooner; after that a live stream comes in real time anyway.
+        cmd = [part for part in cmd if part != "-re"]
+    return cmd
+
+
 def startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip):
     entry = {
         "mac": mac,
@@ -1773,14 +1860,16 @@ def startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, 
 
 def stopPreview(portalId, viewer):
     """Stop this viewer's last preview so its portal connection is free for the next one."""
-    preview = previews.get((portalId, viewer))
+    preview = previews.pop((portalId, viewer), None)
     if not preview:
         return
     preview["stop"].set()
     process = preview["process"]
     if process:
         process.kill()
-    preview["done"].wait(3)
+    # Here rather than waiting for the preview's response to notice: it may be stuck
+    # sending to the browser.
+    preview["leave"]()
 
 
 @app.route("/play/<portalId>/<channelId>", methods=["GET"])
@@ -1824,14 +1913,6 @@ def playChannel(portalId, channelId):
             )
             logger.info("Unoccupied Portal({}):MAC({})".format(portalId, mac))
 
-        preview = None
-        if web:
-            preview = {"stop": threading.Event(), "done": threading.Event(), "process": None}
-            previews[(portalId, viewer)] = preview
-
-        def stopped():
-            return preview is not None and preview["stop"].is_set()
-
         try:
             startTime = datetime.now(timezone.utc).timestamp()
             occupy()
@@ -1841,13 +1922,10 @@ def playChannel(portalId, channelId):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL,
             ) as ffmpeg_sp:
-                if preview:
-                    preview["process"] = ffmpeg_sp
-                while not stopped():
+                while True:
                     chunk = ffmpeg_sp.stdout.read(1024)
                     if len(chunk) == 0:
-                        # A preview stopped for the next channel isn't a fault of the MAC.
-                        if ffmpeg_sp.poll() != 0 and not stopped():
+                        if ffmpeg_sp.poll() != 0:
                             logger.info("Ffmpeg closed with error({}). Moving MAC({}) for Portal({})".format(str(ffmpeg_sp.poll()), mac, portalName))
                             moveMac(portalId, mac)
                         break
@@ -1857,10 +1935,6 @@ def playChannel(portalId, channelId):
         finally:
             unoccupy()
             ffmpeg_sp.kill()
-            if preview:
-                if previews.get((portalId, viewer)) is preview:
-                    previews.pop((portalId, viewer), None)
-                preview["done"].set()
 
     def testStream():
         timeout = int(getSettings()["ffmpeg timeout"]) * int(1000000)
@@ -1912,7 +1986,7 @@ def playChannel(portalId, channelId):
 
     channelName = None  # set once a MAC is free; the fallback search below reads it
     shared = None
-    if not web and getSettings().get("stream method", "ffmpeg") == "ffmpeg":
+    if web or getSettings().get("stream method", "ffmpeg") == "ffmpeg":
         key = (portalId, channelId)
         with sharedStreamsLock:
             existing = sharedStreams.get(key)
@@ -1920,6 +1994,8 @@ def playChannel(portalId, channelId):
                 joined = existing.join(ip)
                 if joined:
                     logger.info("IP({}) shares the stream already open for Portal({}):Channel({})".format(ip, portalId, channelId))
+                    if web:
+                        return Response(watchPreview(existing, joined, portalId, viewer), mimetype="application/octet-stream")
                     return Response(watchShared(existing, joined), mimetype="application/octet-stream")
             shared = SharedStream(key)
             sharedStreams[key] = shared
@@ -1964,46 +2040,14 @@ def playChannel(portalId, channelId):
             # Previews skip the test: the browser retries, then offers Mark dead, by itself.
             if web or getSettings().get("test streams", "true") == "false" or testStream():
                 if web:
-                    ffmpegcmd = [
-                        "ffmpeg",
-                        "-loglevel",
-                        "panic",
-                        "-hide_banner",
-                        "-i",
-                        link,
-                        "-vcodec",
-                        "copy",
-                        "-f",
-                        "mp4",
-                        # Half-second fragments as well as one per keyframe: the browser
-                        # can start once it has a whole fragment, and keyframes can be
-                        # seconds apart.
-                        "-movflags",
-                        "frag_keyframe+empty_moov+default_base_moof",
-                        "-frag_duration",
-                        "500000",
-                        "pipe:",
-                    ]
-                    if proxy:
-                        ffmpegcmd.insert(1, "-http_proxy")
-                        ffmpegcmd.insert(2, proxy)
-                    return Response(streamData(), mimetype="application/octet-stream")
+                    cmd = ffmpegCommand(link, proxy, realTime=False)
+                    startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip)
+                    return Response(watchPreview(shared, firstViewer, portalId, viewer), mimetype="application/octet-stream")
 
                 else:
                     if getSettings().get("stream method", "ffmpeg") == "ffmpeg":
-                        ffmpegcmd = str(getSettings()["ffmpeg command"])
-                        ffmpegcmd = ffmpegcmd.replace("<url>", link)
-                        ffmpegcmd = ffmpegcmd.replace(
-                            "<timeout>",
-                            str(int(getSettings()["ffmpeg timeout"]) * int(1000000)),
-                        )
-                        if proxy:
-                            ffmpegcmd = ffmpegcmd.replace("<proxy>", proxy)
-                        else:
-                            ffmpegcmd = ffmpegcmd.replace("-http_proxy <proxy>", "")
-                        " ".join(ffmpegcmd.split())  # cleans up multiple whitespaces
-                        ffmpegcmd = ffmpegcmd.split()
-                        startShared(shared, ffmpegcmd, portalId, portalName, mac, channelId, channelName, ip)
+                        cmd = ffmpegCommand(link, proxy)
+                        startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip)
                         return Response(watchShared(shared, firstViewer), mimetype="application/octet-stream")
                     else:
                         logger.info("Redirect sent")
