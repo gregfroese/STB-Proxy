@@ -11,6 +11,7 @@ import subprocess
 import uuid
 import logging
 import re
+import queue
 import threading
 import time
 import requests
@@ -1492,6 +1493,140 @@ def buildXmltv():
     )
 
 
+# One portal connection per channel for players (Plex, Jellyfin, apps): a request for a
+# channel that's already streaming joins that stream instead of opening another, since
+# portals limit connections per account. (Previews in the browser use their own stream.)
+SHARE_GRACE = 5  # seconds an unwatched shared stream stays open, for a quick reconnect
+VIEWER_BACKLOG = 256  # chunks a viewer may fall behind before it's dropped
+sharedStreams = {}
+sharedStreamsLock = threading.Lock()
+
+
+class SharedStream:
+    """One ffmpeg reading a channel, its output copied to every viewer of that channel."""
+
+    def __init__(self, key):
+        self.key = key
+        self.viewers = []
+        self.lock = threading.Lock()
+        self.process = None
+        self.done = False
+        self.idleSince = None
+        self.entry = None  # its line in `occupied`
+        self.onEnd = None
+
+    def join(self, ip):
+        viewer = {"queue": queue.Queue(VIEWER_BACKLOG), "ip": ip}
+        with self.lock:
+            if self.done:
+                return None
+            self.viewers.append(viewer)
+            self.idleSince = None
+            self.count()
+        return viewer
+
+    def leave(self, viewer):
+        with self.lock:
+            if viewer in self.viewers:
+                self.viewers.remove(viewer)
+            if not self.viewers:
+                self.idleSince = time.time()
+            self.count()
+
+    def count(self):
+        if self.entry is not None:
+            self.entry["viewers"] = len(self.viewers)
+
+    def start(self, cmd, entry, onEnd):
+        self.entry, self.onEnd = entry, onEnd
+        self.count()
+        self.process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        threading.Thread(target=self.pump, daemon=True).start()
+
+    def pump(self):
+        failed = False
+        try:
+            while True:
+                chunk = self.process.stdout.read1(65536)
+                if not chunk:
+                    failed = self.process.wait(5) != 0
+                    break
+                with self.lock:
+                    viewers = list(self.viewers)
+                    idle = self.idleSince is not None and time.time() - self.idleSince > SHARE_GRACE
+                if idle:
+                    break  # nobody has watched for a while
+                for viewer in viewers:
+                    try:
+                        viewer["queue"].put_nowait(chunk)
+                    except queue.Full:
+                        self.leave(viewer)  # too far behind: let the others carry on
+        except Exception:
+            failed = True
+        finally:
+            self.end(failed)
+
+    def end(self, failed=False):
+        with self.lock:
+            if self.done:
+                return
+            self.done = True
+            viewers = list(self.viewers)
+        if self.process:
+            self.process.kill()
+            self.process.wait()
+        with sharedStreamsLock:
+            if sharedStreams.get(self.key) is self:
+                del sharedStreams[self.key]
+        for viewer in viewers:
+            try:
+                viewer["queue"].put_nowait(None)
+            except queue.Full:
+                pass
+        if self.onEnd:
+            self.onEnd(failed)
+
+
+def watchShared(stream, viewer):
+    try:
+        while True:
+            try:
+                chunk = viewer["queue"].get(timeout=30)
+            except queue.Empty:
+                break
+            if chunk is None:
+                break
+            yield chunk
+    finally:
+        stream.leave(viewer)
+
+
+def startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip):
+    entry = {
+        "mac": mac,
+        "channel id": channelId,
+        "channel name": channelName,
+        "client": ip,
+        "portal name": portalName,
+        "start time": datetime.now(timezone.utc).timestamp(),
+    }
+    occupied.setdefault(portalId, []).append(entry)
+    logger.info("Occupied Portal({}):MAC({})".format(portalId, mac))
+
+    def onEnd(failed):
+        entries = occupied.get(portalId, [])
+        for i, e in enumerate(entries):
+            if e is entry:
+                del entries[i]
+                break
+        logger.info("Unoccupied Portal({}):MAC({})".format(portalId, mac))
+        if failed:
+            logger.info("Ffmpeg closed with error. Moving MAC({}) for Portal({})".format(mac, portalName))
+            moveMac(portalId, mac)
+
+    shared.start(cmd, entry, onEnd)
+
+
 def stopPreview(portalId, viewer):
     """Stop this viewer's last preview so its portal connection is free for the next one."""
     preview = previews.get((portalId, viewer))
@@ -1506,6 +1641,17 @@ def stopPreview(portalId, viewer):
 
 @app.route("/play/<portalId>/<channelId>", methods=["GET"])
 def channel(portalId, channelId):
+    try:
+        return playChannel(portalId, channelId)
+    finally:
+        # A shared stream set up for this request that never started: let anyone who
+        # joined it in the meantime go, and stop others joining it.
+        shared = flask.g.pop("startingShare", None)
+        if shared is not None and shared.process is None:
+            shared.end()
+
+
+def playChannel(portalId, channelId):
     def streamData():
         def occupy():
             occupied.setdefault(portalId, [])
@@ -1620,6 +1766,22 @@ def channel(portalId, channelId):
     if web:
         stopPreview(portalId, viewer)
 
+    channelName = None  # set once a MAC is free; the fallback search below reads it
+    shared = None
+    if not web and getSettings().get("stream method", "ffmpeg") == "ffmpeg":
+        key = (portalId, channelId)
+        with sharedStreamsLock:
+            existing = sharedStreams.get(key)
+            if existing is not None and not existing.done:
+                joined = existing.join(ip)
+                if joined:
+                    logger.info("IP({}) shares the stream already open for Portal({}):Channel({})".format(ip, portalId, channelId))
+                    return Response(watchShared(existing, joined), mimetype="application/octet-stream")
+            shared = SharedStream(key)
+            sharedStreams[key] = shared
+        flask.g.startingShare = shared
+        firstViewer = shared.join(ip)
+
     freeMac = False
 
     for mac in macs:
@@ -1697,9 +1859,8 @@ def channel(portalId, channelId):
                             ffmpegcmd = ffmpegcmd.replace("-http_proxy <proxy>", "")
                         " ".join(ffmpegcmd.split())  # cleans up multiple whitespaces
                         ffmpegcmd = ffmpegcmd.split()
-                        return Response(
-                            streamData(), mimetype="application/octet-stream"
-                        )
+                        startShared(shared, ffmpegcmd, portalId, portalName, mac, channelId, channelName, ip)
+                        return Response(watchShared(shared, firstViewer), mimetype="application/octet-stream")
                     else:
                         logger.info("Redirect sent")
                         return redirect(link)

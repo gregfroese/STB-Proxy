@@ -165,7 +165,9 @@
                         var codeBlock = codeBlock +
                             '<div class="col">' +
                             '<div class="card text-dark bg-light mb-3">' +
-                            '<div class="card-header"><i class="me-2 fa fa-user"></i>' + client + '</div>' +
+                            '<div class="card-header"><i class="me-2 fa fa-user"></i>' + client +
+                            (stream["viewers"] > 1 ? ' <span class="badge bg-info text-dark ms-1" title="Players sharing this one portal connection">' +
+                                stream["viewers"] + ' viewers</span>' : '') + '</div>' +
                             '<div class="card-body">' +
                             '<table class="table table-sm">' +
                             '<tr>' +
