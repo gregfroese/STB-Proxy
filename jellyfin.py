@@ -12,7 +12,9 @@ REFRESH_TASK = "RefreshGuide"
 
 
 class JellyfinError(Exception):
-    pass
+    def __init__(self, message, retry=True):
+        super().__init__(message)
+        self.retry = retry  # False when trying again can't help
 
 
 def call(method, jellyfinUrl, path, apiKey, json=None, params=None):
@@ -32,9 +34,10 @@ def call(method, jellyfinUrl, path, apiKey, json=None, params=None):
     except requests.RequestException as e:
         raise JellyfinError("couldn't reach Jellyfin at {} ({})".format(jellyfinUrl, e.__class__.__name__))
     if response.status_code in (401, 403):
-        raise JellyfinError("Jellyfin rejected the API key (HTTP {})".format(response.status_code))
+        raise JellyfinError("Jellyfin rejected the API key (HTTP {})".format(response.status_code), retry=False)
     if not 200 <= response.status_code < 300:
-        raise JellyfinError("Jellyfin returned HTTP {} for {} {}".format(response.status_code, method, path))
+        raise JellyfinError("Jellyfin returned HTTP {} for {} {}".format(response.status_code, method, path),
+                            retry=response.status_code >= 500)
     return response
 
 
@@ -63,12 +66,19 @@ def status(jellyfinUrl, apiKey, stbBase):
     }
 
 
-def setup(jellyfinUrl, apiKey, stbBase, tunerCount=1):
-    """Add STB-Proxy to Jellyfin as an M3U tuner and an XMLTV guide, unless it's there. Returns a message."""
-    have = status(jellyfinUrl, apiKey, stbBase)
+def setup(jellyfinUrl, apiKey, stbBase, tunerCount=0):
+    """Make Jellyfin use STB-Proxy as an M3U tuner and an XMLTV guide. Returns a message.
+
+    Adds whichever is missing. tunerCount is Jellyfin's own limit on streams from the
+    tuner; 0 (no limit) is best, since STB-Proxy already knows how many streams each
+    portal account allows, and a stream Jellyfin wrongly thinks is still open can't then
+    block playback. An existing STB-Proxy tuner with another limit is changed to this one.
+    """
+    config = liveTvConfig(jellyfinUrl, apiKey)
     stbBase = stbBase.rstrip("/")
-    added = []
-    if not have["tuner"]:
+    tuner = next((t for t in config.get("TunerHosts") or [] if ours(t.get("Url"), stbBase)), None)
+    changes = []
+    if tuner is None:
         call("POST", jellyfinUrl, "/LiveTv/TunerHosts", apiKey, json={
             "Type": "m3u",
             "Url": stbBase + "/playlist",
@@ -81,16 +91,20 @@ def setup(jellyfinUrl, apiKey, stbBase, tunerCount=1):
             "EnableStreamLooping": False,
             "IgnoreDts": True,
         })
-        added.append("tuner ({}/playlist)".format(stbBase))
-    if not have["guide"]:
+        changes.append("added the tuner ({}/playlist)".format(stbBase))
+    elif int(tuner.get("TunerCount") or 0) != tunerCount:
+        # Same Id: Jellyfin updates the tuner rather than adding another.
+        call("POST", jellyfinUrl, "/LiveTv/TunerHosts", apiKey, json=dict(tuner, TunerCount=tunerCount))
+        changes.append("set the tuner's stream limit to {}".format("none" if tunerCount == 0 else tunerCount))
+    if not any(ours(p.get("Path"), stbBase) for p in config.get("ListingProviders") or []):
         call("POST", jellyfinUrl, "/LiveTv/ListingProviders", apiKey,
              params={"validateListings": "false", "validateLogin": "false"},
              json={"Type": "xmltv", "Path": stbBase + "/xmltv", "EnableAllTuners": True})
-        added.append("guide ({}/xmltv)".format(stbBase))
+        changes.append("added the guide ({}/xmltv)".format(stbBase))
     refresh(jellyfinUrl, apiKey)
-    if not added:
+    if not changes:
         return "Jellyfin already has STB-Proxy as a tuner and guide; it's reloading the channels and guide"
-    return "Added STB-Proxy to Jellyfin's Live TV ({}); it's loading the channels and guide".format(" and ".join(added))
+    return "Jellyfin Live TV: " + " and ".join(changes) + "; it's loading the channels and guide"
 
 
 def refresh(jellyfinUrl, apiKey):

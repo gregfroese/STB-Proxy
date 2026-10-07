@@ -107,6 +107,13 @@ class PlexRetryTest(unittest.TestCase):
         self.app.syncPlex()  # a new change, not a retry
         self.assertEqual(self.Timer.call_args.args[0], 60)
 
+    def test_rejected_requests_are_not_retried(self):
+        self.plexSync.side_effect = self.app.plex.PlexSyncError("Plex returned HTTP 400", retry=False)
+        category, _ = self.app.syncPlex()
+        self.assertEqual(category, "danger")
+        self.Timer.assert_not_called()
+        self.assertIsNone(self.app.syncRetry["at"])
+
     def test_success_stops_retrying(self):
         self.app.syncPlex()
         self.plexSync.side_effect = None

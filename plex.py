@@ -1,11 +1,18 @@
 """Keep a Plex DVR's channel map in step with STB-Proxy's lineup."""
 import requests
 
+from urllib.parse import urlencode
+
 TIMEOUT = 30
+# Plex stops reading a request after 32 KB (and answers 400), and it only takes the channel
+# map in the URL, as two parameters per channel. Leave room for the rest of the request line.
+MAX_QUERY = 32000
 
 
 class PlexSyncError(Exception):
-    pass
+    def __init__(self, message, retry=True):
+        super().__init__(message)
+        self.retry = retry  # False when trying again can't help
 
 
 def call(method, plexUrl, path, token, params=None):
@@ -23,10 +30,11 @@ def call(method, plexUrl, path, token, params=None):
             "couldn't reach Plex at {} ({})".format(plexUrl, e.__class__.__name__)
         )
     if response.status_code == 401:
-        raise PlexSyncError("Plex rejected the token (HTTP 401)")
+        raise PlexSyncError("Plex rejected the token (HTTP 401)", retry=False)
     if not 200 <= response.status_code < 300:
         raise PlexSyncError(
-            "Plex returned HTTP {} for {} {}".format(response.status_code, method, path)
+            "Plex returned HTTP {} for {} {}".format(response.status_code, method, path),
+            retry=response.status_code >= 500,
         )
     return response
 
@@ -62,13 +70,22 @@ def sync(plexUrl, token, tunerUri, lineupEntries):
     """
     if not lineupEntries:
         raise PlexSyncError("no channels are available, so Plex was left unchanged")
+    params = channelMapParams(lineupEntries)
+    size = len(urlencode(params))
+    if size > MAX_QUERY:
+        perChannel = size / len(lineupEntries)
+        raise PlexSyncError(
+            "Plex can take about {} channels in one update and the lineup has {}. Switch off a block, "
+            "or shorten long EPG IDs set in the Playlist Editor".format(int(MAX_QUERY / perChannel), len(lineupEntries)),
+            retry=False,
+        )
     dvrKey, deviceKey = findDvr(plexUrl, token, tunerUri)
     call(
         "PUT",
         plexUrl,
         "/media/grabbers/devices/{}/channelmap".format(deviceKey),
         token,
-        channelMapParams(lineupEntries),
+        params,
     )
     call("POST", plexUrl, "/livetv/dvrs/{}/reloadGuide".format(dvrKey), token)
     return "Plex updated: {} channels enabled".format(len(lineupEntries))

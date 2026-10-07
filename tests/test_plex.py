@@ -104,5 +104,35 @@ class PlexTest(unittest.TestCase):
             plex.sync("http://plex.test:32400", "tok", "http://proxy.test:8001", ENTRIES)
 
 
+class ChannelMapSizeTest(unittest.TestCase):
+    def entries(self, n, idLength):
+        return [{"GuideNumber": str(10000 + i), "GuideName": "C", "URL": "u", "epgId": "x" * idLength} for i in range(n)]
+
+    def test_too_big_for_plex_is_refused_before_sending(self):
+        with mock.patch.object(plex.requests, "request") as request:
+            with self.assertRaises(plex.PlexSyncError) as caught:
+                plex.sync("http://plex.test:32400", "tok", "http://proxy.test:8001", self.entries(252, 37))
+        request.assert_not_called()
+        self.assertFalse(caught.exception.retry)
+        self.assertIn("Plex can take about", str(caught.exception))
+        self.assertIn("lineup has 252", str(caught.exception))
+
+    def test_short_ids_fit_a_big_lineup(self):
+        query = plex.urlencode(plex.channelMapParams(self.entries(252, len("48b216.33524"))))
+        self.assertLess(len(query), plex.MAX_QUERY)
+
+    def test_rejected_requests_are_not_retried_but_server_errors_are(self):
+        for status, retry in ((400, False), (401, False), (503, True)):
+            response = mock.Mock(status_code=status)
+            with mock.patch.object(plex.requests, "request", return_value=response):
+                with self.assertRaises(plex.PlexSyncError) as caught:
+                    plex.call("GET", "http://plex.test:32400", "/x", "tok")
+            self.assertEqual(caught.exception.retry, retry, status)
+        with mock.patch.object(plex.requests, "request", side_effect=plex.requests.ConnectionError()):
+            with self.assertRaises(plex.PlexSyncError) as caught:
+                plex.call("GET", "http://plex.test:32400", "/x", "tok")
+        self.assertTrue(caught.exception.retry)
+
+
 if __name__ == "__main__":
     unittest.main()

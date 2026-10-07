@@ -124,6 +124,12 @@ def writeConfig(data):
         os.replace(tmp, configFile)
 
 
+def defaultEpgId(portal, channelId):
+    # Short on purpose: Plex takes its whole channel map in one URL of at most 32 KB, and
+    # each channel's id appears in it twice. Six characters of the portal id keep it unique.
+    return "{}.{}".format(portal[:6], channelId)
+
+
 def previewLink(portal, channelId):
     # Relative, so the browser plays it from whatever address it's using: the LAN, or a
     # reverse proxy (with its login and HTTPS). Plex and players get full links built from HOST.
@@ -1269,11 +1275,8 @@ def jellyfinSetup():
         flash("Save the Jellyfin address and API key first.", "danger")
         return redirect("/settings", code=302)
     try:
-        tuners = int(settings["hdhr tuners"] or 1)
-    except ValueError:
-        tuners = 1
-    try:
-        message = jellyfin.setup(settings["jellyfin url"], settings["jellyfin api key"], "http://" + host, tuners)
+        # No Jellyfin-side stream limit: STB-Proxy knows what each portal account allows.
+        message = jellyfin.setup(settings["jellyfin url"], settings["jellyfin api key"], "http://" + host)
         logger.info(message)
         flash(message + ".", "success")
     except jellyfin.JellyfinError as e:
@@ -1340,7 +1343,7 @@ def playlist():
                                 channelNumber = str(channel.get("number"))
                             epgId = customEpgIds.get(channelId)
                             if epgId == None:
-                                epgId = portal + channelId
+                                epgId = defaultEpgId(portal, channelId)
                             channels.append(
                                 "#EXTINF:-1"
                                 + ' tvg-id="'
@@ -1435,7 +1438,7 @@ def buildXmltv():
                                     channelName = str(c.get("name"))
                                 epgId = customEpgIds.get(channelId)
                                 if epgId == None:
-                                    epgId = portal + channelId
+                                    epgId = defaultEpgId(portal, channelId)
                                 channelEle = ET.SubElement(
                                     channels, "channel", id=epgId
                                 )
@@ -2183,7 +2186,7 @@ def buildLineup():
                                     + "/"
                                     + channelId,
                                     "epgId": customEpgIds.get(channelId)
-                                    or portal + channelId,
+                                    or defaultEpgId(portal, channelId),
                                 }
                             )
                 else:
@@ -2250,27 +2253,28 @@ def syncPlex(retry=False):
         if not retry:
             plexRetry["attempt"] = 0
         cancelPlexRetry()
-        results = [run() for run in servers]
-        failed = any(category != "success" for category, _ in results)
-        if failed:
+        results = [run() for run in servers]  # each (category, message, retryable)
+        failed = any(category != "success" for category, _, _ in results)
+        # Retry only what waiting can fix (a server that's down), not a rejected request.
+        if any(category != "success" and retryable for category, _, retryable in results):
             schedulePlexRetry()
-        return ("danger" if failed else "success"), " ".join(message for _, message in results)
+        return ("danger" if failed else "success"), " ".join(message for _, message, _ in results)
 
 
 def runJellyfinSync():
     settings = getSettings()
     try:
         message = jellyfin.refresh(settings["jellyfin url"], settings["jellyfin api key"])
-        ok = True
+        ok, retryable = True, False
     except jellyfin.JellyfinError as e:
         message = "Jellyfin not refreshed: {}".format(e)
-        ok = False
+        ok, retryable = False, e.retry
     lastJellyfinSync.update({"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "message": message, "ok": ok})
     if ok:
         logger.info(message)
-        return "success", message
+        return "success", message, False
     logger.error(message)
-    return "danger", message
+    return "danger", message, retryable
 
 
 def runPlexSync():
@@ -2284,19 +2288,19 @@ def runPlexSync():
                 )
             )
         message = plex.sync(settings["plex url"], settings["plex token"], "http://" + host, entries)
-        ok = True
+        ok, retryable = True, False
     except plex.PlexSyncError as e:
         message = "Plex not updated: {}".format(e)
-        ok = False
+        ok, retryable = False, e.retry
 
     lastPlexSync.update(
         {"time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "message": message, "ok": ok}
     )
     if ok:
         logger.info(message)
-        return "success", message
+        return "success", message, False
     logger.error(message)
-    return "danger", message
+    return "danger", message, retryable
 
 
 @app.route("/lineup.json", methods=["GET"])
@@ -2312,6 +2316,11 @@ def lineup():
 if __name__ == "__main__":
     config = loadConfig()
     currentLogoIndex()  # start fetching channel logos in the background
+    if config.get("xmltv ids") != "short":
+        # Channel guide ids got shorter: once Plex and Jellyfin can reach us, map them again.
+        config["xmltv ids"] = "short"
+        writeConfig(config)
+        threading.Timer(15, syncPlex).start()
     if "TERM_PROGRAM" in os.environ.keys() and os.environ["TERM_PROGRAM"] == "vscode":
         app.run(host="0.0.0.0", port=8001, debug=True)
     else:
