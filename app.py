@@ -1275,11 +1275,8 @@ def jellyfinSetup():
         flash("Save the Jellyfin address and API key first.", "danger")
         return redirect("/settings", code=302)
     try:
-        tuners = int(settings["hdhr tuners"] or 1)
-    except ValueError:
-        tuners = 1
-    try:
-        message = jellyfin.setup(settings["jellyfin url"], settings["jellyfin api key"], "http://" + host, tuners)
+        # No Jellyfin-side stream limit: STB-Proxy knows what each portal account allows.
+        message = jellyfin.setup(settings["jellyfin url"], settings["jellyfin api key"], "http://" + host)
         logger.info(message)
         flash(message + ".", "success")
     except jellyfin.JellyfinError as e:

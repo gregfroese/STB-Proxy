@@ -33,7 +33,11 @@ class FakeJellyfin:
         if (method, path) == ("GET", "/System/Configuration/livetv"):
             return response(body=self.config, bom=True)
         if (method, path) == ("POST", "/LiveTv/TunerHosts"):
-            self.config["TunerHosts"].append(json)
+            same = [i for i, t in enumerate(self.config["TunerHosts"]) if json.get("Id") and t.get("Id") == json["Id"]]
+            if same:
+                self.config["TunerHosts"][same[0]] = json
+            else:
+                self.config["TunerHosts"].append(dict(json, Id="new"))
             return response()
         if (method, path) == ("POST", "/LiveTv/ListingProviders"):
             self.config["ListingProviders"].append(json)
@@ -55,9 +59,9 @@ class JellyfinModuleTest(unittest.TestCase):
 
     def test_setup_adds_a_tuner_and_guide_once(self):
         fake = self.fake()
-        self.assertIn("Added STB-Proxy", jellyfin.setup(J, "key", STB, tunerCount=2))
+        self.assertIn("added the tuner", jellyfin.setup(J, "key", STB))
         tuner = fake.config["TunerHosts"][0]
-        self.assertEqual((tuner["Type"], tuner["Url"], tuner["TunerCount"]), ("m3u", STB + "/playlist", 2))
+        self.assertEqual((tuner["Type"], tuner["Url"], tuner["TunerCount"]), ("m3u", STB + "/playlist", 0))
         self.assertEqual(fake.config["ListingProviders"][0]["Path"], STB + "/xmltv")
         self.assertIn(("POST", "/ScheduledTasks/Running/abc", None), fake.sent)  # loads them straight away
         refreshes = len([p for m, p, _ in fake.sent if m == "POST" and p.startswith("/ScheduledTasks/Running")])
@@ -65,6 +69,13 @@ class JellyfinModuleTest(unittest.TestCase):
         self.assertEqual(len(fake.config["TunerHosts"]), 1)
         # pressing it again reloads Jellyfin's channels
         self.assertEqual(len([p for m, p, _ in fake.sent if m == "POST" and p.startswith("/ScheduledTasks/Running")]), refreshes + 1)
+
+    def test_setup_lifts_a_stream_limit_on_an_existing_tuner(self):
+        # A limit of 1 let a stream Jellyfin wrongly thought was open block all playback.
+        existing = {"Id": "t1", "Type": "m3u", "Url": STB + "/playlist", "TunerCount": 1, "FriendlyName": "Mine", "IgnoreDts": True}
+        fake = self.fake(tuners=[existing], guides=[{"Path": STB + "/xmltv"}])
+        self.assertIn("stream limit to none", jellyfin.setup(J, "key", STB))
+        self.assertEqual(fake.config["TunerHosts"], [dict(existing, TunerCount=0)])  # same tuner, other settings kept
 
     def test_status(self):
         self.fake(tuners=[{"Url": STB + "/playlist"}])
@@ -126,7 +137,7 @@ class JellyfinAppTest(unittest.TestCase):
         self.assertEqual(self.app.getSettings()["jellyfin api key"], "key")
         with mock.patch.object(self.app.jellyfin, "setup", return_value="Added STB-Proxy to Jellyfin's Live TV") as setup:
             self.client.post("/settings/jellyfin-setup")
-        self.assertEqual(setup.call_args.args[:3], (J, "key", "http://proxy.test:8001"))
+        self.assertEqual(setup.call_args.args, (J, "key", "http://proxy.test:8001"))
         self.assertIn("Added STB-Proxy", self.client.get("/settings").get_data(as_text=True))
 
     def test_api_reports_jellyfin(self):
