@@ -22,6 +22,11 @@ class FakeProcess:
     def read(self, n):
         return b"" if self.killed.wait(0.01) else b"x" * n
 
+    read1 = read
+
+    def wait(self, timeout=None):
+        return self.poll()
+
     def communicate(self):
         return b"", b""
 
