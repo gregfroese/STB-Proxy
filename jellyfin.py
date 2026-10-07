@@ -12,7 +12,9 @@ REFRESH_TASK = "RefreshGuide"
 
 
 class JellyfinError(Exception):
-    pass
+    def __init__(self, message, retry=True):
+        super().__init__(message)
+        self.retry = retry  # False when trying again can't help
 
 
 def call(method, jellyfinUrl, path, apiKey, json=None, params=None):
@@ -32,9 +34,10 @@ def call(method, jellyfinUrl, path, apiKey, json=None, params=None):
     except requests.RequestException as e:
         raise JellyfinError("couldn't reach Jellyfin at {} ({})".format(jellyfinUrl, e.__class__.__name__))
     if response.status_code in (401, 403):
-        raise JellyfinError("Jellyfin rejected the API key (HTTP {})".format(response.status_code))
+        raise JellyfinError("Jellyfin rejected the API key (HTTP {})".format(response.status_code), retry=False)
     if not 200 <= response.status_code < 300:
-        raise JellyfinError("Jellyfin returned HTTP {} for {} {}".format(response.status_code, method, path))
+        raise JellyfinError("Jellyfin returned HTTP {} for {} {}".format(response.status_code, method, path),
+                            retry=response.status_code >= 500)
     return response
 
 

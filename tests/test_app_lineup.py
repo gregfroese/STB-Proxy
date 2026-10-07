@@ -57,7 +57,7 @@ class LineupTest(unittest.TestCase):
         self.assertEqual(failed, [])
         self.assertEqual(numbers(entries), ["101", "102"])
         byNumber = {e["GuideNumber"]: e for e in entries}
-        self.assertEqual(byNumber["101"]["epgId"], PORTAL + "1")
+        self.assertEqual(byNumber["101"]["epgId"], PORTAL[:6] + ".1")
         self.assertEqual(byNumber["102"]["epgId"], "custom.two")
         self.assertEqual(byNumber["101"]["URL"], "http://proxy.test:8001/play/p1/1")
 
@@ -74,7 +74,7 @@ class LineupTest(unittest.TestCase):
 
     def test_xmltv_uses_availability(self):
         body = self.client.get("/xmltv").get_data(as_text=True)
-        self.assertIn('id="p11"', body)
+        self.assertIn('id="p1.1"', body)
         self.assertIn('id="custom.two"', body)
         self.assertNotIn('id="p13"', body)
 
