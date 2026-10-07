@@ -79,7 +79,8 @@
                     data-enabled="{{ portals[portal].enabled }}" data-name="{{ portals[portal].name }}"
                     data-url="{{ portals[portal].url }}" data-proxy="{{ portals[portal].proxy }}"
                     data-macs="{{ portals[portal].macs|join(',') }}"
-                    data-streamsPerMac="{{ portals[portal]['streams per mac'] }}" data-bs-toggle="modal"
+                    data-streamsPerMac="{{ portals[portal]['streams per mac'] }}"
+                    data-logos="{{ portals[portal].logos }}" data-bs-toggle="modal"
                     data-bs-target="#modalEdit">
                     <i class="me-2 fa fa-server"{{ "hidden" if portals[portal].enabled =='false' }}></i>
                     <i class="me-2 fa fa-ban"{{ "hidden" if portals[portal].enabled =='true' }}></i>
@@ -96,6 +97,12 @@
                         </tr>
                         {% endfor %}
                     </table>
+                    {% set refresh = logoRefreshes.get(portal) %}
+                    <div class="small {{ 'text-danger' if refresh and not refresh.ok else 'text-muted' }}"
+                        data-logo-status="{{ portal }}" data-running="{{ 'true' if refresh and refresh.running else 'false' }}"
+                        {{ "hidden" if not refresh }}>
+                        {% if refresh %}Logos{{ "" if refresh.running else " (" ~ refresh.time ~ ")" }}: {{ refresh.message }}{% endif %}
+                    </div>
                 </div>
             </div>
 
@@ -150,6 +157,18 @@
                     <input type="number" name="streams per mac" class="form-control flex-fill" title="Streams Per Mac"
                         min="0" value="1" required>
                     <span class="text-muted">How many streams does each MAC allow. 0 = unlimited.</span>
+
+                    <br><br>
+
+                    <h6>Channel logos:</h6>
+                    <select name="logos" class="form-select" title="Channel logos">
+                        {% for value, label in logoSources.items() %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <span class="text-muted">Where channel logos come from: the portal, or looked up by channel name in the
+                        <a href="https://github.com/iptv-org/database" target="_blank">iptv-org</a> database. A logo
+                        you set in the Playlist Editor always wins.</span>
 
                     <br><br>
 
@@ -221,6 +240,22 @@
 
                     <br><br>
 
+                    <h6>Channel logos:</h6>
+                    <select name="logos" id="editLogos" class="form-select" title="Channel logos">
+                        {% for value, label in logoSources.items() %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-sm btn-outline-success my-2" title="Refresh logos"
+                        onclick="refreshLogos()"><i class="fa fa-refresh"></i> Refresh logos</button><br>
+                    <span class="text-muted">Where channel logos come from: the portal, or looked up by channel name in the
+                        <a href="https://github.com/iptv-org/database" target="_blank">iptv-org</a> database. A logo
+                        you set in the Playlist Editor always wins. <b>Refresh logos</b> uses this choice and loads
+                        the portal's channel list and the iptv-org logos afresh, matches them again, then updates
+                        Plex and Jellyfin.</span>
+
+                    <br><br>
+
                     {{ deviceSection("edit") }}
 
                     <br><br>
@@ -233,6 +268,11 @@
                         <button class="btn btn-success" title="Save">Save</button>
                     </div>
 
+                </form>
+
+                <form id="refreshLogos" action="/portal/logos" method="post" hidden>
+                    <input name="id" id="refreshLogosId">
+                    <input name="logos" id="refreshLogosSource">
                 </form>
 
                 <form id="delete" action="/portal/remove" method="post" onsubmit="return confirm('Confirm Delete');"
@@ -356,11 +396,43 @@
         document.getElementById('editProxy').value = proxy;
         document.getElementById('editMacs').value = macs;
         document.getElementById('editStreamsPerMac').value = streamsPerMac;
+        document.getElementById('editLogos').value = button.getAttribute('data-logos');
         document.getElementById('deleteId').value = id;
         document.getElementById('deleteName').value = name;
         document.getElementById('retest').checked = false;
         loadDevice('edit', macs.split(','));
     })
+
+    function refreshLogos() {
+        document.getElementById('refreshLogosId').value = document.getElementById('editId').value;
+        document.getElementById('refreshLogosSource').value = document.getElementById('editLogos').value;
+        document.getElementById('refreshLogos').submit();
+    }
+
+    // Follow logo refreshes still running until they finish.
+    function followLogoRefreshes() {
+        fetch('/portal/logos/status').then(function (r) { return r.json(); }).then(function (all) {
+            var running = false;
+            Object.keys(all).forEach(function (id) {
+                var el = document.querySelector('[data-logo-status="' + id + '"]');
+                if (!el) {
+                    return;
+                }
+                var refresh = all[id];
+                running = running || refresh.running;
+                el.hidden = false;
+                el.classList.toggle('text-danger', !refresh.ok);
+                el.classList.toggle('text-muted', refresh.ok);
+                el.textContent = 'Logos' + (refresh.running ? '' : ' (' + refresh.time + ')') + ': ' + refresh.message;
+            });
+            if (running) {
+                setTimeout(followLogoRefreshes, 3000);
+            }
+        }).catch(function () { setTimeout(followLogoRefreshes, 10000); });
+    }
+    if (document.querySelector('[data-logo-status][data-running="true"]')) {
+        followLogoRefreshes();
+    }
 
     function retestSave() {
         document.getElementById('retest').checked = true;

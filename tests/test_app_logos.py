@@ -25,9 +25,10 @@ class LogoTest(unittest.TestCase):
         })}}
         self.app = loadApp(self, cfg)
         self.client = self.app.app.test_client()
+        self.stubs = {}
         for name, value in {"getAllChannels": PORTAL_CHANNELS, "getEpg": {"1": [], "2": [], "3": [], "4": []}}.items():
             patcher = mock.patch.object(self.app.stb, name, return_value=value)
-            patcher.start()
+            self.stubs[name] = patcher.start()
             self.addCleanup(patcher.stop)
         self.app.logoIndex.update(index=logos.buildIndex(CHANNELS, LOGOS, FEEDS), time=time.time())
         self.app.portalLogos.clear()
@@ -66,11 +67,115 @@ class LogoTest(unittest.TestCase):
         names = [line.rsplit('",', 1)[1] for line in playlist.splitlines() if line.startswith("#EXTINF")]
         self.assertEqual(names, sorted(names))
 
-    def test_matching_can_be_switched_off(self):
-        self.app.getSettings()["match logos"] = "false"
+    def withPortalLogo(self):
+        # Channel 2 gets a logo from the portal as well as a looked-up one.
+        channels = [dict(c, logo="sn1-portal.png") if c["id"] == "2" else c for c in PORTAL_CHANNELS]
+        self.stubs["getAllChannels"].return_value = channels
+
+    def test_portals_logos_first_by_default(self):
+        self.withPortalLogo()
+        self.assertEqual(self.rows()["2"]["logo"], "http://portal.test/stalker_portal/misc/logos/320/sn1-portal.png")
+
+    def test_looked_up_logos_first(self):
+        self.withPortalLogo()
+        self.app.getPortals()[PORTAL]["logos"] = "lookup"
+        rows = self.rows()
+        self.assertEqual(rows["2"]["logo"], "https://x/sn1.png")
+        self.assertEqual(rows["4"]["logo"], "http://portal.test/stalker_portal/misc/logos/320/77.png")  # none found
+        self.assertEqual(rows["3"]["logo"], "https://mine/mystery.png")  # yours still win
+
+    def test_looked_up_logos_only(self):
+        self.withPortalLogo()
+        self.app.getPortals()[PORTAL]["logos"] = "lookup only"
+        rows = self.rows()
+        self.assertEqual(rows["2"]["logo"], "https://x/sn1.png")
+        self.assertEqual(rows["4"]["logo"], "")
+
+    def test_portals_logos_only(self):
+        self.app.getPortals()[PORTAL]["logos"] = "portal only"
         rows = self.rows()
         self.assertEqual(rows["1"]["logo"], "")
+        self.assertEqual(rows["4"]["logo"], "http://portal.test/stalker_portal/misc/logos/320/77.png")
         self.assertEqual(rows["3"]["logo"], "https://mine/mystery.png")  # yours still count
+        self.assertNotIn('tvg-logo="https://x/', self.client.get("/playlist").get_data(as_text=True))
+
+    def edit(self, **fields):
+        portal = self.app.getPortals()[PORTAL]
+        form = {"id": PORTAL, "name": portal["name"], "url": portal["url"], "macs": ",".join(portal["macs"]),
+                "streams per mac": "1", "proxy": "", "device state": "keep", "enabled": "true"}
+        form.update(fields)
+        with mock.patch.object(self.app, "syncPlex", return_value=("info", "")) as sync, \
+                mock.patch.object(self.app.threading, "Thread", side_effect=runAtOnce):
+            self.client.post("/portal/update", data=form)
+        return sync
+
+    def test_portal_form_saves_the_choice_and_updates_media_servers(self):
+        self.rows()
+        sync = self.edit(logos="lookup only")
+        self.assertEqual(self.app.getPortals()[PORTAL]["logos"], "lookup only")
+        sync.assert_called_once()
+        self.assertNotIn(PORTAL, self.app.portalLogos)
+        sync = self.edit()  # a form without the field keeps it
+        self.assertEqual(self.app.getPortals()[PORTAL]["logos"], "lookup only")
+        sync.assert_not_called()
+        self.edit(logos="nonsense")
+        self.assertEqual(self.app.getPortals()[PORTAL]["logos"], "lookup only")
+
+    def refresh(self, **fields):
+        with mock.patch.object(self.app, "syncPlex", return_value=("success", "Plex updated: 4 channels enabled")) as sync, \
+                mock.patch.object(self.app.threading, "Thread", side_effect=runAtOnce):
+            self.client.post("/portal/logos", data=dict({"id": PORTAL}, **fields))
+        return sync
+
+    def test_refresh_reloads_channels_and_logos_and_reports(self):
+        self.app.refreshLogoIndex.return_value = True
+        sync = self.refresh(logos="lookup")
+        self.app.refreshLogoIndex.assert_called_once_with(force=True)
+        self.assertTrue(self.stubs["getAllChannels"].call_args.kwargs.get("refresh"))
+        sync.assert_called_once()
+        self.assertEqual(self.app.getPortals()[PORTAL]["logos"], "lookup")
+        status = self.client.get("/portal/logos/status").get_json()[PORTAL]
+        self.assertFalse(status["running"])
+        self.assertTrue(status["ok"])
+        self.assertEqual(status["message"], "4 in the playlist: 1 from the portal, 2 looked up, 1 yours, 0 without; "
+                                            "Plex updated: 4 channels enabled")
+        self.assertIn("2 looked up", self.client.get("/portals").get_data(as_text=True))
+
+    def test_refresh_without_lookup_skips_the_download(self):
+        self.app.getPortals()[PORTAL]["logos"] = "portal only"
+        self.refresh()
+        self.app.refreshLogoIndex.assert_not_called()
+        self.assertIn("0 looked up", self.app.logoRefreshes[PORTAL]["message"])
+
+    def test_refresh_reports_a_failed_download_and_portal(self):
+        self.app.refreshLogoIndex.return_value = False
+        self.stubs["getAllChannels"].return_value = None
+        self.refresh()
+        status = self.app.logoRefreshes[PORTAL]
+        self.assertFalse(status["ok"])
+        self.assertIn("Couldn't load the channels from the portal", status["message"])
+        self.assertIn("couldn't download logos from iptv-org", status["message"])
+
+
+def runAtOnce(target, args=(), kwargs=None, daemon=None):
+    thread = mock.Mock()
+    thread.start.side_effect = lambda: target(*args, **(kwargs or {}))
+    return thread
+
+
+class LogoSettingTest(unittest.TestCase):
+    def test_old_switch_turned_off_becomes_portals_logos_only(self):
+        cfg = {"settings": {"match logos": "false"},
+               "portals": {"a": portalConfig(), "b": portalConfig(logos="lookup")}}
+        app = loadApp(self, cfg)
+        self.assertEqual(app.getPortals()["a"]["logos"], "portal only")
+        self.assertEqual(app.getPortals()["b"]["logos"], "lookup")
+        self.assertNotIn("match logos", app.getSettings())
+
+    def test_default_and_unknown_choices(self):
+        app = loadApp(self, {"portals": {"a": portalConfig(), "b": portalConfig(logos="sometimes")}})
+        self.assertEqual(app.getPortals()["a"]["logos"], "portal")
+        self.assertEqual(app.getPortals()["b"]["logos"], "portal")
 
 
 class LogoIndexTest(unittest.TestCase):

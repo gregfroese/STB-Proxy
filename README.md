@@ -90,10 +90,15 @@ Make sets of channels available only when you want them.
 
 # Channel logos
 
-- STB-Proxy shows channel logos in the Playlist Editor, Blocks, Guide and player, and puts them in the playlist and XMLTV (so Plex shows them too).
-- Many portals send no logos. STB-Proxy then matches channels by name to the [iptv-org](https://github.com/iptv-org/database) database, which it downloads in the background when it starts and refreshes weekly (`logo-index.json` next to `config.json`). It only uses clear matches, so some channels get none.
-- To set or fix one, paste an image URL into the channel's **Logo** column in the Playlist Editor and **Save**. Clearing it goes back to the automatic logo.
-- **Settings → Find channel logos** turns the matching (and the download) off.
+- STB-Proxy shows channel logos in the Playlist Editor, Blocks, Guide and player, and puts them in the playlist and XMLTV (so Plex and Jellyfin show them too).
+- Logos come from the portal, or are looked up by channel name in the [iptv-org](https://github.com/iptv-org/database) database, which STB-Proxy downloads in the background and refreshes weekly (`logo-index.json` next to `config.json`). The lookup only uses clear matches, so some channels get none.
+- Each portal picks where its logos come from (**Portals**, open the portal, **Channel logos**):
+  - **The portal's, looked up where it has none** (the default)
+  - **Looked up, the portal's where none is found**: for portals whose own logos are poor
+  - **The portal's only**: no lookup (and no download, if no portal uses it)
+  - **Looked up only**
+- **Refresh logos**, next to that choice, applies it straight away: it loads the portal's channel list and the iptv-org logos afresh, matches them again and updates Plex and Jellyfin. The portal's card then shows how many channels got a logo from where. No need to remove and add the portal again.
+- To set or fix one, paste an image URL into the channel's **Logo** column in the Playlist Editor and **Save**. Your own logo always wins; clearing it goes back to the automatic one.
 
 # Guide
 
