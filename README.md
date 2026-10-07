@@ -121,7 +121,7 @@ Make sets of channels available only when you want them.
 
 Portals limit how many streams an account can play at once (often 1 or 2 per MAC). Set **Streams Per MAC** on the Portals page to your account's limit (0 = no limit), and **Tuners** in Settings → HDHomeRun to the total, so Plex knows too. When a portal's limit is passed, it usually cuts off the stream that has been playing longest.
 
-Players watching the same channel (Plex and Jellyfin on one channel, or Jellyfin checking a channel just before playing it) share one portal connection: STB-Proxy reads the channel once and sends it to all of them. A shared stream counts once against Streams Per MAC, and closes a few seconds after the last viewer leaves. The Dashboard shows how many are sharing each stream. Previews in the browser use their own connection.
+Everything watching the same channel (Plex and Jellyfin, browser previews, or Jellyfin checking a channel just before playing it) shares one portal connection: STB-Proxy reads the channel once and sends it to all of them. A shared stream counts once against Streams Per MAC, and closes a few seconds after the last viewer leaves (at once when you switch a preview to another channel). The Dashboard shows how many are sharing each stream. Each player still buffers on its own, so the same channel can be a few seconds apart in Plex, Jellyfin and the browser.
 
 # Plex sync
 

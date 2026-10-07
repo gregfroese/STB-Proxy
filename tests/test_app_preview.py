@@ -17,12 +17,25 @@ class FakeProcess:
         self.cmd = cmd
         self.killed = threading.Event()
         self.stdout = self
+        self.stdin = self
         self.returncode = 0
+        self.written = []
 
     def read(self, n):
         return b"" if self.killed.wait(0.01) else b"x" * n
 
     read1 = read
+
+    def write(self, data):
+        if self.killed.is_set():
+            raise BrokenPipeError()
+        self.written.append(data)
+
+    def flush(self):
+        pass
+
+    def close(self):
+        pass
 
     def wait(self, timeout=None):
         return self.poll()
@@ -81,13 +94,16 @@ class PreviewTest(unittest.TestCase):
 
     def test_previews_skip_the_stream_test(self):
         self.startStreaming("/play/{}/2?web=true".format(PORTAL))
-        self.assertEqual(self.programs(), ["ffmpeg"])
+        self.assertEqual(self.programs(), ["ffmpeg", "ffmpeg"])  # the portal stream, and the remux to MP4
 
     def test_previews_use_short_fragments_for_a_quick_start(self):
         self.startStreaming("/play/{}/2?web=true".format(PORTAL))
-        cmd = self.processes[-1].cmd
-        self.assertEqual(cmd[cmd.index("-frag_duration") + 1], "500000")
-        self.assertIn("frag_keyframe", cmd[cmd.index("-movflags") + 1])
+        reader, remux = self.processes
+        self.assertIn("http://stream.test/live", reader.cmd)
+        self.assertNotIn("-re", reader.cmd)  # what the portal has buffered comes at once
+        self.assertEqual(remux.cmd[remux.cmd.index("-i") + 1], "pipe:0")
+        self.assertEqual(remux.cmd[remux.cmd.index("-frag_duration") + 1], "500000")
+        self.assertIn("frag_keyframe", remux.cmd[remux.cmd.index("-movflags") + 1])
 
     def test_other_players_still_test_the_stream(self):
         self.startStreaming("/play/{}/2".format(PORTAL))
@@ -95,7 +111,7 @@ class PreviewTest(unittest.TestCase):
 
     def test_new_preview_takes_over_the_viewers_last_one(self):
         reader = self.startStreaming("/play/{}/2?web=true".format(PORTAL))
-        first = self.processes[-1]
+        first = self.processes[0]  # its portal stream
         self.startStreaming("/play/{}/3?web=true".format(PORTAL))  # one stream per MAC: would be 503
         self.assertTrue(first.killed.is_set())
         reader.join(3)

@@ -108,9 +108,53 @@ class StreamSharingTest(unittest.TestCase):
                 time.sleep(0.05)
         self.moveMac.assert_called_once()
 
-    def test_browser_previews_are_not_shared(self):
-        self.read(self.open("2"))
-        self.assertEqual(self.open("2", web=True).status_code, 503)  # its own stream, and the MAC is busy
+    def waitFor(self, condition):
+        for _ in range(60):
+            if condition():
+                return True
+            time.sleep(0.05)
+        return False
+
+    def test_a_preview_joins_a_players_stream(self):
+        plex = self.open("2", ip="10.0.0.5")
+        self.read(plex)
+        preview = self.open("2", ip="10.0.0.7", web=True)  # one stream per MAC: only possible shared
+        self.assertEqual(preview.status_code, 200)
+        self.assertTrue(self.read(preview))
+        reader, remux = self.processes
+        self.assertIn("-re", reader.cmd)  # the player's stream, as Settings has it
+        self.assertEqual(remux.cmd[remux.cmd.index("-f", remux.cmd.index("pipe:0")) + 1], "mp4")
+        self.assertTrue(self.waitFor(lambda: remux.written))  # fed from the shared stream
+        self.assertEqual(len(self.entries()), 1)
+        self.assertEqual(self.entries()[0]["viewers"], 2)
+
+    def test_a_player_joins_a_previews_stream(self):
+        preview = self.open("2", ip="10.0.0.7", web=True)
+        self.read(preview)
+        plex = self.open("2", ip="10.0.0.5")
+        self.assertTrue(self.read(plex))
+        self.assertEqual(len(self.processes), 2)  # the preview's stream and its remux; nothing new
+        self.assertEqual(self.entries()[0]["viewers"], 2)
+
+    def test_closing_a_preview_keeps_the_stream_for_players(self):
+        plex = self.open("2", ip="10.0.0.5")
+        self.read(plex)
+        preview = self.open("2", ip="10.0.0.7", web=True)
+        self.read(preview)
+        preview.close()
+        self.assertTrue(self.waitFor(lambda: self.entries() and self.entries()[0]["viewers"] == 1))
+        self.assertTrue(self.read(plex))
+        self.assertFalse(self.processes[0].killed.is_set())
+
+    def test_switching_preview_channel_frees_the_connection_at_once(self):
+        preview = self.open("2", ip="10.0.0.7", web=True)
+        self.read(preview)
+        self.app.SHARE_GRACE = 60  # no waiting for the grace period
+        nextChannel = self.open("3", ip="10.0.0.7", web=True)  # one stream per MAC
+        self.assertEqual(nextChannel.status_code, 200)
+        self.assertTrue(self.read(nextChannel))
+        self.assertEqual([e["channel id"] for e in self.entries()], ["3"])
+        self.moveMac.assert_not_called()
 
 
 if __name__ == "__main__":
