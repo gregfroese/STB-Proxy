@@ -1641,7 +1641,10 @@ def buildXmltv():
 # (from Plex, Jellyfin, an app or a browser preview) joins that stream instead of opening
 # another, since portals limit connections per account.
 SHARE_GRACE = 5  # seconds an unwatched shared stream stays open, for a quick reconnect
-VIEWER_BACKLOG = 256  # chunks a viewer may fall behind before it's dropped
+# Chunks (ffmpeg writes about 32 KB at a time) a viewer may fall behind before it's
+# dropped: room for the burst a stream starts with, several seconds of 4K the portal
+# had buffered. Memory is only used while a viewer is behind.
+VIEWER_BACKLOG = 2048
 sharedStreams = {}
 sharedStreamsLock = threading.Lock()
 
@@ -1709,6 +1712,7 @@ class SharedStream:
                     try:
                         viewer["queue"].put_nowait(chunk)
                     except queue.Full:
+                        logger.info("A viewer ({}) fell too far behind Portal({}):Channel({}) and was dropped".format(viewer["ip"], *self.key))
                         self.leave(viewer)  # too far behind: let the others carry on
         except Exception:
             failed = True

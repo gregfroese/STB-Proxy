@@ -146,6 +146,14 @@ class StreamSharingTest(unittest.TestCase):
         self.assertTrue(self.read(plex))
         self.assertFalse(self.processes[0].killed.is_set())
 
+    def test_a_viewer_too_far_behind_is_dropped_and_the_others_carry_on(self):
+        self.app.VIEWER_BACKLOG = 5
+        stalled = self.open("2", ip="10.0.0.5")  # never read again
+        self.read(stalled, chunks=1)
+        reading = self.open("2", ip="10.0.0.6")
+        self.assertTrue(self.read(reading, chunks=50))  # far more than the stalled one's backlog
+        self.assertEqual(self.entries()[0]["viewers"], 1)
+
     def test_switching_preview_channel_frees_the_connection_at_once(self):
         preview = self.open("2", ip="10.0.0.7", web=True)
         self.read(preview)
