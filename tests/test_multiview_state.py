@@ -35,7 +35,7 @@ class MultiviewStateTest(unittest.TestCase):
         self.assertEqual(defaults["layout"], "4")
         self.assertEqual(defaults["order"], list(range(9)))
         self.assertEqual(defaults["tiles"], [None] * 9)
-        self.assertEqual((defaults["audio"], defaults["big"]), (0, 66))
+        self.assertEqual((defaults["audio"], defaults["big"], defaults["beforeBig"]), (0, 66, None))
         for saved in ("{", "[]", '"x"', json.dumps({"layout": "7", "order": list(range(9)), "tiles": [None] * 9}),
                       json.dumps({"layout": "4", "order": [0, 0, 1, 2, 3, 4, 5, 6, 7], "tiles": [None] * 9}),
                       json.dumps({"layout": "4", "order": list(range(9)), "tiles": [None] * 3})):
@@ -104,6 +104,60 @@ class MultiviewStateTest(unittest.TestCase):
         self.assertEqual(ids[0], ids[1])
         self.assertRegex(ids[0], r"^[a-z0-9]{4,}$")
         self.assertRegex(self.run_js("return mv.tabId(storage);", throws=True), r"^[a-z0-9]{4,}$")
+
+    def test_favourites_by_number_and_filtered(self):
+        channels = [row("a", "30", "Zed", favourite=True), row("b", "10", "Other"),
+                    row("c", "20", "Fav", favourite=True, available=False)]
+        names = self.run_js("return mv.favouriteChoices(%s, null).map(mv.channelName);" % json.dumps(channels))
+        self.assertEqual(names, ["Fav", "Zed"])
+        names = self.run_js("return mv.favouriteChoices(%s, r => r.channelName == 'Zed').map(mv.channelName);" % json.dumps(channels))
+        self.assertEqual(names, ["Zed"])
+
+    def test_only_blocks_that_are_on_are_listed(self):
+        channels = [dict(row("a", "1", "One"), blocks=["Sports", "News"]), dict(row("b", "2", "Two"), blocks=["Sports"]),
+                    dict(row("c", "3", "Three"), blocks=["Movies"])]
+        blocks = self.run_js("return mv.blockChoices(%s, ['Sports', 'Movies', 'Empty'], null);" % json.dumps(channels))
+        self.assertEqual(blocks, [{"name": "Movies", "channels": 1}, {"name": "Sports", "channels": 2}])
+        some = self.run_js("return mv.blockChoices(%s, ['Sports', 'Movies'], n => n == 'Sports');" % json.dumps(channels))
+        self.assertEqual([b["name"] for b in some], ["Sports"])
+
+    def test_a_blocks_channels_by_number(self):
+        channels = [dict(row("a", "9", "Nine"), blocks=["Sports"]), dict(row("b", "2", "Two"), blocks=["Sports", "News"]),
+                    dict(row("c", "1", "One"), blocks=["News"])]
+        names = self.run_js("return mv.blockChannels(%s, 'Sports', null).map(mv.channelName);" % json.dumps(channels))
+        self.assertEqual(names, ["Two", "Nine"])
+
+    def test_making_a_tile_big_and_back_restores_the_view(self):
+        state = self.run_js(
+            "let s = mv.loadState(storage); s.layout = '9'; s.order = [2, 0, 1, 3, 4, 5, 6, 7, 8];"
+            "const before = JSON.stringify([s.layout, s.order]);"
+            "mv.toggleBig(s, 4); const big = [s.layout, s.order[0], mv.canGoBack(s, 4), mv.canGoBack(s, 0)];"
+            "mv.toggleBig(s, 4); return {big: big, back: JSON.stringify([s.layout, s.order]) == before, saved: s.beforeBig};")
+        self.assertEqual(state["big"], ["big", 4, True, False])
+        self.assertTrue(state["back"])
+        self.assertIsNone(state["saved"])
+
+    def test_making_another_tile_big_keeps_the_first_view(self):
+        state = self.run_js(
+            "let s = mv.loadState(storage);"
+            "mv.toggleBig(s, 1); mv.toggleBig(s, 3); const big = [s.layout, s.order[0]];"
+            "mv.toggleBig(s, 3); return {big: big, layout: s.layout, order: s.order};")
+        self.assertEqual(state["big"], ["big", 3])
+        self.assertEqual((state["layout"], state["order"]), ("4", list(range(9))))
+
+    def test_choosing_a_layout_forgets_the_view_to_go_back_to(self):
+        state = self.run_js(
+            "let s = mv.loadState(storage); mv.toggleBig(s, 2); mv.chooseLayout(s, 'big');"
+            "return {layout: s.layout, back: mv.canGoBack(s, 2), saved: s.beforeBig};")
+        self.assertEqual((state["layout"], state["back"], state["saved"]), ("big", False, None))
+
+    def test_the_view_to_go_back_to_survives_a_reload_and_a_bad_one_is_ignored(self):
+        kept = self.run_js("let s = mv.loadState(storage); mv.toggleBig(s, 5); mv.saveState(storage, s);"
+                           "return mv.loadState(storage).beforeBig;")
+        self.assertEqual(kept, {"layout": "4", "order": list(range(9))})
+        for bad in ({"layout": "big", "order": list(range(9))}, {"layout": "4", "order": [0]}, "x"):
+            saved = json.dumps({"layout": "big", "order": list(range(9)), "tiles": [None] * 9, "beforeBig": bad})
+            self.assertIsNone(self.run_js("return mv.loadState(storage).beforeBig;", saved=saved), bad)
 
 
 if __name__ == "__main__":

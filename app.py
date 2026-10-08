@@ -1363,7 +1363,9 @@ def guidePage():
 @app.route("/multiview", methods=["GET"])
 @authorise
 def multiview():
-    return render_template("multiview.html", tuners=tunerCount())
+    blocks = getBlocks()
+    enabledBlocks = sorted(n for n in availability.blockNames(getPortals()) if blocks.get(n) == "true")
+    return render_template("multiview.html", tuners=tunerCount(), enabledBlocks=enabledBlocks)
 
 
 @app.route("/guide/search", methods=["GET"])
