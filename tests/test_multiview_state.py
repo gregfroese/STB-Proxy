@@ -97,6 +97,14 @@ class MultiviewStateTest(unittest.TestCase):
             ".map(a => mv.failureAction(a[0], a[1]));")
         self.assertEqual(actions, ["retry", "failed", "busy", "client", "recording"])
 
+    def test_each_tab_keeps_its_own_id(self):
+        # Kept in sessionStorage: the same across a reload, different in another tab, so two
+        # Multiview tabs in one browser don't take each other's tiles.
+        ids = self.run_js("return [mv.tabId(storage), mv.tabId(storage)];")
+        self.assertEqual(ids[0], ids[1])
+        self.assertRegex(ids[0], r"^[a-z0-9]{4,}$")
+        self.assertRegex(self.run_js("return mv.tabId(storage);", throws=True), r"^[a-z0-9]{4,}$")
+
 
 if __name__ == "__main__":
     unittest.main()

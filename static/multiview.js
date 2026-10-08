@@ -10,6 +10,7 @@
 //   big    - the big tile's share of the width, in percent
 (function (root) {
     var KEY = "stbMultiview";
+    var TAB_KEY = "stbTab";
     var TILES = 9;
     var LAYOUTS = { "1": 1, "2": 2, "4": 4, "9": 9, "big": 4 };
     var BIGGER = { "1": "2", "2": "4", "4": "9", "big": "9" };
@@ -28,10 +29,11 @@
         return typeof n == "number" && n % 1 == 0 && n >= 0 && n < TILES;
     }
 
-    function browserStorage() {
+    // name: "localStorage" (the default) or "sessionStorage".
+    function browserStorage(name) {
         try {
-            if (root.localStorage) {
-                return root.localStorage;
+            if (root[name || "localStorage"]) {
+                return root[name || "localStorage"];
             }
         } catch (e) { }
         return { getItem: function () { return null; }, setItem: function () { } };
@@ -61,6 +63,22 @@
         state.audio = isTileIndex(saved.audio) ? saved.audio : 0;
         state.big = typeof saved.big == "number" && saved.big >= 30 && saved.big <= 85 ? saved.big : 66;
         return state;
+    }
+
+    // This tab's id, kept in sessionStorage: the same across a reload, different in another
+    // tab, so two tabs in one browser don't take each other's tiles.
+    function tabId(storage) {
+        var id = null;
+        try {
+            id = storage.getItem(TAB_KEY);
+        } catch (e) { }
+        if (!id) {
+            id = Math.random().toString(36).slice(2, 10);
+            try {
+                storage.setItem(TAB_KEY, id);
+            } catch (e) { }
+        }
+        return id;
     }
 
     function saveState(storage, state) {
@@ -155,6 +173,7 @@
         TILES: TILES,
         LAYOUTS: LAYOUTS,
         browserStorage: browserStorage,
+        tabId: tabId,
         loadState: loadState,
         saveState: saveState,
         shownCount: shownCount,

@@ -287,6 +287,9 @@
         return id;
     })();
 
+    // This tab's player, so players in two tabs don't take each other's tuner back and forth.
+    var playerTile = "player." + multiview.tabId(multiview.browserStorage("sessionStorage"));
+
     var streamSeq = 0;
     var retried = false;
     var BUSY_MESSAGE = "Portal busy, trying again...";
@@ -306,7 +309,7 @@
             if (seq != streamSeq) {
                 return;  // another channel was picked, or the player closed, meanwhile
             }
-            player.src = currentLink + "&viewer=" + encodeURIComponent(viewerId) + "&tile=player";
+            player.src = currentLink + "&viewer=" + encodeURIComponent(viewerId) + "&tile=" + playerTile;
             previewTimer = setTimeout(previewFailed, 15000);
         }, delay);
     }
@@ -444,6 +447,13 @@
         }
     });
 
+    // A live preview never ends by itself: it was stopped (say, for Plex) or the portal dropped it.
+    player.addEventListener("ended", function () {
+        if (currentChannel && player.getAttribute("src")) {
+            previewFailed();
+        }
+    });
+
     var panel = document.getElementById("playerPanel");
 
     function showPlayer() {
@@ -563,7 +573,7 @@
             return;
         }
         var seq = streamSeq;
-        $.getJSON("/preview/status", { viewer: viewerId, tile: "player" })
+        $.getJSON("/preview/status", { viewer: viewerId, tile: playerTile })
             .then(function (res) { return res.reason; }, function () { return $.Deferred().resolve(null); })
             .done(function (reason) {
                 if (seq != streamSeq) {

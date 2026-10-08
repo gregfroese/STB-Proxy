@@ -1,4 +1,5 @@
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -196,6 +197,81 @@ class TunerPoolTest(TunerTestCase):
         status = self.client.get("/api/status", headers={"X-API-Key": self.app.getSettings()["api token"]}).get_json()
         self.assertEqual(status["tuners"], {"total": 2, "used": 1})
         self.assertEqual(status["viewers"], {"client": 1, "recording": 0, "preview": 1})
+
+
+class ReviewFixesTest(TunerTestCase):
+    def reason(self, tile, viewer="browser1"):
+        return self.client.get("/preview/status?viewer={}&tile={}".format(viewer, tile)).get_json()["reason"]
+
+    def holdLinks(self, *channels):
+        """getLink for these channels waits until the returned event is set, so their streams stay connecting."""
+        gate = threading.Event()
+
+        def getLink(url, mac, token, cmd, proxy):
+            if any(cmd.endswith("/ch/" + c) for c in channels):
+                gate.wait(5)
+            return "http://stream.test/live"
+
+        patcher = mock.patch.object(self.app.stb, "getLink", side_effect=getLink)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(gate.set)
+        return gate
+
+    def playInBackground(self, *args, **kwargs):
+        """play() on another thread; returns a list that gets its response."""
+        result = []
+        thread = threading.Thread(target=lambda: result.append(self.play(*args, **kwargs)), daemon=True)
+        thread.start()
+        for _ in range(100):  # until it's waiting on the portal
+            if any(not s.done and s.process is None for s in list(self.app.sharedStreams.values())):
+                break
+            time.sleep(0.01)
+        return result, thread
+
+    def test_a_new_try_forgets_the_last_reason(self):
+        self.play("2", tile="t0")
+        self.play("3", tile="t1")
+        self.assertEqual(self.reason("t2") if self.play("4", tile="t2").status_code == 503 else None, "busy")
+        self.app.stopPreview(("browser1", "t1"))
+        with mock.patch.object(self.app.stb, "getLink", return_value=None):  # this time the portal fails
+            self.assertEqual(self.play("4", tile="t2").status_code, 503)
+        self.assertIsNone(self.reason("t2"))  # not "No free tuner" again: it may be dead
+
+    def test_a_tile_can_change_channel_while_its_last_one_is_still_connecting(self):
+        self.play("2", ip="10.0.0.5")  # Plex has one tuner
+        gate = self.holdLinks("3")
+        first, thread = self.playInBackground("3", tile="player")
+        self.assertEqual(self.play("4", tile="player").status_code, 200)  # channel up again, quickly
+        gate.set()
+        thread.join(5)
+        self.assertEqual(first[0].status_code, 503)  # the abandoned one gave up
+        self.assertEqual(self.open(), ["2", "4"])
+
+    def test_a_player_can_stop_previews_that_are_still_connecting(self):
+        gate = self.holdLinks("2", "3")
+        a, threadA = self.playInBackground("2", tile="t0")
+        b, threadB = self.playInBackground("3", tile="t1")
+        self.assertEqual(self.play("4", ip="10.0.0.5").status_code, 200)
+        gate.set()
+        threadA.join(5)
+        threadB.join(5)
+        self.assertIn(self.open(), (["3", "4"], ["2", "4"]))
+        self.assertIn("client", (self.reason("t0"), self.reason("t1")))
+
+    def test_a_player_never_stops_a_recording(self):
+        self.play("2", recording="r1")
+        self.play("3", recording="r2")
+        self.assertEqual(self.play("4", ip="10.0.0.5").status_code, 503)
+        self.assertEqual(self.open(), ["2", "3"])
+
+    def test_a_stream_that_gains_a_player_before_it_is_stopped_is_left_alone(self):
+        self.play("2", tile="t0")
+        stream = self.app.sharedStreams[(PORTAL, "2")]
+        self.play("2", ip="10.0.0.5")  # Plex joins after it was picked to stop
+        self.assertFalse(self.app.stopForRoom(stream, "client"))
+        self.assertFalse(stream.done)
+        self.assertIsNone(self.reason("t0"))
 
 
 if __name__ == "__main__":

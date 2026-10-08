@@ -50,6 +50,13 @@ class TemplateScriptTest(unittest.TestCase):
     def test_multiview_script_is_valid_javascript(self):
         self.assertValidJavaScript("multiview.html")
 
+    def test_multiview_tiles_are_per_tab_and_handle_a_stream_ending(self):
+        script = inlineScripts("multiview.html")
+        self.assertIn('multiview.tabId(multiview.browserStorage("sessionStorage"))', script)
+        self.assertIn('"&tile=" + tileId(i)', script)
+        self.assertIn('tile: tileId(i)', script)
+        self.assertRegex(script, r't\.video\.addEventListener\("ended", function \(\) \{\s*if \(t\.video\.getAttribute\("src"\)\) \{\s*tileFailed\(i\);')
+
     def test_multiview_helpers_are_valid_javascript(self):
         result = subprocess.run(["node", "--check", os.path.join(ROOT, "static", "multiview.js")],
                                 capture_output=True, text=True)
@@ -68,7 +75,13 @@ class PreviewPromptTest(unittest.TestCase):
         self.assertIn("function retryPreview", self.script)
 
     def test_previews_say_which_tile_they_play_in(self):
-        self.assertIn('"&tile=player"', self.script)
+        # One per tab, so two tabs' players don't take each other's tuner back and forth.
+        self.assertIn('"player." + multiview.tabId(', self.script)
+        self.assertIn('"&tile=" + playerTile', self.script)
+
+    def test_a_preview_that_ends_is_treated_as_stopped(self):
+        # A preview stopped for Plex ends cleanly rather than with an error.
+        self.assertRegex(self.script, r'player\.addEventListener\("ended", function \(\) \{\s*if \(currentChannel && player\.getAttribute\("src"\)\) \{\s*previewFailed\(\);')
 
     def test_a_refused_or_stopped_preview_says_why(self):
         self.assertIn("/preview/status", self.script)

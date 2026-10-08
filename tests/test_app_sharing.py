@@ -154,6 +154,17 @@ class StreamSharingTest(unittest.TestCase):
         self.assertTrue(self.read(reading, chunks=50))  # far more than the stalled one's backlog
         self.assertEqual(self.entries()[0]["viewers"], 1)
 
+    def test_a_dropped_viewer_lets_go_of_its_backlog(self):
+        # A browser that stops reading but keeps its connection (a laptop asleep) mustn't
+        # hold its whole backlog in memory until the connection times out.
+        self.app.VIEWER_BACKLOG = 5
+        stalled = self.open("2", ip="10.0.0.5")
+        self.read(stalled, chunks=1)
+        backlog = self.app.sharedStreams[(PORTAL, "2")].viewers[0]["queue"]
+        reading = self.open("2", ip="10.0.0.6")
+        self.assertTrue(self.read(reading, chunks=50))
+        self.assertLessEqual(backlog.qsize(), 1)  # at most the end marker
+
     def test_switching_preview_channel_frees_the_connection_at_once(self):
         preview = self.open("2", ip="10.0.0.7", web=True)
         self.read(preview)
