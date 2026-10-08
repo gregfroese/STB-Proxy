@@ -72,6 +72,9 @@ class TemplateScriptTest(unittest.TestCase):
         self.assertIn("multiview.canGoBack(state, i)", script)
         self.assertIn("multiview.chooseLayout(state, layout)", script)
 
+    def test_recordings_script_is_valid_javascript(self):
+        self.assertValidJavaScript("recordings.html")
+
     def test_multiview_helpers_are_valid_javascript(self):
         result = subprocess.run(["node", "--check", os.path.join(ROOT, "static", "multiview.js")],
                                 capture_output=True, text=True)

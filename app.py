@@ -1392,6 +1392,12 @@ def multiview():
     return render_template("multiview.html", tuners=tunerCount(), enabledBlocks=enabledBlocks)
 
 
+@app.route("/recordings", methods=["GET"])
+@authorise
+def recordingsPage():
+    return render_template("recordings.html", folder=getSettings().get("recordings folder", "").strip())
+
+
 @app.route("/recordings/list", methods=["GET"])
 @authorise
 def recordingsList():

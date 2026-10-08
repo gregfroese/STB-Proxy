@@ -101,6 +101,15 @@ Make sets of channels available only when you want them.
 - Each different channel needs a tuner (see Streams and portal connections). Tiles on the same channel, or on a channel Plex is watching, share one. With more tiles than tuners, the extra tiles say **No free tuner**. If Plex needs a tuner a tile is using, the tile stops and says so. **Try again** once a tuner is free.
 - Your browser remembers the tiles and layout, and opens them again next time.
 
+# Recording
+
+- Set **Recordings folder** in Settings → Recording to a folder STB-Proxy can write to, such as a mounted share. Empty turns recording off.
+- Record from a Multiview tile or the preview player with the red ⏺ button. Choose how long: until you stop it, until the programme on now ends, or 30 minutes, 1 hour or 2 hours.
+- A recording shares the channel with anything else watching it, so watching what you record uses no extra tuner. It can take a tuner from a browser preview, never from Plex or another player.
+- **Recordings** (in the menu) lists what's recording now, with **Stop**, and what's recorded. You can play recordings in the browser, download them or delete them. Files are saved as `Title/Title - date time.mp4`, so Plex or Jellyfin can use the folder as a library.
+- If the portal drops the stream, the recording reopens it and carries on, and the recording is marked **partial**, with the gaps noted. It also carries on after STB-Proxy restarts.
+- Starting a recording needs 1 GB free in the folder, and a recording stops, keeping what it has, when less than 300 MB is left.
+
 # Channel logos
 
 - STB-Proxy shows channel logos in the Playlist Editor, Blocks, Guide and player, and puts them in the playlist and XMLTV (so Plex and Jellyfin show them too).

@@ -85,5 +85,13 @@ class RecordingRoutesTest(unittest.TestCase):
         self.assertIn('name="recordings folder"', self.client.get("/settings").get_data(as_text=True))
 
 
+    def test_recordings_page_and_menu(self):
+        body = self.client.get("/recordings").get_data(as_text=True)
+        self.assertIn('id="nowList"', body)
+        self.assertIn('id="doneList"', body)
+        self.assertIn("recordings.js", body)
+        self.assertIn('href="/recordings"', self.client.get("/guide").get_data(as_text=True))
+
+
 if __name__ == "__main__":
     unittest.main()
