@@ -125,6 +125,8 @@ Portals limit how many streams an account can play at once (often 1 or 2 per MAC
 
 Everything watching the same channel (Plex and Jellyfin, browser previews, or Jellyfin checking a channel just before playing it) shares one portal connection: STB-Proxy reads the channel once and sends it to all of them. A shared stream counts once against Streams Per MAC, and closes a few seconds after the last viewer leaves (at once when you switch a preview to another channel). The Dashboard shows how many are sharing each stream. Each player still buffers on its own, so the same channel can be a few seconds apart in Plex, Jellyfin and the browser.
 
+**Tuners** is also how many different channels STB-Proxy opens at once, across all portals. When they're all in use and something wants a new channel, STB-Proxy makes room by stopping a browser preview, oldest first: Plex, Jellyfin and other players come before previews. A preview never stops anything, and a stream that a player is also watching is never stopped. If nothing can make room, the request gets "All tuners are busy" (HTTP 503) and a preview says **No free tuner**.
+
 # Plex sync
 
 When STB-Proxy is added to Plex as an HDHomeRun tuner, it can keep the Plex DVR's channel list up to date.
@@ -180,7 +182,7 @@ STB-Proxy has a small JSON API under `/api/`. Every call needs the API token fro
 
 | Call | What it does |
 | --- | --- |
-| `GET /api/status` | Lineup size, active streams, blocks, last Plex sync, and whether anything else is using your MACs |
+| `GET /api/status` | Lineup size, active streams, tuners in use, viewers by kind (client, recording, preview), blocks, last Plex sync, and whether anything else is using your MACs |
 | `GET /api/blocks` | Every block: name, on or off, channel and dead counts |
 | `GET /api/blocks/<name>` | One block (the name ignores case) |
 | `POST /api/blocks/<name>` with `{"enabled": true}` or `false` | Switch a block on or off |

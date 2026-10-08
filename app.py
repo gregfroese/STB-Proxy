@@ -1709,6 +1709,15 @@ SHARE_GRACE = 5  # seconds an unwatched shared stream stays open, for a quick re
 VIEWER_BACKLOG = 2048
 sharedStreams = {}
 sharedStreamsLock = threading.Lock()
+# Each kind of viewer's claim on a tuner: a new channel may stop streams whose viewers all
+# have a lower claim. Plex and other players come first, then recordings, then previews.
+KIND_PRIORITY = {"preview": 0, "recording": 1, "client": 2}
+TUNER_BUSY = "All tuners are busy"
+# Why a tile's last preview ended or didn't start, by (viewer id, tile id), so the page can
+# say: "busy" (no free tuner) or the kind of viewer that needed its tuner.
+previewOutcomes = {}
+OUTCOME_KEEP = 600  # seconds
+admissionLock = threading.Lock()
 
 
 class SharedStream:
@@ -1753,6 +1762,11 @@ class SharedStream:
         if self.entry is not None:
             self.entry["viewers"] = len(self.viewers)
             self.entry["kinds"] = sorted({v["kind"] for v in self.viewers})
+
+    def priority(self):
+        """The highest claim among its viewers; a stream nobody watches has the lowest."""
+        with self.lock:
+            return max((KIND_PRIORITY[v["kind"]] for v in self.viewers), default=0)
 
     def start(self, cmd, entry, onEnd):
         self.entry, self.onEnd = entry, onEnd
@@ -1833,6 +1847,7 @@ def watchPreview(stream, viewer, tile):
     """A browser preview of a shared stream, as fragmented MP4, in tile (viewer id, tile id).
     The tile's next preview stops it (see stopPreview), and the stream closes at once if
     nobody else watches."""
+    previewOutcomes.pop(tile, None)  # it's playing: nothing to explain
     preview = {
         "stop": threading.Event(),
         "process": None,
@@ -1938,6 +1953,63 @@ def stopPreview(tile):
     preview["leave"]()
 
 
+def tunerCount():
+    """The Tuners setting: how many channels may be open at once, across all portals."""
+    try:
+        return max(1, int(getSettings()["hdhr tuners"]))
+    except (KeyError, TypeError, ValueError):
+        return 1
+
+
+def portalHasFreeSlot(portalId):
+    portal = getPortals()[portalId]
+    perMac = int(portal.get("streams per mac"))
+    if perMac == 0:
+        return True
+    entries = occupied.get(portalId, [])
+    return any(sum(1 for e in entries if e["mac"] == mac) < perMac for mac in portal["macs"])
+
+
+def noteOutcome(tile, reason):
+    now = time.time()
+    for key in [k for k, v in previewOutcomes.items() if now - v["time"] > OUTCOME_KEEP]:
+        previewOutcomes.pop(key, None)
+    previewOutcomes[tile] = {"reason": reason, "time": now}
+
+
+def stopForRoom(stream, kind):
+    """Stop stream so a viewer of this kind can have its tuner, telling its previews why."""
+    logger.info("Stopping Portal({}):Channel({}) to free a tuner for a {}".format(stream.key[0], stream.key[1], kind))
+    with stream.lock:
+        tiles = [v["tile"] for v in stream.viewers if v["tile"]]
+    for tile in tiles:
+        noteOutcome(tile, kind)
+        stopPreview(tile)
+    stream.end()
+
+
+def makeRoom(portalId, kind, starting):
+    """Make sure a new channel for a viewer of this kind fits within the Tuners setting and
+    the portal's streams per MAC, stopping streams with a lower claim, oldest first, if it
+    doesn't. starting is the new channel's own shared stream. True if it fits."""
+    with admissionLock:
+        while True:
+            with sharedStreamsLock:
+                others = [s for s in sharedStreams.values() if s is not starting and not s.done]
+            tunersFull = len(others) >= tunerCount()
+            portalFull = not portalHasFreeSlot(portalId)
+            if not tunersFull and not portalFull:
+                return True
+            victims = [
+                s for s in others
+                if s.process is not None and s.priority() < KIND_PRIORITY[kind]
+                and (not portalFull or s.key[0] == portalId)
+            ]
+            if not victims:
+                return False
+            stopForRoom(min(victims, key=lambda s: s.entry["start time"]), kind)
+
+
 @app.route("/play/<portalId>/<channelId>", methods=["GET"])
 def channel(portalId, channelId):
     try:
@@ -1948,6 +2020,16 @@ def channel(portalId, channelId):
         shared = flask.g.pop("startingShare", None)
         if shared is not None and shared.process is None:
             shared.end()
+
+
+@app.route("/preview/status", methods=["GET"])
+@authorise
+def previewStatus():
+    """Why a tile's last preview stopped or didn't start, if STB-Proxy knows."""
+    tile = (request.args.get("viewer") or request.remote_addr, request.args.get("tile") or "player")
+    outcome = previewOutcomes.get(tile)
+    fresh = outcome is not None and time.time() - outcome["time"] < OUTCOME_KEEP
+    return flask.jsonify({"reason": outcome["reason"] if fresh else None})
 
 
 def playChannel(portalId, channelId):
@@ -2070,6 +2152,11 @@ def playChannel(portalId, channelId):
             sharedStreams[key] = shared
         flask.g.startingShare = shared
         firstViewer = shared.join(ip, kind, tile)
+        if not makeRoom(portalId, kind, shared):
+            logger.info("No free tuner for Portal({}):Channel({})".format(portalId, channelId))
+            if tile:
+                noteOutcome(tile, "busy")
+            return flask.jsonify({"error": TUNER_BUSY}), 503
 
     freeMac = False
 
@@ -2411,9 +2498,18 @@ def apiStatus():
     blocks = getBlocks()
     lineup = sum(len(availability.availableChannels(portals[p], blocks)) for p in portals if portals[p]["enabled"] == "true")
     activity = [macActivity(portals[p], mac) for p in portals if portals[p]["enabled"] == "true" for mac in portals[p]["macs"]]
+    with sharedStreamsLock:
+        streams = [s for s in sharedStreams.values() if not s.done]
+    viewers = {kind: 0 for kind in KIND_PRIORITY}
+    for stream in streams:
+        with stream.lock:
+            for v in stream.viewers:
+                viewers[v["kind"]] += 1
     return flask.jsonify({
         "lineup": lineup,
         "streams": sum(len(v) for v in occupied.values()),
+        "tuners": {"total": tunerCount(), "used": len(streams)},
+        "viewers": viewers,
         "blocks": blockStates(),
         "plex": plexStatus(),
         "jellyfin": jellyfinStatus(),
