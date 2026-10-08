@@ -55,6 +55,11 @@ class RecordingRoutesTest(unittest.TestCase):
         self.assertEqual(self.client.post("/recordings/{}/delete".format(rec["id"])).get_json(), {"deleted": True})
         self.assertEqual(self.client.get("/recordings/list").get_json()["recordings"], [])
 
+    def test_free_space_shows_before_the_folder_exists(self):
+        # The folder is made by the first recording; until then show the space where it will be.
+        self.assertFalse(os.path.exists(self.folder))
+        self.assertGreater(self.client.get("/recordings/list").get_json()["free"], 0)
+
     def test_until_a_programme_ends(self):
         rec = self.start(until=time.time() + 600).get_json()
         self.assertAlmostEqual(rec["stop"], time.time() + 600, delta=5)

@@ -165,6 +165,8 @@
             onclick="toggleFavourite()" title="Favourite"><i class="fa fa-star-o"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="fullscreenButton"
             onclick="toggleFullscreen()" title="Full screen (F)"><i class="fa fa-expand"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-light ms-1 d-none" id="recordButton"
+            onclick="recordClicked()" title="Record" aria-label="Record"><i class="fa fa-circle text-danger"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="multiviewButton"
             onclick="sendToMultiview()" title="Send to Multiview" aria-label="Send to Multiview"><i class="fa fa-th"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="minimiseButton"
@@ -211,6 +213,7 @@
     </div>
 </div>
 
+{% include "_record_modal.html" %}
 <script src="{{ url_for('static', filename='multiview.js') }}"></script>
 <script>
     var player = document.getElementById("player");
@@ -428,6 +431,7 @@
         document.getElementById("previewProblem").classList.add("d-none");
         document.getElementById("deadStatus").textContent = "";
         markPlaying();
+        refreshPlayerRecording();
         if (typeof channelShown == "function") {
             channelShown(row);
         }
@@ -613,6 +617,55 @@
         multiview.addChannel(multiview.browserStorage(), ch);
         location.href = "/multiview";
     }
+
+    // ---- Recording what's playing
+    var playerRecording = null;  // the recording id of the channel playing, if it's being recorded
+    var playerRecordingOn = false;
+
+    function refreshPlayerRecording() {
+        var ch = currentChannel;
+        $.getJSON("/recordings/list").done(function (res) {
+            playerRecordingOn = !!res.folder;
+            playerRecording = ch ? stbRecordings.recordingChannels(res.recordings)[channelKey(ch)] || null : null;
+            var button = document.getElementById("recordButton");
+            button.classList.toggle("d-none", !playerRecordingOn || !currentChannel);
+            button.classList.toggle("btn-danger", !!playerRecording);
+            button.classList.toggle("btn-outline-light", !playerRecording);
+            button.title = playerRecording ? "Recording: click to stop" : "Record";
+            button.querySelector("i").className = "fa " + (playerRecording ? "fa-stop" : "fa-circle text-danger");
+        });
+    }
+
+    function programmeOnNow(ch) {
+        var cached = guides[channelKey(ch)];
+        var now = Date.now() / 1000;
+        var current = null;
+        (cached ? cached.programmes : []).forEach(function (p) {
+            if (p.start <= now && p.stop > now) {
+                current = p;
+            }
+        });
+        return current;
+    }
+
+    function recordClicked() {
+        if (!currentChannel) {
+            return;
+        }
+        if (playerRecording) {
+            if (confirm("Stop recording " + title.textContent + "? What's recorded so far is kept.")) {
+                stopRecording(playerRecording, refreshPlayerRecording);
+            }
+            return;
+        }
+        openRecordMenu(currentChannel, title.textContent, programmeOnNow(currentChannel), refreshPlayerRecording);
+    }
+
+    setInterval(function () {
+        if (currentChannel) {
+            refreshPlayerRecording();
+        }
+    }, 15000);
 
     function showDeadState(dead) {
         var button = document.getElementById("deadButton");

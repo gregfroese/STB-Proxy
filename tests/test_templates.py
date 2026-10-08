@@ -75,6 +75,19 @@ class TemplateScriptTest(unittest.TestCase):
     def test_recordings_script_is_valid_javascript(self):
         self.assertValidJavaScript("recordings.html")
 
+    def test_record_menu_script_is_valid_javascript(self):
+        self.assertValidJavaScript("_record_modal.html")
+
+    def test_tiles_and_player_can_record(self):
+        mv = inlineScripts("multiview.html")
+        self.assertIn("openRecordMenu(", mv)
+        self.assertIn("stbRecordings.recordingChannels(", mv)
+        player = inlineScripts("_player.html")
+        self.assertIn("openRecordMenu(", player)
+        for template in ("multiview.html", "_player.html"):
+            with open(os.path.join(ROOT, "templates", template)) as f:
+                self.assertIn('{% include "_record_modal.html" %}', f.read())
+
     def test_multiview_helpers_are_valid_javascript(self):
         result = subprocess.run(["node", "--check", os.path.join(ROOT, "static", "multiview.js")],
                                 capture_output=True, text=True)

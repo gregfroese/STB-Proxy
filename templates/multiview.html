@@ -154,6 +154,8 @@
     </div>
 </div>
 
+{% include "_record_modal.html" %}
+
 <!-- Blocks that are on, for the picker's Blocks tab. -->
 <div id="enabledBlocks" class="d-none" data-blocks='{{ enabledBlocks|tojson }}'></div>
 
@@ -263,6 +265,7 @@
                 '<img class="channel-logo d-none" alt="" onerror="this.classList.add(\'d-none\')">' +
                 '<div class="text-truncate me-auto"><div class="fw-bold text-truncate tile-name"></div>' +
                 '<div class="small text-truncate tile-now"></div></div>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-record d-none" title="Record" aria-label="Record"><i class="fa fa-circle text-danger"></i></button>' +
                 '<button type="button" class="btn btn-sm btn-outline-light tile-audio" title="Sound from this tile" aria-label="Sound from this tile"><i class="fa fa-volume-off"></i></button>' +
                 '<button type="button" class="btn btn-sm btn-outline-light tile-big" title="Make big" aria-label="Make big"><i class="fa fa-arrows-alt"></i></button>' +
                 '<button type="button" class="btn btn-sm btn-outline-light tile-swap" title="Change channel" aria-label="Change channel"><i class="fa fa-exchange"></i></button>' +
@@ -280,6 +283,10 @@
 
     function wireTile(i) {
         var t = tiles[i];
+        t.el.querySelector(".tile-record").addEventListener("click", function (e) {
+            e.stopPropagation();
+            recordClicked(i);
+        });
         t.el.querySelector(".tile-audio").addEventListener("click", function (e) {
             e.stopPropagation();
             unlockSound();
@@ -352,6 +359,7 @@
         if (row && row.logo) {
             logo.src = row.logo;
         }
+        showRecordButton(i);
         if (!ch) {
             t.el.querySelector(".tile-now").textContent = "";
             t.el.querySelector(".tile-progress div").style.width = "0";
@@ -511,6 +519,50 @@
         save();
         applyAudio();
     }
+
+    // ---- Recording: which channels are recording, and each tile's record button
+    var recordingKeys = {};
+    var recordingOn = false;
+
+    function refreshRecordings() {
+        $.getJSON("/recordings/list").done(function (res) {
+            recordingOn = !!res.folder;
+            recordingKeys = stbRecordings.recordingChannels(res.recordings);
+            for (var i = 0; i < multiview.TILES; i++) {
+                showRecordButton(i);
+            }
+        });
+    }
+
+    function showRecordButton(i) {
+        var button = tiles[i].el.querySelector(".tile-record");
+        var ch = state.tiles[i];
+        var recording = ch && recordingKeys[channelKey(ch)];
+        button.classList.toggle("d-none", !recordingOn || !ch);
+        button.classList.toggle("btn-danger", !!recording);
+        button.classList.toggle("btn-outline-light", !recording);
+        button.title = recording ? "Recording: click to stop" : "Record";
+        button.setAttribute("aria-label", button.title);
+        button.querySelector("i").className = "fa " + (recording ? "fa-stop" : "fa-circle text-danger");
+    }
+
+    function recordClicked(i) {
+        var ch = state.tiles[i];
+        var row = rowFor(ch);
+        if (!ch || !row) {
+            return;
+        }
+        var id = recordingKeys[channelKey(ch)];
+        if (id) {
+            if (confirm("Stop recording " + multiview.channelName(row) + "? What's recorded so far is kept.")) {
+                stopRecording(id, refreshRecordings);
+            }
+            return;
+        }
+        openRecordMenu(ch, multiview.channelName(row), tiles[i].programme || null, refreshRecordings);
+    }
+
+    setInterval(refreshRecordings, 15000);
 
     // Make a tile big; on the big tile, go back to the view from before.
     function makeBig(i) {
@@ -682,6 +734,7 @@
         var line = tiles[i].el.querySelector(".tile-now");
         line.textContent = current ? current.title : "";
         line.title = line.textContent;
+        tiles[i].programme = current;
         tiles[i].el.querySelector(".tile-progress div").style.width =
             current ? Math.round((now - current.start) / (current.stop - current.start) * 100) + "%" : "0";
     }
@@ -744,6 +797,7 @@
         .fail(function () {
             document.getElementById("mvError").classList.remove("d-none");
         });
+    refreshRecordings();
 </script>
 
 {% endblock %}

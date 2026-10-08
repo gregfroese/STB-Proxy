@@ -1404,8 +1404,12 @@ def recordingsList():
     folder = getSettings().get("recordings folder", "").strip()
     free = None
     if folder:
+        # The first recording makes the folder; until then, the space where it will be.
+        path = os.path.abspath(folder)
+        while not os.path.isdir(path) and os.path.dirname(path) != path:
+            path = os.path.dirname(path)
         try:
-            free = shutil.disk_usage(folder).free
+            free = shutil.disk_usage(path).free
         except OSError:
             pass
     return flask.jsonify({"recordings": getRecorder().list(), "folder": folder, "free": free})
