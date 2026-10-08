@@ -1,0 +1,69 @@
+<!-- Record a channel now: how long. Included by the preview player and Multiview. -->
+<div class="modal fade" id="recordModal" tabindex="-1" aria-labelledby="recordTitle" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+                <h5 class="modal-title text-truncate" id="recordTitle">Record</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="recordOptions" class="list-group"></div>
+                <div id="recordStatus" class="small mt-2"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='recordings.js') }}"></script>
+<script>
+    var recordModal = null;
+
+    // Ask how long to record ch ({portal, channelId}), named name. programme is the one on
+    // now ({title, stop}) or null. done(rec) runs once it has started.
+    function openRecordMenu(ch, name, programme, done) {
+        document.getElementById("recordTitle").textContent = "Record " + name;
+        var status = document.getElementById("recordStatus");
+        status.textContent = "";
+        var box = document.getElementById("recordOptions");
+        box.innerHTML = "";
+        stbRecordings.recordOptions(Date.now() / 1000, programme).forEach(function (option) {
+            var button = document.createElement("button");
+            button.type = "button";
+            button.className = "list-group-item list-group-item-action bg-dark text-light";
+            button.textContent = option.label;
+            button.addEventListener("click", function () {
+                box.querySelectorAll("button").forEach(function (b) { b.disabled = true; });  // one start at a time
+                status.className = "small mt-2 text-muted";
+                status.textContent = "Starting...";
+                $.ajax({
+                    url: "/recordings/start", method: "POST", contentType: "application/json",
+                    data: JSON.stringify({ portal: ch.portal, channelId: ch.channelId, name: name, minutes: option.minutes, until: option.until }),
+                })
+                    .done(function (rec) {
+                        recordModal.hide();
+                        if (done) {
+                            done(rec);
+                        }
+                    })
+                    .fail(function (xhr) {
+                        box.querySelectorAll("button").forEach(function (b) { b.disabled = false; });
+                        status.className = "small mt-2 text-danger";
+                        status.textContent = (xhr.responseJSON && xhr.responseJSON.error) || "Couldn't start recording. Try again.";
+                    });
+            });
+            box.appendChild(button);
+        });
+        if (!recordModal) {
+            recordModal = new bootstrap.Modal(document.getElementById("recordModal"));
+        }
+        recordModal.show();
+    }
+
+    function stopRecording(id, done) {
+        $.post("/recordings/" + encodeURIComponent(id) + "/stop").always(function () {
+            if (done) {
+                done();
+            }
+        });
+    }
+</script>

@@ -5,7 +5,9 @@ import plex
 import jellyfin
 import guide
 import logos
+import recordings
 import os
+import shutil
 import json
 import subprocess
 import uuid
@@ -89,6 +91,7 @@ defaultSettings = {
     "api token": "",
     "jellyfin url": "",
     "jellyfin api key": "",
+    "recordings folder": "",
 }
 
 defaultPortal = {
@@ -236,6 +239,27 @@ def saveBlocks(blocks):
     names = availability.blockNames(getPortals())
     config["hidden blocks"] = [name for name in getHiddenBlocks() if name in names]
     writeConfig(config)
+
+
+# The recorder, made on first use so tests can load the app against their own config.
+recorder = None
+recorderLock = threading.Lock()
+
+
+def recordingUrl(portal, channelId, id):
+    # A recording reads from /play like Plex does, so it shares streams and tuners.
+    return "http://127.0.0.1:8001/play/{}/{}?recording={}".format(portal, channelId, id)
+
+
+def getRecorder():
+    global recorder
+    with recorderLock:
+        if recorder is None:
+            store = recordings.RecordingStore(
+                os.path.join(os.path.dirname(os.path.abspath(configFile)), "recordings.json"), logger)
+            recorder = recordings.Recorder(
+                store, lambda: getSettings().get("recordings folder", "").strip(), recordingUrl, logger)
+        return recorder
 
 
 def getHiddenBlocks():
@@ -1368,6 +1392,91 @@ def multiview():
     return render_template("multiview.html", tuners=tunerCount(), enabledBlocks=enabledBlocks)
 
 
+@app.route("/recordings", methods=["GET"])
+@authorise
+def recordingsPage():
+    return render_template("recordings.html", folder=getSettings().get("recordings folder", "").strip())
+
+
+@app.route("/recordings/list", methods=["GET"])
+@authorise
+def recordingsList():
+    folder = getSettings().get("recordings folder", "").strip()
+    free = None
+    if folder:
+        # The first recording makes the folder; until then, the space where it will be.
+        path = os.path.abspath(folder)
+        while not os.path.isdir(path) and os.path.dirname(path) != path:
+            path = os.path.dirname(path)
+        try:
+            free = shutil.disk_usage(path).free
+        except OSError:
+            pass
+    return flask.jsonify({"recordings": getRecorder().list(), "folder": folder, "free": free})
+
+
+@app.route("/recordings/start", methods=["POST"])
+@authorise
+def recordingsStart():
+    """Record a channel now. JSON: {portal, channelId, name, minutes?} or {..., until?}."""
+    data = request.get_json(force=True, silent=True) or {}
+    portal = str(data.get("portal", ""))
+    channelId = str(data.get("channelId", ""))
+    if portal not in getPortals() or not channelId:
+        return flask.jsonify({"error": "Unknown channel"}), 404
+    name = str(data.get("name") or channelId)[:100]
+    stop = None
+    try:
+        if data.get("minutes") is not None:
+            minutes = float(data["minutes"])
+            if not 0 < minutes <= 24 * 60:
+                raise ValueError
+            stop = time.time() + minutes * 60
+        elif data.get("until") is not None:
+            stop = float(data["until"])
+            if not time.time() < stop <= time.time() + 24 * 3600:
+                raise ValueError
+    except (TypeError, ValueError):
+        return flask.jsonify({"error": "Record for up to 24 hours, ending in the future"}), 400
+    try:
+        rec = getRecorder().start(portal, channelId, name, stop=stop)
+    except recordings.RecordingError as e:
+        return flask.jsonify({"error": str(e)}), 503
+    return flask.jsonify(rec)
+
+
+@app.route("/recordings/<id>/stop", methods=["POST"])
+@authorise
+def recordingsStop(id):
+    if not getRecorder().stop(id):
+        return flask.jsonify({"error": "That recording isn't running"}), 404
+    return flask.jsonify({"stopping": True})
+
+
+@app.route("/recordings/<id>/delete", methods=["POST"])
+@authorise
+def recordingsDelete(id):
+    rec = getRecorder().store.get(id)
+    if not rec:
+        return flask.jsonify({"error": "No such recording"}), 404
+    if not getRecorder().delete(id):
+        return flask.jsonify({"error": "Stop it before deleting it"}), 409
+    logger.info("Recording({}) deleted".format(id))
+    return flask.jsonify({"deleted": True})
+
+
+@app.route("/recordings/<id>/file", methods=["GET"])
+@authorise
+def recordingsFile(id):
+    # Only a file the recorder wrote: the path comes from the recording, never the request.
+    rec = getRecorder().store.get(id)
+    if not rec or not rec.get("file") or not os.path.isfile(rec["file"]):
+        return flask.jsonify({"error": "No such recording"}), 404
+    return flask.send_file(rec["file"], mimetype="video/mp4", conditional=True,
+                           as_attachment=request.args.get("download") == "1",
+                           download_name=os.path.basename(rec["file"]))
+
+
 @app.route("/guide/search", methods=["GET"])
 @authorise
 def guideSearch():
@@ -1477,6 +1586,8 @@ def save():
         settings["plex token"] = ""
     elif not request.form.get("plex token"):
         settings["plex token"] = getSettings()["plex token"]
+
+    settings["recordings folder"] = request.form.get("recordings folder", "").strip()
 
     saveSettings(settings)
     logger.info("Settings saved!")
@@ -1722,7 +1833,7 @@ sharedStreamsLock = threading.Lock()
 # Each kind of viewer's claim on a tuner: a new channel may stop streams whose viewers all
 # have a lower claim. Plex and other players come first, then recordings, then previews.
 KIND_PRIORITY = {"preview": 0, "recording": 1, "client": 2}
-TUNER_BUSY = "All tuners are busy"
+TUNER_BUSY = recordings.TUNER_BUSY
 # Why a tile's last preview ended or didn't start, by (viewer id, tile id), so the page can
 # say: "busy" (no free tuner) or the kind of viewer that needed its tuner.
 previewOutcomes = {}
@@ -2903,6 +3014,9 @@ def lineup():
 
 if __name__ == "__main__":
     config = loadConfig()
+    # Carry on recordings that were running when STB-Proxy stopped, once it's listening:
+    # they read from its own /play.
+    threading.Timer(3, getRecorder().resume).start()
     if any(looksUpLogos(p) for p in config["portals"].values()):
         currentLogoIndex()  # start fetching channel logos in the background
     if config.get("xmltv ids") != "short":
