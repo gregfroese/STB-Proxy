@@ -63,6 +63,42 @@ class BlocksPageTest(unittest.TestCase):
         self.assertNotIn("Nope", self.app.getBlocks())
         self.syncPlex.assert_not_called()
 
+    def test_rename_moves_channels_state_hidden_and_saved_filters(self):
+        self.app.getBlocks()["NHL"] = "true"
+        self.app.config["hidden blocks"] = ["NHL"]
+        self.app.getSavedFilters()["editor"] = {"Hockey": {"block": "NHL"}}
+        response = self.client.post("/blocks/rename", data={"name": "NHL", "newName": " Hockey "})
+        self.assertEqual(response.status_code, 302)
+        channelBlocks = self.app.getPortals()[PORTAL]["channel blocks"]
+        self.assertEqual((channelBlocks["2"], channelBlocks["3"]), (["Hockey"], ["Hockey"]))
+        self.assertEqual(self.app.getBlocks(), {"Hockey": "true"})
+        self.assertEqual(self.app.getHiddenBlocks(), ["Hockey"])
+        self.assertEqual(self.app.getSavedFilters()["editor"]["Hockey"]["block"], "Hockey")
+        self.syncPlex.assert_not_called()  # same lineup
+
+    def test_rename_refuses_clashes_commas_and_unknown_blocks(self):
+        for form in ({"name": "NHL", "newName": "<b>Bold</b>"}, {"name": "NHL", "newName": "A, B"},
+                     {"name": "NHL", "newName": " "}, {"name": "Nope", "newName": "Other"}):
+            self.client.post("/blocks/rename", data=form)
+            self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"]["2"], ["NHL"])
+            self.assertNotIn("Other", self.app.getBlocks())
+
+    def test_hide_and_show(self):
+        self.client.post("/blocks/hide", data={"name": "NHL", "hidden": "true"})
+        self.assertEqual(self.app.getHiddenBlocks(), ["NHL"])
+        self.assertIn("Hidden from API", self.client.get("/blocks").get_data(as_text=True))
+        self.client.post("/blocks/hide", data={"name": "NHL", "hidden": "false"})
+        self.assertEqual(self.app.getHiddenBlocks(), [])
+        self.client.post("/blocks/hide", data={"name": "Nope", "hidden": "true"})
+        self.assertEqual(self.app.getHiddenBlocks(), [])
+
+    def test_an_emptied_block_is_no_longer_hidden(self):
+        self.app.config["hidden blocks"] = ["NHL"]
+        self.client.post("/channels/blocks", json={
+            "channels": [{"portal": PORTAL, "channelId": "2"}, {"portal": PORTAL, "channelId": "3"}],
+            "block": "NHL", "action": "remove"})
+        self.assertEqual(self.app.getHiddenBlocks(), [])
+
     def test_sync_now(self):
         response = self.client.post("/blocks/sync")
         self.assertEqual(response.status_code, 302)

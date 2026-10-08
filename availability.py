@@ -3,7 +3,8 @@
 A channel is available when it is (individually enabled OR in a block that is
 on) AND not marked dead. A channel can be in several blocks: each portal's
 "channel blocks" is {channelId: [blockName, ...]}; whether a block is on lives
-in config["blocks"] ({blockName: "true"|"false"}).
+in config["blocks"] ({blockName: "true"|"false"}). Blocks named in
+config["hidden blocks"] still work but are left out of the API.
 """
 
 
@@ -54,7 +55,17 @@ def pruneBlocks(portals, blocks):
     return {name: state for name, state in blocks.items() if name in names}
 
 
-def blockSummaries(portals, blocks):
+def renameBlock(portals, old, new):
+    """Put every channel in block old into block new instead, in place."""
+    for portal in portals.values():
+        channelBlocks = portal.get("channel blocks", {})
+        for channelId, value in channelBlocks.items():
+            names = channelBlockNames(value)
+            if old in names:
+                channelBlocks[channelId] = parseBlockNames(",".join(new if n == old else n for n in names))
+
+
+def blockSummaries(portals, blocks, hidden=()):
     summaries = {}
     for portal in portals.values():
         dead = set(portal.get("dead channels", []))
@@ -62,7 +73,8 @@ def blockSummaries(portals, blocks):
             for name in channelBlockNames(value):
                 summary = summaries.setdefault(
                     name,
-                    {"name": name, "enabled": blocks.get(name) == "true", "channels": 0, "dead": 0},
+                    {"name": name, "enabled": blocks.get(name) == "true", "hidden": name in hidden,
+                     "channels": 0, "dead": 0},
                 )
                 summary["channels"] += 1
                 if channelId in dead:

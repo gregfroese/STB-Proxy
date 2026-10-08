@@ -157,6 +157,8 @@ def loadConfig():
     data.setdefault("settings", {})
     data.setdefault("blocks", {})
     data.setdefault("saved filters", {})
+    if not isinstance(data.get("hidden blocks"), list):
+        data["hidden blocks"] = []
 
     settings = data["settings"]
     settingsOut = {}
@@ -230,7 +232,14 @@ def getBlocks():
 
 def saveBlocks(blocks):
     config["blocks"] = blocks
+    names = availability.blockNames(getPortals())
+    config["hidden blocks"] = [name for name in getHiddenBlocks() if name in names]
     writeConfig(config)
+
+
+def getHiddenBlocks():
+    """Blocks left out of the API, so integrations such as Home Assistant don't see them."""
+    return config.setdefault("hidden blocks", [])
 
 
 def authorise(f):
@@ -989,7 +998,7 @@ def editorReset():
 def blocksPage():
     return render_template(
         "blocks.html",
-        blocks=availability.blockSummaries(getPortals(), getBlocks()),
+        blocks=availability.blockSummaries(getPortals(), getBlocks(), getHiddenBlocks()),
         allBlocks=sorted(availability.blockNames(getPortals())),
         favourites=sum(
             len(p.get("favourite channels", [])) for p in getPortals().values() if p["enabled"] == "true"
@@ -1019,6 +1028,58 @@ def blocksToggle():
 
     category, message = syncPlex()
     flash(message, category)
+    return redirect("/blocks", code=302)
+
+
+@app.route("/blocks/rename", methods=["POST"])
+@authorise
+def blocksRename():
+    name = request.form["name"]
+    newNames = availability.parseBlockNames(request.form.get("newName", ""))
+    portals = getPortals()
+    if name not in availability.blockNames(portals):
+        flash("No block called {}".format(name), "danger")
+        return redirect("/blocks", code=302)
+    if len(newNames) != 1:
+        flash("Give the block one new name, without commas", "danger")
+        return redirect("/blocks", code=302)
+    newName = newNames[0]
+    if newName == name:
+        return redirect("/blocks", code=302)
+    if newName in availability.blockNames(portals):
+        flash("There's already a block called {}".format(newName), "danger")
+        return redirect("/blocks", code=302)
+
+    # The lineup doesn't change, so Plex and Jellyfin don't need updating.
+    availability.renameBlock(portals, name, newName)
+    blocks = getBlocks()
+    if name in blocks:
+        blocks[newName] = blocks.pop(name)
+    config["hidden blocks"] = [newName if n == name else n for n in getHiddenBlocks()]
+    for pageFilters in getSavedFilters().values():
+        for filters in pageFilters.values():
+            if filters.get("block") == name:
+                filters["block"] = newName
+    saveBlocks(blocks)
+    logger.info("Block({}) renamed to {}".format(name, newName))
+    flash("{} renamed to {}".format(name, newName), "success")
+    return redirect("/blocks", code=302)
+
+
+@app.route("/blocks/hide", methods=["POST"])
+@authorise
+def blocksHide():
+    name = request.form["name"]
+    hidden = request.form.get("hidden") == "true"
+    if name not in availability.blockNames(getPortals()):
+        flash("No block called {}".format(name), "danger")
+        return redirect("/blocks", code=302)
+
+    names = [n for n in getHiddenBlocks() if n != name]
+    config["hidden blocks"] = names + [name] if hidden else names
+    writeConfig(config)
+    logger.info("Block({}) {} the API".format(name, "hidden from" if hidden else "shown in"))
+    flash("{} {} the API".format(name, "hidden from" if hidden else "shown in"), "success")
     return redirect("/blocks", code=302)
 
 
@@ -2305,15 +2366,17 @@ def jellyfinStatus():
 
 
 def blockStates():
+    """Every block the API shows: hidden ones are left out."""
     return [
         {"name": b["name"], "enabled": b["enabled"], "channels": b["channels"], "dead": b["dead"]}
-        for b in availability.blockSummaries(getPortals(), getBlocks())
+        for b in availability.blockSummaries(getPortals(), getBlocks(), getHiddenBlocks())
+        if not b["hidden"]
     ]
 
 
 def findBlock(name):
-    """The block called name, ignoring case if there's exactly one such; else None."""
-    names = availability.blockNames(getPortals())
+    """The block called name, ignoring case if there's exactly one such; else None. Hidden blocks aren't found."""
+    names = availability.blockNames(getPortals()) - set(getHiddenBlocks())
     if name in names:
         return name
     matches = [n for n in names if n.lower() == name.lower()]

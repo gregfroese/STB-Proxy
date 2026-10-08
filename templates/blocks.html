@@ -74,7 +74,11 @@
                                 </div>
                             </form>
                         </td>
-                        <td>{{ block.name }}</td>
+                        <td>
+                            {{ block.name }}
+                            {% if block.hidden %}<span class="badge bg-secondary ms-1"
+                                title="Home Assistant and other API users don't see this block">Hidden from API</span>{% endif %}
+                        </td>
                         <td>
                             <span class="block-count" data-block="{{ block.name }}">{{ block.channels }}</span> channels
                             <span class="badge bg-danger ms-1 block-dead{{ ' d-none' if not block.dead }}" data-block="{{ block.name }}"><span class="block-dead-count">{{ block.dead }}</span> dead</span>
@@ -82,6 +86,20 @@
                         <td class="text-nowrap">
                             <button type="button" class="btn btn-sm btn-outline-light" data-block="{{ block.name }}"
                                 onclick="toggleBlockChannels(this)"><i class="fa fa-chevron-down"></i> View</button>
+                            <form action="/blocks/rename" method="post" class="d-inline">
+                                <input type="hidden" name="name" value="{{ block.name }}">
+                                <input type="hidden" name="newName">
+                                <button type="button" class="btn btn-sm btn-outline-light" title="Rename" aria-label="Rename {{ block.name }}"
+                                    onclick="renameBlock(this)"><i class="fa fa-pencil"></i></button>
+                            </form>
+                            <form action="/blocks/hide" method="post" class="d-inline">
+                                <input type="hidden" name="name" value="{{ block.name }}">
+                                <input type="hidden" name="hidden" value="{{ 'false' if block.hidden else 'true' }}">
+                                <button class="btn btn-sm btn-outline-light"
+                                    aria-label="{{ 'Show' if block.hidden else 'Hide' }} {{ block.name }} {{ 'in' if block.hidden else 'from' }} the API"
+                                    title="{{ 'Show in the API' if block.hidden else 'Hide from the API (Home Assistant and other integrations)' }}">
+                                    <i class="fa {{ 'fa-eye' if block.hidden else 'fa-eye-slash' }}"></i></button>
+                            </form>
                         </td>
                     </tr>
                     <tr class="d-none">
@@ -119,6 +137,17 @@
         document.querySelectorAll('.block-switch').forEach(function (e) { e.disabled = true; });
         document.getElementById('updating').classList.remove('d-none');
         ele.form.submit();
+    }
+
+    function renameBlock(button) {
+        var form = button.form;
+        var name = form.elements.name.value;
+        var newName = prompt('Rename "' + name + '" to:', name);
+        if (newName === null || !newName.trim() || newName.trim() == name) {
+            return;
+        }
+        form.elements.newName.value = newName.trim();
+        form.submit();
     }
 
     // Channel names live on the portals, so fetch them once, the first time a list is opened.
