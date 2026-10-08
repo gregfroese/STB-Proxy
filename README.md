@@ -86,9 +86,20 @@ Make sets of channels available only when you want them.
 - Play a channel from the editor, a block, your favourites or the guide. It plays in a panel in the corner, so the page stays usable.
 - **Channel up / down** (or **Page Up / Page Down**) moves through the list you started from, as currently filtered and sorted.
 - Picking another channel stops the one playing straight away, so switching is quick.
+- **Send to Multiview** (▦) moves the channel to a Multiview tile, so you can watch it alongside others.
+- If the preview can't get a tuner, or Plex needs the one it's using, the player says so instead of suggesting the channel is dead.
 - The player shows what's on now and next under the channel name. The ☰ button (or **G**) opens the channel's schedule; in full screen it sits down the right-hand side.
 - Every channel list (Playlist Editor, Blocks, Guide results) has a ☰ button that shows a channel's schedule without playing it.
 - **Full screen** (the ⤢ button, **F**, or double-click the video) keeps the channel buttons, blocks and **Mark dead** on screen as an overlay. It fades after a few seconds; move the mouse to bring it back.
+
+# Multiview
+
+- **Multiview** (in the menu) plays several channels at once. Pick a layout: 1, 2 side by side, 2 × 2, 3 × 3, or one big tile with three small ones (drag the line between them to resize).
+- Click **Add channel** in an empty tile and search by name or number. Favourites come first, then channels in your lineup.
+- One tile plays sound, outlined in yellow: click a tile (or its 🔈 button) to hear it. **Page Up / Page Down** changes that tile's channel, through your lineup.
+- ⤢ makes a tile the big one, ⇄ changes its channel, and ✕ closes it, which frees its tuner straight away. **F** fills the window.
+- Each different channel needs a tuner (see Streams and portal connections). Tiles on the same channel, or on a channel Plex is watching, share one. With more tiles than tuners, the extra tiles say **No free tuner**. If Plex needs a tuner a tile is using, the tile stops and says so. **Try again** once a tuner is free.
+- Your browser remembers the tiles and layout, and opens them again next time.
 
 # Channel logos
 
@@ -124,6 +135,8 @@ Make sets of channels available only when you want them.
 Portals limit how many streams an account can play at once (often 1 or 2 per MAC). Set **Streams Per MAC** on the Portals page to your account's limit (0 = no limit), and **Tuners** in Settings → HDHomeRun to the total, so Plex knows too. When a portal's limit is passed, it usually cuts off the stream that has been playing longest.
 
 Everything watching the same channel (Plex and Jellyfin, browser previews, or Jellyfin checking a channel just before playing it) shares one portal connection: STB-Proxy reads the channel once and sends it to all of them. A shared stream counts once against Streams Per MAC, and closes a few seconds after the last viewer leaves (at once when you switch a preview to another channel). The Dashboard shows how many are sharing each stream. Each player still buffers on its own, so the same channel can be a few seconds apart in Plex, Jellyfin and the browser.
+
+**Tuners** is also how many different channels STB-Proxy opens at once, across all portals. When they're all in use and something wants a new channel, STB-Proxy makes room by stopping a browser preview, oldest first: Plex, Jellyfin and other players come before previews. A preview never stops anything, and a stream that a player is also watching is never stopped. If nothing can make room, the request gets "All tuners are busy" (HTTP 503) and a preview says **No free tuner**.
 
 # Plex sync
 
@@ -180,7 +193,7 @@ STB-Proxy has a small JSON API under `/api/`. Every call needs the API token fro
 
 | Call | What it does |
 | --- | --- |
-| `GET /api/status` | Lineup size, active streams, blocks, last Plex sync, and whether anything else is using your MACs |
+| `GET /api/status` | Lineup size, active streams, tuners in use, viewers by kind (client, recording, preview), blocks, last Plex sync, and whether anything else is using your MACs |
 | `GET /api/blocks` | Every block: name, on or off, channel and dead counts |
 | `GET /api/blocks/<name>` | One block (the name ignores case) |
 | `POST /api/blocks/<name>` with `{"enabled": true}` or `false` | Switch a block on or off |

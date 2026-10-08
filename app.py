@@ -58,8 +58,9 @@ else:
     configFile = os.path.join(basePath, "config.json")
 
 occupied = {}
-# The browser preview each viewer is watching, by (portal, viewer IP), so picking
-# another channel can stop it at once instead of waiting for its connection to close.
+# The browser preview each tile is watching, by (viewer id, tile id), so a new channel in
+# that tile can stop it at once instead of waiting for its connection to close. The preview
+# player is tile "player"; Multiview's tiles are "t0" to "t8".
 previews = {}
 config = {}
 
@@ -784,6 +785,7 @@ def editor_data():
             channelBlocks = portals[portal].get("channel blocks", {})
             deadChannels = portals[portal].get("dead channels", [])
             favouriteChannels = portals[portal].get("favourite channels", [])
+            available = availability.availableChannels(portals[portal], getBlocks())
 
             for mac in macs:
                 try:
@@ -842,6 +844,7 @@ def editor_data():
                             "blocks": channelBlocks.get(channelId, []),
                             "dead": channelId in deadChannels,
                             "favourite": channelId in favouriteChannels,
+                            "available": channelId in available,
                             "link": previewLink(portal, channelId),
                         }
                     )
@@ -1357,6 +1360,12 @@ def guidePage():
     return render_template("guide.html", allBlocks=sorted(availability.blockNames(getPortals())))
 
 
+@app.route("/multiview", methods=["GET"])
+@authorise
+def multiview():
+    return render_template("multiview.html", tuners=tunerCount())
+
+
 @app.route("/guide/search", methods=["GET"])
 @authorise
 def guideSearch():
@@ -1708,6 +1717,18 @@ SHARE_GRACE = 5  # seconds an unwatched shared stream stays open, for a quick re
 VIEWER_BACKLOG = 2048
 sharedStreams = {}
 sharedStreamsLock = threading.Lock()
+# Each kind of viewer's claim on a tuner: a new channel may stop streams whose viewers all
+# have a lower claim. Plex and other players come first, then recordings, then previews.
+KIND_PRIORITY = {"preview": 0, "recording": 1, "client": 2}
+TUNER_BUSY = "All tuners are busy"
+# Why a tile's last preview ended or didn't start, by (viewer id, tile id), so the page can
+# say: "busy" (no free tuner) or the kind of viewer that needed its tuner.
+previewOutcomes = {}
+OUTCOME_KEEP = 600  # seconds
+admissionLock = threading.Lock()
+# Previews still connecting to the portal, by (viewer id, tile id): (stream, viewer), so a
+# tile that changes channel again before the last one started can give that one up.
+pendingPreviews = {}
 
 
 class SharedStream:
@@ -1722,11 +1743,15 @@ class SharedStream:
         self.idleSince = None
         self.entry = None  # its line in `occupied`
         self.onEnd = None
+        self.created = time.time()
+        self.closing = False  # being stopped to free its tuner: nobody new may join
 
-    def join(self, ip):
-        viewer = {"queue": queue.Queue(VIEWER_BACKLOG), "ip": ip}
+    def join(self, ip, kind="client", tile=None):
+        """kind: "client" (Plex, Jellyfin, apps), "recording" or "preview"; tile: a preview's
+        (viewer id, tile id)."""
+        viewer = {"queue": queue.Queue(VIEWER_BACKLOG), "ip": ip, "kind": kind, "tile": tile}
         with self.lock:
-            if self.done:
+            if self.done or self.closing:
                 return None
             self.viewers.append(viewer)
             self.idleSince = None
@@ -1749,12 +1774,46 @@ class SharedStream:
     def count(self):
         if self.entry is not None:
             self.entry["viewers"] = len(self.viewers)
+            self.entry["kinds"] = sorted({v["kind"] for v in self.viewers})
+
+    def priority(self):
+        """The highest claim among its viewers; a stream nobody watches has the lowest."""
+        with self.lock:
+            return max((KIND_PRIORITY[v["kind"]] for v in self.viewers), default=0)
 
     def start(self, cmd, entry, onEnd):
-        self.entry, self.onEnd = entry, onEnd
-        self.count()
-        self.process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        """Start reading the channel. False if it was stopped while it was connecting."""
+        with self.lock:
+            if self.done or self.closing:
+                return False
+            self.entry, self.onEnd = entry, onEnd
+            self.count()
+            self.process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         threading.Thread(target=self.pump, daemon=True).start()
+        return True
+
+    def abandon(self, viewer):
+        """A viewer gave up while the stream was still connecting; stop connecting if it was the only one."""
+        with self.lock:
+            if viewer in self.viewers:
+                self.viewers.remove(viewer)
+            unwanted = not self.viewers and self.process is None
+            self.count()
+        if unwanted:
+            self.end()
+
+    def closeForRoom(self, kind):
+        """Mark it closing if a viewer of this kind may take its tuner: only streams that
+        nobody but previews watches can be stopped, and previews can't stop them. Returns
+        its preview tiles, or None if it must stay."""
+        with self.lock:
+            if self.done:
+                return []
+            claim = max((KIND_PRIORITY[v["kind"]] for v in self.viewers), default=KIND_PRIORITY["preview"])
+            if claim > KIND_PRIORITY["preview"] or KIND_PRIORITY[kind] <= claim:
+                return None
+            self.closing = True
+            return [v["tile"] for v in self.viewers if v["tile"]]
 
     def pump(self):
         failed = False
@@ -1775,6 +1834,12 @@ class SharedStream:
                     except queue.Full:
                         logger.info("A viewer ({}) fell too far behind Portal({}):Channel({}) and was dropped".format(viewer["ip"], *self.key))
                         self.leave(viewer)  # too far behind: let the others carry on
+                        # Let go of its backlog now: a browser that stopped reading may keep
+                        # its connection (and this queue) for many minutes.
+                        backlog = viewer["queue"]
+                        with backlog.mutex:
+                            backlog.queue.clear()
+                        backlog.put_nowait(None)
         except Exception:
             failed = True
         finally:
@@ -1825,15 +1890,17 @@ PREVIEW_REMUX = [
 ]
 
 
-def watchPreview(stream, viewer, portalId, browser):
-    """A browser preview of a shared stream, as fragmented MP4. The browser's next preview
-    stops it (see stopPreview), and the stream closes at once if nobody else watches."""
+def watchPreview(stream, viewer, tile):
+    """A browser preview of a shared stream, as fragmented MP4, in tile (viewer id, tile id).
+    The tile's next preview stops it (see stopPreview), and the stream closes at once if
+    nobody else watches."""
+    previewOutcomes.pop(tile, None)  # it's playing: nothing to explain
     preview = {
         "stop": threading.Event(),
         "process": None,
         "leave": lambda: stream.leave(viewer, linger=False),  # the next channel may need the connection now
     }
-    previews[(portalId, browser)] = preview
+    previews[tile] = preview
     remux = None
     try:
         remux = subprocess.Popen(PREVIEW_REMUX, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -1853,8 +1920,8 @@ def watchPreview(stream, viewer, portalId, browser):
             viewer["queue"].put_nowait(None)  # let feedPreview finish
         except queue.Full:
             pass
-        if previews.get((portalId, browser)) is preview:
-            previews.pop((portalId, browser), None)
+        if previews.get(tile) is preview:
+            previews.pop(tile, None)
 
 
 def feedPreview(viewer, remux, preview):
@@ -1894,6 +1961,7 @@ def ffmpegCommand(link, proxy, realTime=True):
 
 
 def startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip):
+    """Start shared reading the channel. False if it was stopped while it was connecting."""
     entry = {
         "mac": mac,
         "channel id": channelId,
@@ -1916,12 +1984,20 @@ def startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, 
             logger.info("Ffmpeg closed with error. Moving MAC({}) for Portal({})".format(mac, portalName))
             moveMac(portalId, mac)
 
-    shared.start(cmd, entry, onEnd)
+    if not shared.start(cmd, entry, onEnd):
+        onEnd(False)
+        return False
+    return True
 
 
-def stopPreview(portalId, viewer):
-    """Stop this viewer's last preview so its portal connection is free for the next one."""
-    preview = previews.pop((portalId, viewer), None)
+def stopPreview(tile):
+    """Stop the preview playing (or still connecting) in tile, (viewer id, tile id), so its
+    portal connection is free."""
+    pending = pendingPreviews.pop(tile, None)
+    if pending:
+        stream, viewer = pending
+        stream.abandon(viewer)
+    preview = previews.pop(tile, None)
     if not preview:
         return
     preview["stop"].set()
@@ -1933,6 +2009,68 @@ def stopPreview(portalId, viewer):
     preview["leave"]()
 
 
+def tunerCount():
+    """The Tuners setting: how many channels may be open at once, across all portals."""
+    try:
+        return max(1, int(getSettings()["hdhr tuners"]))
+    except (KeyError, TypeError, ValueError):
+        return 1
+
+
+def portalHasFreeSlot(portalId):
+    portal = getPortals()[portalId]
+    perMac = int(portal.get("streams per mac"))
+    if perMac == 0:
+        return True
+    entries = occupied.get(portalId, [])
+    return any(sum(1 for e in entries if e["mac"] == mac) < perMac for mac in portal["macs"])
+
+
+def noteOutcome(tile, reason):
+    now = time.time()
+    for key in [k for k, v in previewOutcomes.items() if now - v["time"] > OUTCOME_KEEP]:
+        previewOutcomes.pop(key, None)
+    previewOutcomes[tile] = {"reason": reason, "time": now}
+
+
+def stopForRoom(stream, kind):
+    """Stop stream so a viewer of this kind can have its tuner, telling its previews why.
+    False if someone it may not stop started watching it meanwhile."""
+    tiles = stream.closeForRoom(kind)
+    if tiles is None:
+        return False
+    logger.info("Stopping Portal({}):Channel({}) to free a tuner for a {}".format(stream.key[0], stream.key[1], kind))
+    for tile in tiles:
+        noteOutcome(tile, kind)
+        stopPreview(tile)
+    stream.end()
+    return True
+
+
+def makeRoom(portalId, kind, starting):
+    """Make sure a new channel for a viewer of this kind fits within the Tuners setting and
+    the portal's streams per MAC, stopping streams with a lower claim, oldest first, if it
+    doesn't. starting is the new channel's own shared stream. True if it fits."""
+    with admissionLock:
+        while True:
+            with sharedStreamsLock:
+                others = [s for s in sharedStreams.values() if s is not starting and not s.done]
+            tunersFull = len(others) >= tunerCount()
+            portalFull = not portalHasFreeSlot(portalId)
+            if not tunersFull and not portalFull:
+                return True
+            # Only streams nobody but previews watches (or nobody at all), including ones
+            # still connecting; and only for a recording or a player.
+            victims = [
+                s for s in others
+                if s.priority() == KIND_PRIORITY["preview"] < KIND_PRIORITY[kind]
+                and (not portalFull or s.key[0] == portalId)
+            ]
+            if not victims:
+                return False
+            stopForRoom(min(victims, key=lambda s: s.created), kind)
+
+
 @app.route("/play/<portalId>/<channelId>", methods=["GET"])
 def channel(portalId, channelId):
     try:
@@ -1941,8 +2079,22 @@ def channel(portalId, channelId):
         # A shared stream set up for this request that never started: let anyone who
         # joined it in the meantime go, and stop others joining it.
         shared = flask.g.pop("startingShare", None)
-        if shared is not None and shared.process is None:
-            shared.end()
+        if shared is not None:
+            for tile, (stream, _) in list(pendingPreviews.items()):
+                if stream is shared:
+                    pendingPreviews.pop(tile, None)
+            if shared.process is None:
+                shared.end()
+
+
+@app.route("/preview/status", methods=["GET"])
+@authorise
+def previewStatus():
+    """Why a tile's last preview stopped or didn't start, if STB-Proxy knows."""
+    tile = (request.args.get("viewer") or request.remote_addr, request.args.get("tile") or "player")
+    outcome = previewOutcomes.get(tile)
+    fresh = outcome is not None and time.time() - outcome["time"] < OUTCOME_KEEP
+    return flask.jsonify({"reason": outcome["reason"] if fresh else None})
 
 
 def playChannel(portalId, channelId):
@@ -2034,34 +2186,45 @@ def playChannel(portalId, channelId):
     streamsPerMac = int(portal.get("streams per mac"))
     proxy = portal.get("proxy")
     web = request.args.get("web")
+    recording = request.args.get("recording")
+    kind = "preview" if web else "recording" if recording else "client"
     ip = request.remote_addr
     # Each browser sends its own ID: behind a reverse proxy every viewer has the proxy's IP.
     viewer = request.args.get("viewer") or ip
+    tile = (viewer, request.args.get("tile") or "player") if web else None
 
     logger.info(
         "IP({}) requested Portal({}):Channel({})".format(ip, portalId, channelId)
     )
 
     if web:
-        stopPreview(portalId, viewer)
+        stopPreview(tile)
+        previewOutcomes.pop(tile, None)  # a new try: whatever stopped the last one may be over
 
     channelName = None  # set once a MAC is free; the fallback search below reads it
     shared = None
-    if web or getSettings().get("stream method", "ffmpeg") == "ffmpeg":
+    if web or recording or getSettings().get("stream method", "ffmpeg") == "ffmpeg":
         key = (portalId, channelId)
         with sharedStreamsLock:
             existing = sharedStreams.get(key)
             if existing is not None and not existing.done:
-                joined = existing.join(ip)
+                joined = existing.join(ip, kind, tile)
                 if joined:
                     logger.info("IP({}) shares the stream already open for Portal({}):Channel({})".format(ip, portalId, channelId))
                     if web:
-                        return Response(watchPreview(existing, joined, portalId, viewer), mimetype="application/octet-stream")
+                        return Response(watchPreview(existing, joined, tile), mimetype="application/octet-stream")
                     return Response(watchShared(existing, joined), mimetype="application/octet-stream")
             shared = SharedStream(key)
             sharedStreams[key] = shared
         flask.g.startingShare = shared
-        firstViewer = shared.join(ip)
+        firstViewer = shared.join(ip, kind, tile)
+        if not makeRoom(portalId, kind, shared):
+            logger.info("No free tuner for Portal({}):Channel({})".format(portalId, channelId))
+            if tile:
+                noteOutcome(tile, "busy")
+            return flask.jsonify({"error": TUNER_BUSY}), 503
+        if tile:
+            pendingPreviews[tile] = (shared, firstViewer)
 
     freeMac = False
 
@@ -2102,13 +2265,15 @@ def playChannel(portalId, channelId):
             if web or getSettings().get("test streams", "true") == "false" or testStream():
                 if web:
                     cmd = ffmpegCommand(link, proxy, realTime=False)
-                    startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip)
-                    return Response(watchPreview(shared, firstViewer, portalId, viewer), mimetype="application/octet-stream")
+                    if not startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip):
+                        return flask.jsonify({"error": TUNER_BUSY}), 503  # stopped while connecting
+                    return Response(watchPreview(shared, firstViewer, tile), mimetype="application/octet-stream")
 
                 else:
-                    if getSettings().get("stream method", "ffmpeg") == "ffmpeg":
+                    if recording or getSettings().get("stream method", "ffmpeg") == "ffmpeg":
                         cmd = ffmpegCommand(link, proxy)
-                        startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip)
+                        if not startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip):
+                            return flask.jsonify({"error": TUNER_BUSY}), 503  # stopped while connecting
                         return Response(watchShared(shared, firstViewer), mimetype="application/octet-stream")
                     else:
                         logger.info("Redirect sent")
@@ -2403,9 +2568,18 @@ def apiStatus():
     blocks = getBlocks()
     lineup = sum(len(availability.availableChannels(portals[p], blocks)) for p in portals if portals[p]["enabled"] == "true")
     activity = [macActivity(portals[p], mac) for p in portals if portals[p]["enabled"] == "true" for mac in portals[p]["macs"]]
+    with sharedStreamsLock:
+        streams = [s for s in sharedStreams.values() if not s.done]
+    viewers = {kind: 0 for kind in KIND_PRIORITY}
+    for stream in streams:
+        with stream.lock:
+            for v in stream.viewers:
+                viewers[v["kind"]] += 1
     return flask.jsonify({
         "lineup": lineup,
         "streams": sum(len(v) for v in occupied.values()),
+        "tuners": {"total": tunerCount(), "used": len(streams)},
+        "viewers": viewers,
         "blocks": blockStates(),
         "plex": plexStatus(),
         "jellyfin": jellyfinStatus(),

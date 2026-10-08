@@ -165,6 +165,8 @@
             onclick="toggleFavourite()" title="Favourite"><i class="fa fa-star-o"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="fullscreenButton"
             onclick="toggleFullscreen()" title="Full screen (F)"><i class="fa fa-expand"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-light ms-1" id="multiviewButton"
+            onclick="sendToMultiview()" title="Send to Multiview" aria-label="Send to Multiview"><i class="fa fa-th"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="minimiseButton"
             onclick="toggleMinimised()" title="Hide controls"><i class="fa fa-window-minimize"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="closePlayer"
@@ -184,7 +186,7 @@
         </div>
         <div id="blockStatus" class="small mt-1"></div>
         <div class="d-flex align-items-center flex-wrap mt-2">
-            <span id="previewProblem" class="me-auto small text-warning d-none">This channel didn't play. The portal may just be busy: try again in a few seconds before marking it dead.
+            <span id="previewProblem" class="me-auto small text-warning d-none"><span id="previewProblemText"></span>
                 <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="retryPreview" onclick="retryPreview()">Try again</button>
             </span>
             <span id="deadStatus" class="me-auto small"></span>
@@ -209,6 +211,7 @@
     </div>
 </div>
 
+<script src="{{ url_for('static', filename='multiview.js') }}"></script>
 <script>
     var player = document.getElementById("player");
     var title = document.getElementById("channelLabel");
@@ -284,6 +287,9 @@
         return id;
     })();
 
+    // This tab's player, so players in two tabs don't take each other's tuner back and forth.
+    var playerTile = "player." + multiview.tabId(multiview.browserStorage("sessionStorage"));
+
     var streamSeq = 0;
     var retried = false;
     var BUSY_MESSAGE = "Portal busy, trying again...";
@@ -303,7 +309,7 @@
             if (seq != streamSeq) {
                 return;  // another channel was picked, or the player closed, meanwhile
             }
-            player.src = currentLink + "&viewer=" + encodeURIComponent(viewerId);
+            player.src = currentLink + "&viewer=" + encodeURIComponent(viewerId) + "&tile=" + playerTile;
             previewTimer = setTimeout(previewFailed, 15000);
         }, delay);
     }
@@ -441,6 +447,13 @@
         }
     });
 
+    // A live preview never ends by itself: it was stopped (say, for Plex) or the portal dropped it.
+    player.addEventListener("ended", function () {
+        if (currentChannel && player.getAttribute("src")) {
+            previewFailed();
+        }
+    });
+
     var panel = document.getElementById("playerPanel");
 
     function showPlayer() {
@@ -543,6 +556,13 @@
         button.title = minimised ? "Show controls" : "Hide controls";
     }
 
+    var PROBLEMS = {
+        failed: "This channel didn't play. The portal may just be busy: try again in a few seconds before marking it dead.",
+        busy: "No free tuner: they're all in use (Plex, Multiview or another browser). Try again when one frees up.",
+        client: "Plex or another player needed this tuner.",
+        recording: "A recording needed this tuner.",
+    };
+
     function previewFailed() {
         clearTimeout(previewTimer);
         if (!currentChannel) {
@@ -552,23 +572,46 @@
         if (!row || row.dead) {
             return;
         }
-        if (!retried) {
-            // Usually the portal connection is still busy with the last stream: try once more.
-            retried = true;
-            stopStream();
-            document.getElementById("deadStatus").textContent = BUSY_MESSAGE;
-            startStream(3000);
-            return;
-        }
-        document.getElementById("deadStatus").textContent = "";
-        document.getElementById("previewProblem").classList.remove("d-none");
-        setMinimised(false);
+        var seq = streamSeq;
+        $.getJSON("/preview/status", { viewer: viewerId, tile: playerTile })
+            .then(function (res) { return res.reason; }, function () { return $.Deferred().resolve(null); })
+            .done(function (reason) {
+                if (seq != streamSeq) {
+                    return;  // another channel was picked meanwhile
+                }
+                var action = multiview.failureAction(reason, retried);
+                if (action == "retry") {
+                    // Usually the portal connection is still busy with the last stream: try once more.
+                    retried = true;
+                    stopStream();
+                    document.getElementById("deadStatus").textContent = BUSY_MESSAGE;
+                    startStream(3000);
+                    return;
+                }
+                stopStream();
+                document.getElementById("deadStatus").textContent = "";
+                document.getElementById("previewProblemText").textContent = PROBLEMS[action];
+                document.getElementById("previewProblem").classList.remove("d-none");
+                setMinimised(false);
+            });
     }
 
     function retryPreview() {
         document.getElementById("previewProblem").classList.add("d-none");
+        retried = false;
         stopStream();
         startStream(0);
+    }
+
+    // Move the channel playing here to Multiview, which opens with it in a tile.
+    function sendToMultiview() {
+        if (!currentChannel) {
+            return;
+        }
+        var ch = currentChannel;
+        closePlayer();  // frees its tuner for the tile
+        multiview.addChannel(multiview.browserStorage(), ch);
+        location.href = "/multiview";
     }
 
     function showDeadState(dead) {

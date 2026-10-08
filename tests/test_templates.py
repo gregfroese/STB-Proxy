@@ -47,6 +47,21 @@ class TemplateScriptTest(unittest.TestCase):
     def test_player_script_is_valid_javascript(self):
         self.assertValidJavaScript("_player.html")
 
+    def test_multiview_script_is_valid_javascript(self):
+        self.assertValidJavaScript("multiview.html")
+
+    def test_multiview_tiles_are_per_tab_and_handle_a_stream_ending(self):
+        script = inlineScripts("multiview.html")
+        self.assertIn('multiview.tabId(multiview.browserStorage("sessionStorage"))', script)
+        self.assertIn('"&tile=" + tileId(i)', script)
+        self.assertIn('tile: tileId(i)', script)
+        self.assertRegex(script, r't\.video\.addEventListener\("ended", function \(\) \{\s*if \(t\.video\.getAttribute\("src"\)\) \{\s*tileFailed\(i\);')
+
+    def test_multiview_helpers_are_valid_javascript(self):
+        result = subprocess.run(["node", "--check", os.path.join(ROOT, "static", "multiview.js")],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 class PreviewPromptTest(unittest.TestCase):
     def setUp(self):
@@ -58,6 +73,24 @@ class PreviewPromptTest(unittest.TestCase):
         # A busy portal (503 from /play) looks the same to the browser as a dead stream.
         self.assertIn('id="retryPreview"', self.html)
         self.assertIn("function retryPreview", self.script)
+
+    def test_previews_say_which_tile_they_play_in(self):
+        # One per tab, so two tabs' players don't take each other's tuner back and forth.
+        self.assertIn('"player." + multiview.tabId(', self.script)
+        self.assertIn('"&tile=" + playerTile', self.script)
+
+    def test_a_preview_that_ends_is_treated_as_stopped(self):
+        # A preview stopped for Plex ends cleanly rather than with an error.
+        self.assertRegex(self.script, r'player\.addEventListener\("ended", function \(\) \{\s*if \(currentChannel && player\.getAttribute\("src"\)\) \{\s*previewFailed\(\);')
+
+    def test_a_refused_or_stopped_preview_says_why(self):
+        self.assertIn("/preview/status", self.script)
+        self.assertIn('id="previewProblemText"', self.html)
+
+    def test_send_to_multiview(self):
+        self.assertIn('id="multiviewButton"', self.html)
+        self.assertIn("function sendToMultiview", self.script)
+        self.assertIn("multiview.js", self.html)
         self.assertIn("busy", self.html)
 
     def test_player_does_not_block_the_page(self):
@@ -75,7 +108,8 @@ class PreviewPromptTest(unittest.TestCase):
         self.assertRegex(self.script, r'function selectChannel\(ele\) \{[\s\S]*?stopStream\(\);[\s\S]*?startStream\(0\);[\s\S]*?\n    \}')
 
     def test_failed_preview_retries_once_before_offering_mark_dead(self):
-        self.assertRegex(self.script, r'if \(!retried\) \{[^}]*startStream\(\d+\);\s*return;')
+        # Whether to retry is multiview.failureAction (tested in test_multiview_state).
+        self.assertRegex(self.script, r'if \(action == "retry"\) \{[^}]*retried = true;[^}]*startStream\(\d+\);\s*return;')
 
     def test_player_has_channel_up_and_down(self):
         self.assertIn('onclick="changeChannel(1)"', self.html)

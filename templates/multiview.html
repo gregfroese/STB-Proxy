@@ -1,0 +1,669 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+    #multiviewGrid {
+        position: relative;
+        display: grid;
+        gap: 4px;
+        height: calc(100vh - 190px);
+        min-height: 320px;
+        background-color: #000;
+    }
+    #multiviewGrid:fullscreen {
+        height: 100vh;
+    }
+    #multiviewGrid[data-layout="1"] { grid-template-columns: 1fr; }
+    #multiviewGrid[data-layout="2"] { grid-template-columns: 1fr 1fr; }
+    #multiviewGrid[data-layout="4"] { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
+    #multiviewGrid[data-layout="9"] { grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+    #multiviewGrid[data-layout="big"] { grid-template-columns: var(--big, 66%) 1fr; grid-template-rows: repeat(3, 1fr); }
+    #multiviewGrid[data-layout="big"] .tile.first { grid-row: 1 / span 3; }
+    .tile {
+        position: relative;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
+        background-color: #111;
+        border: 2px solid transparent;
+    }
+    .tile.has-audio {
+        border-color: #ffc107;
+    }
+    .tile video {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        background-color: #000;
+    }
+    .tile-header {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px;
+        background: linear-gradient(rgba(0, 0, 0, 0.85), rgba(0, 0, 0, 0));
+        z-index: 1;  /* above a tile's message, so a tile that can't play can still be closed or changed */
+    }
+    .tile-progress {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 3px;
+        background-color: rgba(255, 255, 255, 0.15);
+    }
+    .tile-progress div {
+        height: 100%;
+        width: 0;
+        background-color: #0d6efd;
+    }
+    .tile-message {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 1rem;
+        text-align: center;
+        background-color: rgba(0, 0, 0, 0.6);
+    }
+    .tile.empty .tile-message {
+        background-color: transparent;
+    }
+    .channel-logo {
+        width: 48px;
+        height: 28px;
+        object-fit: contain;
+        flex-shrink: 0;
+        padding: 2px;
+        border-radius: 3px;
+        background-color: #f8f9fa;
+    }
+    #mvDivider {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: var(--big, 66%);
+        width: 12px;
+        margin-left: -8px;
+        cursor: col-resize;
+        z-index: 2;
+        touch-action: none;
+    }
+    #mvDivider:hover {
+        background-color: rgba(255, 193, 7, 0.4);
+    }
+    /* On a phone, tiles stack, each 16:9. */
+    @media (max-width: 575.98px) {
+        #multiviewGrid[data-layout] { grid-template-columns: 1fr; grid-template-rows: none; height: auto; }
+        #multiviewGrid[data-layout="big"] .tile.first { grid-row: auto; }
+        .tile { aspect-ratio: 16 / 9; }
+        #mvDivider { display: none !important; }
+    }
+</style>
+
+<div class="container-fluid text-light px-lg-5">
+    <div class="d-flex flex-wrap align-items-center mb-2">
+        <h4 class="mb-0 me-3">Multiview</h4>
+        <div class="btn-group btn-group-sm me-3 my-1" role="group" aria-label="Layout">
+            <button type="button" class="btn btn-outline-light layout-button" data-layout="1" onclick="setLayout('1')" title="One tile">1</button>
+            <button type="button" class="btn btn-outline-light layout-button" data-layout="2" onclick="setLayout('2')" title="Two side by side">2</button>
+            <button type="button" class="btn btn-outline-light layout-button" data-layout="4" onclick="setLayout('4')" title="2 &times; 2">4</button>
+            <button type="button" class="btn btn-outline-light layout-button" data-layout="9" onclick="setLayout('9')" title="3 &times; 3">9</button>
+            <button type="button" class="btn btn-outline-light layout-button" data-layout="big" onclick="setLayout('big')"
+                title="One big, three small" aria-label="One big, three small"><i class="fa fa-th-large"></i></button>
+        </div>
+        <span class="small text-muted me-auto my-1">{{ tuners }} tuner{{ "s" if tuners != 1 }}: tiles on the same channel, or on a channel Plex is watching, share one.
+            <span id="soundHint" class="text-warning">Click a tile for sound.</span></span>
+        <button type="button" class="btn btn-sm btn-outline-light my-1" onclick="toggleFullWindow()"
+            title="Full window (F)" aria-label="Full window"><i class="fa fa-expand"></i></button>
+    </div>
+    <div id="mvError" class="alert alert-danger d-none">Couldn't load channels from the portals. <a href="/multiview">Reload</a> to try again.</div>
+    <div id="multiviewGrid" data-layout="4">
+        <div id="mvDivider" class="d-none" title="Drag to resize"></div>
+    </div>
+</div>
+
+<div class="modal fade" id="channelPicker" tabindex="-1" aria-labelledby="pickerTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-light">
+            <div class="modal-header">
+                <h5 class="modal-title" id="pickerTitle">Choose a channel</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="search" class="form-control mb-2" id="pickerQuery" placeholder="Channel name or number" autocomplete="off">
+                <div id="pickerResults" class="list-group"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='channel-filter.js') }}"></script>
+<script src="{{ url_for('static', filename='multiview.js') }}"></script>
+<script>
+    var storage = multiview.browserStorage();
+    var state = multiview.loadState(storage);
+    var grid = document.getElementById("multiviewGrid");
+    var divider = document.getElementById("mvDivider");
+    var tiles = [];
+    var channels = null;
+    var loading = null;
+    var guides = {};
+    var GUIDE_KEEP_MS = 600000;
+    var soundUnlocked = false;
+    var picker = null;
+    var pickerTile = null;
+    var pickerRows = [];
+    var tabId = multiview.tabId(multiview.browserStorage("sessionStorage"));
+    var MESSAGES = {
+        busy: "No free tuner. Close a tile, or wait for Plex to finish.",
+        client: "Plex or another player needed this tuner.",
+        recording: "A recording needed this tuner.",
+    };
+
+    // The same browser id the preview player sends, so the server keeps this browser's tiles apart.
+    var viewerId = (function () {
+        var id = null;
+        try {
+            id = localStorage.getItem("stbViewer");
+        } catch (e) { }
+        if (!id) {
+            id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+            try {
+                localStorage.setItem("stbViewer", id);
+            } catch (e) { }
+        }
+        return id;
+    })();
+
+    // The server keeps each tile's preview apart by browser and tile; the tab id keeps two
+    // Multiview tabs in one browser apart.
+    function tileId(i) {
+        return "t" + i + "." + tabId;
+    }
+
+    function escapeAttr(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    function save() {
+        multiview.saveState(storage, state);
+    }
+
+    function channelKey(ch) {
+        return ch.portal + '/' + ch.channelId;
+    }
+
+    function loadChannels() {
+        if (!loading) {
+            loading = $.getJSON("/editor_data").then(function (res) {
+                channels = res.data;
+                return channels;
+            });
+            loading.fail(function () {
+                loading = null;
+            });
+        }
+        return loading;
+    }
+
+    function rowFor(ch) {
+        if (!channels || !ch) {
+            return null;
+        }
+        for (var i = 0; i < channels.length; i++) {
+            if (channels[i].portal == ch.portal && channels[i].channelId == ch.channelId) {
+                return channels[i];
+            }
+        }
+        return null;
+    }
+
+    function isShown(i) {
+        return state.order.indexOf(i) < multiview.shownCount(state);
+    }
+
+    function buildTiles() {
+        for (var i = 0; i < multiview.TILES; i++) {
+            var el = document.createElement("div");
+            el.className = "tile";
+            el.innerHTML =
+                '<video playsinline muted autoplay></video>' +
+                '<div class="tile-header">' +
+                '<img class="channel-logo d-none" alt="" onerror="this.classList.add(\'d-none\')">' +
+                '<div class="text-truncate me-auto"><div class="fw-bold text-truncate tile-name"></div>' +
+                '<div class="small text-truncate tile-now"></div></div>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-audio" title="Sound from this tile" aria-label="Sound from this tile"><i class="fa fa-volume-off"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-big" title="Make big" aria-label="Make big"><i class="fa fa-arrows-alt"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-swap" title="Change channel" aria-label="Change channel"><i class="fa fa-exchange"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-close" title="Close" aria-label="Close"><i class="fa fa-times"></i></button>' +
+                '</div>' +
+                '<div class="tile-progress"><div></div></div>' +
+                '<div class="tile-message d-none"></div>';
+            grid.appendChild(el);
+            var tile = { el: el, video: el.querySelector("video"), seq: 0, timer: null, retried: false, playingKey: null };
+            tile.video.volume = 0.25;
+            tiles.push(tile);
+            wireTile(i);
+        }
+    }
+
+    function wireTile(i) {
+        var t = tiles[i];
+        t.el.querySelector(".tile-audio").addEventListener("click", function (e) {
+            e.stopPropagation();
+            unlockSound();
+            setAudio(i);
+        });
+        t.el.querySelector(".tile-big").addEventListener("click", function (e) {
+            e.stopPropagation();
+            makeBig(i);
+        });
+        t.el.querySelector(".tile-swap").addEventListener("click", function (e) {
+            e.stopPropagation();
+            openPicker(i);
+        });
+        t.el.querySelector(".tile-close").addEventListener("click", function (e) {
+            e.stopPropagation();
+            closeTile(i);
+        });
+        t.el.addEventListener("click", function () {
+            unlockSound();
+            if (state.tiles[i]) {
+                setAudio(i);
+            }
+        });
+        t.video.addEventListener("playing", function () {
+            clearTimeout(t.timer);
+            t.retried = false;
+            showMessage(i, "");
+        });
+        t.video.addEventListener("error", function () {
+            if (t.video.getAttribute("src")) {
+                tileFailed(i);
+            }
+        });
+        // A live preview never ends by itself: it was stopped (say, for Plex) or the portal dropped it.
+        t.video.addEventListener("ended", function () {
+            if (t.video.getAttribute("src")) {
+                tileFailed(i);
+            }
+        });
+    }
+
+    function showMessage(i, html) {
+        var box = tiles[i].el.querySelector(".tile-message");
+        box.innerHTML = html;
+        box.classList.toggle("d-none", !html);
+    }
+
+    function retryButton(i) {
+        return '<button type="button" class="btn btn-sm btn-outline-warning mt-2" onclick="retryTile(' + i + ')">Try again</button>';
+    }
+
+    function renderTile(i) {
+        var t = tiles[i];
+        var ch = state.tiles[i];
+        var row = rowFor(ch);
+        var position = state.order.indexOf(i);
+        t.el.style.order = position;
+        t.el.classList.toggle("first", position == 0);
+        t.el.classList.toggle("d-none", !isShown(i));
+        t.el.classList.toggle("empty", !ch);
+        t.el.querySelector(".tile-header").classList.toggle("d-none", !ch);
+        t.el.querySelector(".tile-name").textContent = row ? multiview.channelName(row) : "";
+        var logo = t.el.querySelector(".channel-logo");
+        logo.classList.toggle("d-none", !(row && row.logo));
+        if (row && row.logo) {
+            logo.src = row.logo;
+        }
+        if (!ch) {
+            t.el.querySelector(".tile-now").textContent = "";
+            t.el.querySelector(".tile-progress div").style.width = "0";
+            showMessage(i, '<button type="button" class="btn btn-outline-light" onclick="openPicker(' + i + ')">' +
+                '<i class="fa fa-plus"></i> Add channel</button>');
+        } else if (!channels) {
+            showMessage(i, '<i class="fa fa-spinner fa-spin"></i>');
+        } else if (!row) {
+            showMessage(i, 'This channel isn\'t on an enabled portal any more.' +
+                '<button type="button" class="btn btn-sm btn-outline-light mt-2" onclick="closeTile(' + i + ')">Remove</button>');
+        }
+    }
+
+    function render() {
+        grid.setAttribute("data-layout", state.layout);
+        grid.style.setProperty("--big", state.big + "%");
+        divider.classList.toggle("d-none", state.layout != "big");
+        document.querySelectorAll(".layout-button").forEach(function (b) {
+            b.classList.toggle("active", b.getAttribute("data-layout") == state.layout);
+        });
+        for (var i = 0; i < multiview.TILES; i++) {
+            renderTile(i);
+            var row = rowFor(state.tiles[i]);
+            var want = isShown(i) && row ? channelKey(row) : null;
+            if (want != tiles[i].playingKey) {
+                stopTile(i);
+                if (want) {
+                    startTile(i, 0);
+                }
+            }
+        }
+        applyAudio();
+    }
+
+    function startTile(i, delay) {
+        var t = tiles[i];
+        var row = rowFor(state.tiles[i]);
+        if (!row) {
+            return;
+        }
+        var seq = ++t.seq;
+        clearTimeout(t.timer);
+        t.playingKey = channelKey(row);
+        setTimeout(function () {
+            if (seq != t.seq) {
+                return;  // the tile changed or closed meanwhile
+            }
+            t.video.src = row.link + "&viewer=" + encodeURIComponent(viewerId) + "&tile=" + tileId(i);
+            t.video.play().catch(function () { });
+            t.timer = setTimeout(function () { tileFailed(i); }, 15000);
+        }, delay);
+        refreshGuide(i);
+    }
+
+    // Dropping the source closes the stream, which frees its tuner at once.
+    function dropSource(t) {
+        t.seq++;
+        clearTimeout(t.timer);
+        t.video.pause();
+        t.video.removeAttribute("src");
+        t.video.load();
+    }
+
+    function stopTile(i) {
+        dropSource(tiles[i]);
+        tiles[i].playingKey = null;
+    }
+
+    function tileFailed(i) {
+        var t = tiles[i];
+        clearTimeout(t.timer);
+        if (!t.playingKey) {
+            return;
+        }
+        var seq = t.seq;
+        $.getJSON("/preview/status", { viewer: viewerId, tile: tileId(i) })
+            .then(function (res) { return res.reason; }, function () { return $.Deferred().resolve(null); })
+            .done(function (reason) {
+                if (seq != t.seq) {
+                    return;
+                }
+                var action = multiview.failureAction(reason, t.retried);
+                dropSource(t);
+                if (action == "retry") {
+                    t.retried = true;
+                    showMessage(i, "Portal busy, trying again...");
+                    startTile(i, 3000);
+                } else if (action == "failed") {
+                    showMessage(i, "This channel didn't play. The portal may just be busy: try again in a few seconds before marking it dead." +
+                        '<div>' + retryButton(i) + ' <button type="button" class="btn btn-sm btn-danger mt-2" onclick="markDead(' + i + ')">Mark dead</button></div>');
+                } else {
+                    showMessage(i, MESSAGES[action] + retryButton(i));
+                }
+            });
+    }
+
+    function retryTile(i) {
+        tiles[i].retried = false;
+        showMessage(i, "");
+        startTile(i, 0);
+    }
+
+    function markDead(i) {
+        var ch = state.tiles[i];
+        $.post("/channel/dead", { portal: ch.portal, channelId: ch.channelId, dead: "true" })
+            .done(function () {
+                var row = rowFor(ch);
+                if (row) {
+                    row.dead = true;
+                }
+                showMessage(i, 'Marked dead.<button type="button" class="btn btn-sm btn-outline-light mt-2" onclick="closeTile(' + i + ')">Close tile</button>');
+            })
+            .fail(function () {
+                showMessage(i, "Couldn't mark it dead. Try again." + retryButton(i));
+            });
+    }
+
+    function setChannel(i, row) {
+        state.tiles[i] = { portal: row.portal, channelId: row.channelId };
+        save();
+        tiles[i].retried = false;
+        showMessage(i, "");
+        stopTile(i);
+        renderTile(i);
+        startTile(i, 0);
+        applyAudio();
+    }
+
+    function closeTile(i) {
+        stopTile(i);
+        state.tiles[i] = null;
+        save();
+        renderTile(i);
+        applyAudio();
+    }
+
+    function unlockSound() {
+        if (!soundUnlocked) {
+            soundUnlocked = true;
+            document.getElementById("soundHint").classList.add("d-none");
+            applyAudio();
+        }
+    }
+
+    // One tile plays sound. Browsers only allow sound after a click, so until then all are muted.
+    function applyAudio() {
+        tiles.forEach(function (t, i) {
+            var selected = i == state.audio && !!state.tiles[i];
+            t.video.muted = !(soundUnlocked && selected);
+            t.el.classList.toggle("has-audio", selected);
+            t.el.querySelector(".tile-audio i").className = "fa " + (selected && soundUnlocked ? "fa-volume-up" : "fa-volume-off");
+        });
+    }
+
+    function setAudio(i) {
+        state.audio = i;
+        save();
+        applyAudio();
+    }
+
+    function makeBig(i) {
+        state.order = [i].concat(state.order.filter(function (x) { return x != i; }));
+        state.layout = "big";
+        save();
+        render();
+    }
+
+    function setLayout(layout) {
+        state.layout = layout;
+        save();
+        render();
+    }
+
+    function changeChannel(step) {
+        var i = state.audio;
+        if (!channels || !state.tiles[i] || !isShown(i)) {
+            return;
+        }
+        var next = multiview.nextChannel(channels, state.tiles[i], step);
+        if (next) {
+            setChannel(i, next);
+        }
+    }
+
+    // ---- The channel picker
+    function openPicker(i) {
+        pickerTile = i;
+        if (!picker) {
+            picker = new bootstrap.Modal(document.getElementById("channelPicker"));
+        }
+        document.getElementById("pickerQuery").value = "";
+        renderPicker();
+        picker.show();
+    }
+
+    document.getElementById("channelPicker").addEventListener("shown.bs.modal", function () {
+        document.getElementById("pickerQuery").focus();
+    });
+
+    function renderPicker() {
+        var results = document.getElementById("pickerResults");
+        if (!channels) {
+            results.innerHTML = '<p class="text-muted mb-0"><i class="fa fa-spinner fa-spin"></i> Loading channels...</p>';
+            loadChannels().done(renderPicker);
+            return;
+        }
+        var text = document.getElementById("pickerQuery").value.trim();
+        var nameMatches = parseChannelQuery(text, "prefix");
+        var matches = nameMatches ? function (row) {
+            return nameMatches(multiview.channelName(row)) || String(row.customChannelNumber || row.channelNumber) == text;
+        } : null;
+        pickerRows = multiview.channelChoices(channels, matches, 50);
+        if (!pickerRows.length) {
+            results.innerHTML = '<p class="text-muted mb-0">No channels match.</p>';
+            return;
+        }
+        results.innerHTML = pickerRows.map(function (row, k) {
+            return '<button type="button" class="list-group-item list-group-item-action bg-dark text-light d-flex align-items-center" onclick="pick(' + k + ')">' +
+                (row.logo ? '<img class="channel-logo" loading="lazy" alt="" src="' + escapeAttr(row.logo) + '" onerror="this.style.visibility=\'hidden\'">'
+                    : '<span class="channel-logo d-inline-block" style="background: none;"></span>') +
+                '<span class="ms-2 me-2 text-muted">' + escapeAttr(row.customChannelNumber || row.channelNumber) + '</span>' +
+                '<span class="me-auto">' + escapeAttr(multiview.channelName(row)) + '</span>' +
+                (row.favourite ? '<i class="fa fa-star text-warning ms-1"></i>' : '') +
+                (row.dead ? '<span class="badge bg-danger ms-1">dead</span>' : '') +
+                (row.available ? '' : '<span class="badge bg-secondary ms-1">not in lineup</span>') +
+                '</button>';
+        }).join("");
+    }
+
+    function pick(k) {
+        var row = pickerRows[k];
+        picker.hide();
+        if (row && pickerTile !== null) {
+            unlockSound();
+            setChannel(pickerTile, row);
+            setAudio(pickerTile);
+        }
+    }
+
+    document.getElementById("pickerQuery").addEventListener("input", renderPicker);
+    document.getElementById("pickerQuery").addEventListener("keydown", function (event) {
+        if (event.key == "Enter" && pickerRows.length) {
+            pick(0);
+        }
+    });
+
+    // ---- What's on, per tile
+    function refreshGuide(i) {
+        var ch = state.tiles[i];
+        if (!ch) {
+            return;
+        }
+        var key = channelKey(ch);
+        var cached = guides[key];
+        if (cached && Date.now() - cached.time < GUIDE_KEEP_MS) {
+            showGuide(i, key, cached.programmes);
+            return;
+        }
+        $.getJSON("/channel/guide", { portal: ch.portal, channelId: ch.channelId }).done(function (res) {
+            guides[key] = { time: Date.now(), programmes: res.programmes };
+            showGuide(i, key, res.programmes);
+        });
+    }
+
+    function showGuide(i, key, programmes) {
+        if (!state.tiles[i] || channelKey(state.tiles[i]) != key) {
+            return;
+        }
+        var now = Date.now() / 1000;
+        var current = null;
+        programmes.forEach(function (p) {
+            if (p.start <= now && p.stop > now) {
+                current = p;
+            }
+        });
+        var line = tiles[i].el.querySelector(".tile-now");
+        line.textContent = current ? current.title : "";
+        line.title = line.textContent;
+        tiles[i].el.querySelector(".tile-progress div").style.width =
+            current ? Math.round((now - current.start) / (current.stop - current.start) * 100) + "%" : "0";
+    }
+
+    setInterval(function () {
+        for (var i = 0; i < multiview.TILES; i++) {
+            if (isShown(i)) {
+                refreshGuide(i);
+            }
+        }
+    }, 60000);
+
+    // ---- Full window, keys and the big tile's divider
+    function toggleFullWindow() {
+        if (document.fullscreenElement == grid) {
+            document.exitFullscreen();
+        } else if (grid.requestFullscreen) {
+            grid.requestFullscreen();
+        }
+    }
+
+    document.addEventListener("keydown", function (event) {
+        if (event.target.matches("input, textarea, select") || document.querySelector(".modal.show")) {
+            return;
+        }
+        if (event.key == "f" || event.key == "F") {
+            toggleFullWindow();
+        } else if (event.key == "PageUp") {
+            changeChannel(1);
+        } else if (event.key == "PageDown") {
+            changeChannel(-1);
+        } else {
+            return;
+        }
+        event.preventDefault();
+    });
+
+    var dragging = false;
+    divider.addEventListener("pointerdown", function (event) {
+        dragging = true;
+        divider.setPointerCapture(event.pointerId);
+    });
+    divider.addEventListener("pointermove", function (event) {
+        if (!dragging) {
+            return;
+        }
+        var rect = grid.getBoundingClientRect();
+        state.big = Math.round(Math.min(85, Math.max(30, (event.clientX - rect.left) / rect.width * 100)));
+        grid.style.setProperty("--big", state.big + "%");
+    });
+    divider.addEventListener("pointerup", function () {
+        dragging = false;
+        save();
+    });
+
+    buildTiles();
+    render();
+    loadChannels()
+        .done(render)
+        .fail(function () {
+            document.getElementById("mvError").classList.remove("d-none");
+        });
+</script>
+
+{% endblock %}
