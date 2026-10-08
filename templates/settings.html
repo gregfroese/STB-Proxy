@@ -197,6 +197,21 @@
 
     <br>
 
+    <h4>Recording</h4>
+    <hr>
+    <div class="p-sm-3">
+
+        <h6>Recordings folder:</h6>
+        <div class="col-md-6">
+            <input form="save" type="text" name="recordings folder" id="recordings folder" class="form-control"
+                value="{{ settings['recordings folder'] }}" placeholder="/mnt/recordings">
+        </div>
+        <span class="text-muted">Where recordings are saved: a folder STB-Proxy can write to, such as a mounted share. Empty turns recording off. Starting a recording needs 1 GB free there, and a recording stops when less than 300 MB is left.</span>
+
+    </div>
+
+    <br>
+
     <h4>Plex</h4>
     <hr>
     <div class="p-sm-3">

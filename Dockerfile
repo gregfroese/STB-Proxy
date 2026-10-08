@@ -29,6 +29,7 @@ COPY /plex.py /app/plex.py
 COPY /jellyfin.py /app/jellyfin.py
 COPY /guide.py /app/guide.py
 COPY /logos.py /app/logos.py
+COPY /recordings.py /app/recordings.py
 COPY /templates /app/templates
 COPY /static /app/static
 
