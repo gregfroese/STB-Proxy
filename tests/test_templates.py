@@ -57,6 +57,21 @@ class TemplateScriptTest(unittest.TestCase):
         self.assertIn('tile: tileId(i)', script)
         self.assertRegex(script, r't\.video\.addEventListener\("ended", function \(\) \{\s*if \(t\.video\.getAttribute\("src"\)\) \{\s*tileFailed\(i\);')
 
+    def test_multiview_picker_has_search_favourites_and_blocks(self):
+        with open(os.path.join(ROOT, "templates", "multiview.html")) as f:
+            html = f.read()
+        for tab in ("search", "favourites", "blocks"):
+            self.assertIn('data-tab="{}"'.format(tab), html)
+        script = inlineScripts("multiview.html")
+        for helper in ("favouriteChoices", "blockChoices", "blockChannels"):
+            self.assertIn("multiview." + helper + "(", script)
+
+    def test_multiview_make_big_toggles_back(self):
+        script = inlineScripts("multiview.html")
+        self.assertIn("multiview.toggleBig(state, i)", script)
+        self.assertIn("multiview.canGoBack(state, i)", script)
+        self.assertIn("multiview.chooseLayout(state, layout)", script)
+
     def test_multiview_helpers_are_valid_javascript(self):
         result = subprocess.run(["node", "--check", os.path.join(ROOT, "static", "multiview.js")],
                                 capture_output=True, text=True)

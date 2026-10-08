@@ -24,6 +24,10 @@ class MultiviewPageTest(unittest.TestCase):
         self.assertIn("2 tuners", body)
         self.assertIn("multiview.js", body)
 
+    def test_only_blocks_that_are_on_go_to_the_picker(self):
+        body = self.client.get("/multiview").get_data(as_text=True)
+        self.assertIn("data-blocks='[\"NHL\"]'", body)
+
     def test_menu_links_to_it(self):
         self.assertIn('href="/multiview"', self.client.get("/guide").get_data(as_text=True))
 

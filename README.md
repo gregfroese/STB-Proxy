@@ -95,9 +95,9 @@ Make sets of channels available only when you want them.
 # Multiview
 
 - **Multiview** (in the menu) plays several channels at once. Pick a layout: 1, 2 side by side, 2 × 2, 3 × 3, or one big tile with three small ones (drag the line between them to resize).
-- Click **Add channel** in an empty tile and search by name or number. Favourites come first, then channels in your lineup.
+- Click **Add channel** in an empty tile to pick its channel: **Search** every channel by name or number (favourites, then your lineup, first), browse your **Favourites**, or open one of your **Blocks** that's switched on and pick from its channels. The picker opens where you left it, so filling several tiles from one block is quick.
 - One tile plays sound, outlined in yellow: click a tile (or its 🔈 button) to hear it. **Page Up / Page Down** changes that tile's channel, through your lineup.
-- ⤢ makes a tile the big one, ⇄ changes its channel, and ✕ closes it, which frees its tuner straight away. **F** fills the window.
+- ⤢ makes a tile the big one; on the big tile it turns into ⤡, which goes back to the layout you had before. ⇄ changes a tile's channel, and ✕ closes it, which frees its tuner. **F** fills the window.
 - Each different channel needs a tuner (see Streams and portal connections). Tiles on the same channel, or on a channel Plex is watching, share one. With more tiles than tuners, the extra tiles say **No free tuner**. If Plex needs a tuner a tile is using, the tile stops and says so. **Try again** once a tuner is free.
 - Your browser remembers the tiles and layout, and opens them again next time.
 

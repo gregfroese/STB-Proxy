@@ -138,12 +138,24 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <ul class="nav nav-pills nav-fill mb-2" id="pickerTabs">
+                    <li class="nav-item"><button type="button" class="nav-link" data-tab="search" onclick="pickerTab('search')"><i class="fa fa-search"></i> Search</button></li>
+                    <li class="nav-item"><button type="button" class="nav-link" data-tab="favourites" onclick="pickerTab('favourites')"><i class="fa fa-star text-warning"></i> Favourites</button></li>
+                    <li class="nav-item"><button type="button" class="nav-link" data-tab="blocks" onclick="pickerTab('blocks')"><i class="fa fa-th-large"></i> Blocks</button></li>
+                </ul>
+                <div id="pickerBlockBar" class="d-flex align-items-center mb-2 d-none">
+                    <button type="button" class="btn btn-sm btn-outline-light me-2" onclick="pickerBack()"><i class="fa fa-chevron-left"></i> Blocks</button>
+                    <span class="fw-bold text-truncate" id="pickerBlockName"></span>
+                </div>
                 <input type="search" class="form-control mb-2" id="pickerQuery" placeholder="Channel name or number" autocomplete="off">
                 <div id="pickerResults" class="list-group"></div>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Blocks that are on, for the picker's Blocks tab. -->
+<div id="enabledBlocks" class="d-none" data-blocks='{{ enabledBlocks|tojson }}'></div>
 
 <script src="{{ url_for('static', filename='channel-filter.js') }}"></script>
 <script src="{{ url_for('static', filename='multiview.js') }}"></script>
@@ -162,6 +174,17 @@
     var pickerTile = null;
     var pickerRows = [];
     var tabId = multiview.tabId(multiview.browserStorage("sessionStorage"));
+    var enabledBlocks = JSON.parse(document.getElementById("enabledBlocks").getAttribute("data-blocks"));
+    // Where the picker is: a tab, and in Blocks, the block opened (kept while the page is open).
+    var pickerView = { tab: "search", block: null };
+    var pickerBlocks = [];
+    var PLACEHOLDERS = {
+        search: "Channel name or number",
+        favourites: "Filter favourites",
+        blocks: "Filter blocks",
+        block: "Filter this block",
+    };
+    var LAYOUT_NAMES = { "1": "one tile", "2": "two side by side", "4": "2 \u00d7 2", "9": "3 \u00d7 3" };
     var MESSAGES = {
         busy: "No free tuner. Close a tile, or wait for Plex to finish.",
         client: "Plex or another player needed this tuner.",
@@ -319,6 +342,11 @@
         t.el.classList.toggle("empty", !ch);
         t.el.querySelector(".tile-header").classList.toggle("d-none", !ch);
         t.el.querySelector(".tile-name").textContent = row ? multiview.channelName(row) : "";
+        var back = multiview.canGoBack(state, i);
+        var bigButton = t.el.querySelector(".tile-big");
+        bigButton.title = back ? "Back to " + LAYOUT_NAMES[state.beforeBig.layout] : "Make big";
+        bigButton.setAttribute("aria-label", bigButton.title);
+        bigButton.querySelector("i").className = "fa " + (back ? "fa-compress" : "fa-arrows-alt");
         var logo = t.el.querySelector(".channel-logo");
         logo.classList.toggle("d-none", !(row && row.logo));
         if (row && row.logo) {
@@ -484,15 +512,15 @@
         applyAudio();
     }
 
+    // Make a tile big; on the big tile, go back to the view from before.
     function makeBig(i) {
-        state.order = [i].concat(state.order.filter(function (x) { return x != i; }));
-        state.layout = "big";
+        multiview.toggleBig(state, i);
         save();
         render();
     }
 
     function setLayout(layout) {
-        state.layout = layout;
+        multiview.chooseLayout(state, layout);
         save();
         render();
     }
@@ -523,8 +551,37 @@
         document.getElementById("pickerQuery").focus();
     });
 
+    function pickerTab(tab) {
+        pickerView = { tab: tab, block: null };
+        restartPicker();
+    }
+
+    function openBlock(k) {
+        pickerView.block = pickerBlocks[k].name;
+        restartPicker();
+    }
+
+    function pickerBack() {
+        pickerView.block = null;
+        restartPicker();
+    }
+
+    function restartPicker() {
+        var query = document.getElementById("pickerQuery");
+        query.value = "";
+        renderPicker();
+        query.focus();
+    }
+
     function renderPicker() {
         var results = document.getElementById("pickerResults");
+        var inBlock = pickerView.tab == "blocks" && pickerView.block !== null;
+        document.querySelectorAll("#pickerTabs .nav-link").forEach(function (tab) {
+            tab.classList.toggle("active", tab.getAttribute("data-tab") == pickerView.tab);
+        });
+        document.getElementById("pickerBlockBar").classList.toggle("d-none", !inBlock);
+        document.getElementById("pickerBlockName").textContent = inBlock ? pickerView.block : "";
+        document.getElementById("pickerQuery").placeholder = PLACEHOLDERS[inBlock ? "block" : pickerView.tab];
         if (!channels) {
             results.innerHTML = '<p class="text-muted mb-0"><i class="fa fa-spinner fa-spin"></i> Loading channels...</p>';
             loadChannels().done(renderPicker);
@@ -535,9 +592,30 @@
         var matches = nameMatches ? function (row) {
             return nameMatches(multiview.channelName(row)) || String(row.customChannelNumber || row.channelNumber) == text;
         } : null;
-        pickerRows = multiview.channelChoices(channels, matches, 50);
+        pickerRows = [];
+        pickerBlocks = [];
+        if (pickerView.tab == "blocks" && !inBlock) {
+            pickerBlocks = multiview.blockChoices(channels, enabledBlocks, parseChannelQuery(text, "prefix"));
+            results.innerHTML = pickerBlocks.length ? pickerBlocks.map(function (block, k) {
+                return '<button type="button" class="list-group-item list-group-item-action bg-dark text-light d-flex align-items-center" onclick="openBlock(' + k + ')">' +
+                    '<i class="fa fa-th-large me-2"></i><span class="me-auto">' + escapeAttr(block.name) + '</span>' +
+                    '<span class="badge bg-secondary">' + block.channels + '</span><i class="fa fa-chevron-right ms-2"></i></button>';
+            }).join("") : '<p class="text-muted mb-0">' +
+                (text ? "No blocks match." : "No blocks are on. Switch some on in Blocks.") + '</p>';
+            return;
+        }
+        if (pickerView.tab == "favourites") {
+            pickerRows = multiview.favouriteChoices(channels, matches);
+        } else if (inBlock) {
+            pickerRows = multiview.blockChannels(channels, pickerView.block, matches);
+        } else {
+            pickerRows = multiview.channelChoices(channels, matches, 50);
+        }
         if (!pickerRows.length) {
-            results.innerHTML = '<p class="text-muted mb-0">No channels match.</p>';
+            var none = pickerView.tab == "favourites" && !text
+                ? 'No favourites yet. Star channels in the preview, the Playlist Editor or Blocks.'
+                : "No channels match.";
+            results.innerHTML = '<p class="text-muted mb-0">' + none + '</p>';
             return;
         }
         results.innerHTML = pickerRows.map(function (row, k) {
@@ -565,7 +643,9 @@
 
     document.getElementById("pickerQuery").addEventListener("input", renderPicker);
     document.getElementById("pickerQuery").addEventListener("keydown", function (event) {
-        if (event.key == "Enter" && pickerRows.length) {
+        if (event.key == "Enter" && pickerBlocks.length) {
+            openBlock(0);
+        } else if (event.key == "Enter" && pickerRows.length) {
             pick(0);
         }
     });

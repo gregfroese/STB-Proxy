@@ -8,6 +8,7 @@
 //   tiles  - by tile index: {portal, channelId}, or null for an empty tile
 //   audio  - the tile index whose sound plays
 //   big    - the big tile's share of the width, in percent
+//   beforeBig - {layout, order} to go back to after making a tile big, or null
 (function (root) {
     var KEY = "stbMultiview";
     var TAB_KEY = "stbTab";
@@ -22,7 +23,7 @@
             order.push(i);
             tiles.push(null);
         }
-        return { layout: "4", order: order, tiles: tiles, audio: 0, big: 66 };
+        return { layout: "4", order: order, tiles: tiles, audio: 0, big: 66, beforeBig: null };
     }
 
     function isTileIndex(n) {
@@ -37,6 +38,11 @@
             }
         } catch (e) { }
         return { getItem: function () { return null; }, setItem: function () { } };
+    }
+
+    function isOrder(order) {
+        return Array.isArray(order) && order.length == TILES &&
+            order.map(Number).sort(function (a, b) { return a - b; }).join() == defaultState().order.join();
     }
 
     function loadState(storage) {
@@ -62,6 +68,10 @@
         });
         state.audio = isTileIndex(saved.audio) ? saved.audio : 0;
         state.big = typeof saved.big == "number" && saved.big >= 30 && saved.big <= 85 ? saved.big : 66;
+        var back = saved.beforeBig;
+        if (back && typeof back == "object" && LAYOUTS.hasOwnProperty(back.layout) && back.layout != "big" && isOrder(back.order)) {
+            state.beforeBig = { layout: back.layout, order: back.order.map(Number) };
+        }
         return state;
     }
 
@@ -89,6 +99,32 @@
 
     function shownCount(state) {
         return LAYOUTS[state.layout];
+    }
+
+    // A layout picked from the toolbar: forget the view to go back to.
+    function chooseLayout(state, layout) {
+        state.layout = layout;
+        state.beforeBig = null;
+    }
+
+    // Whether tile i's make-big button goes back to the view from before.
+    function canGoBack(state, i) {
+        return !!state.beforeBig && state.layout == "big" && state.order[0] == i;
+    }
+
+    // Make tile i the big one, remembering the view before; on the big tile, go back to it.
+    function toggleBig(state, i) {
+        if (canGoBack(state, i)) {
+            state.layout = state.beforeBig.layout;
+            state.order = state.beforeBig.order.slice();
+            state.beforeBig = null;
+            return;
+        }
+        if (state.layout != "big") {
+            state.beforeBig = { layout: state.layout, order: state.order.slice() };
+        }
+        state.order = [i].concat(state.order.filter(function (x) { return x != i; }));
+        state.layout = "big";
     }
 
     function firstEmptyTile(state) {
@@ -140,6 +176,35 @@
             .slice(0, limit);
     }
 
+    // The picker's Favourites tab: favourites by number. matches(row), or null for all.
+    function favouriteChoices(channels, matches) {
+        return channels
+            .filter(function (row) { return row.favourite && (!matches || matches(row)); })
+            .sort(byNumber);
+    }
+
+    // The picker's Blocks tab: blocks that are on (enabledBlocks) and have channels here,
+    // by name, with how many. matches(name), or null for all.
+    function blockChoices(channels, enabledBlocks, matches) {
+        var counts = {};
+        channels.forEach(function (row) {
+            (row.blocks || []).forEach(function (name) {
+                counts[name] = (counts[name] || 0) + 1;
+            });
+        });
+        return enabledBlocks
+            .filter(function (name) { return counts[name] && (!matches || matches(name)); })
+            .sort(function (a, b) { return a.localeCompare(b); })
+            .map(function (name) { return { name: name, channels: counts[name] }; });
+    }
+
+    // One block's channels, by number. matches(row), or null for all.
+    function blockChannels(channels, name, matches) {
+        return channels
+            .filter(function (row) { return (row.blocks || []).indexOf(name) != -1 && (!matches || matches(row)); })
+            .sort(byNumber);
+    }
+
     // Channel up/down: the lineup's working channels, by number, wrapping round.
     function nextChannel(channels, current, step) {
         var lineup = channels.filter(function (row) { return row.available && !row.dead; }).sort(byNumber);
@@ -180,6 +245,12 @@
         addChannel: addChannel,
         channelName: channelName,
         channelChoices: channelChoices,
+        favouriteChoices: favouriteChoices,
+        blockChoices: blockChoices,
+        blockChannels: blockChannels,
+        chooseLayout: chooseLayout,
+        canGoBack: canGoBack,
+        toggleBig: toggleBig,
         nextChannel: nextChannel,
         failureAction: failureAction,
     };
