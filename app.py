@@ -58,8 +58,9 @@ else:
     configFile = os.path.join(basePath, "config.json")
 
 occupied = {}
-# The browser preview each viewer is watching, by (portal, viewer IP), so picking
-# another channel can stop it at once instead of waiting for its connection to close.
+# The browser preview each tile is watching, by (viewer id, tile id), so a new channel in
+# that tile can stop it at once instead of waiting for its connection to close. The preview
+# player is tile "player"; Multiview's tiles are "t0" to "t8".
 previews = {}
 config = {}
 
@@ -1723,8 +1724,10 @@ class SharedStream:
         self.entry = None  # its line in `occupied`
         self.onEnd = None
 
-    def join(self, ip):
-        viewer = {"queue": queue.Queue(VIEWER_BACKLOG), "ip": ip}
+    def join(self, ip, kind="client", tile=None):
+        """kind: "client" (Plex, Jellyfin, apps), "recording" or "preview"; tile: a preview's
+        (viewer id, tile id)."""
+        viewer = {"queue": queue.Queue(VIEWER_BACKLOG), "ip": ip, "kind": kind, "tile": tile}
         with self.lock:
             if self.done:
                 return None
@@ -1749,6 +1752,7 @@ class SharedStream:
     def count(self):
         if self.entry is not None:
             self.entry["viewers"] = len(self.viewers)
+            self.entry["kinds"] = sorted({v["kind"] for v in self.viewers})
 
     def start(self, cmd, entry, onEnd):
         self.entry, self.onEnd = entry, onEnd
@@ -1825,15 +1829,16 @@ PREVIEW_REMUX = [
 ]
 
 
-def watchPreview(stream, viewer, portalId, browser):
-    """A browser preview of a shared stream, as fragmented MP4. The browser's next preview
-    stops it (see stopPreview), and the stream closes at once if nobody else watches."""
+def watchPreview(stream, viewer, tile):
+    """A browser preview of a shared stream, as fragmented MP4, in tile (viewer id, tile id).
+    The tile's next preview stops it (see stopPreview), and the stream closes at once if
+    nobody else watches."""
     preview = {
         "stop": threading.Event(),
         "process": None,
         "leave": lambda: stream.leave(viewer, linger=False),  # the next channel may need the connection now
     }
-    previews[(portalId, browser)] = preview
+    previews[tile] = preview
     remux = None
     try:
         remux = subprocess.Popen(PREVIEW_REMUX, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -1853,8 +1858,8 @@ def watchPreview(stream, viewer, portalId, browser):
             viewer["queue"].put_nowait(None)  # let feedPreview finish
         except queue.Full:
             pass
-        if previews.get((portalId, browser)) is preview:
-            previews.pop((portalId, browser), None)
+        if previews.get(tile) is preview:
+            previews.pop(tile, None)
 
 
 def feedPreview(viewer, remux, preview):
@@ -1919,9 +1924,9 @@ def startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, 
     shared.start(cmd, entry, onEnd)
 
 
-def stopPreview(portalId, viewer):
-    """Stop this viewer's last preview so its portal connection is free for the next one."""
-    preview = previews.pop((portalId, viewer), None)
+def stopPreview(tile):
+    """Stop the preview playing in tile, (viewer id, tile id), so its portal connection is free."""
+    preview = previews.pop(tile, None)
     if not preview:
         return
     preview["stop"].set()
@@ -2034,34 +2039,37 @@ def playChannel(portalId, channelId):
     streamsPerMac = int(portal.get("streams per mac"))
     proxy = portal.get("proxy")
     web = request.args.get("web")
+    recording = request.args.get("recording")
+    kind = "preview" if web else "recording" if recording else "client"
     ip = request.remote_addr
     # Each browser sends its own ID: behind a reverse proxy every viewer has the proxy's IP.
     viewer = request.args.get("viewer") or ip
+    tile = (viewer, request.args.get("tile") or "player") if web else None
 
     logger.info(
         "IP({}) requested Portal({}):Channel({})".format(ip, portalId, channelId)
     )
 
     if web:
-        stopPreview(portalId, viewer)
+        stopPreview(tile)
 
     channelName = None  # set once a MAC is free; the fallback search below reads it
     shared = None
-    if web or getSettings().get("stream method", "ffmpeg") == "ffmpeg":
+    if web or recording or getSettings().get("stream method", "ffmpeg") == "ffmpeg":
         key = (portalId, channelId)
         with sharedStreamsLock:
             existing = sharedStreams.get(key)
             if existing is not None and not existing.done:
-                joined = existing.join(ip)
+                joined = existing.join(ip, kind, tile)
                 if joined:
                     logger.info("IP({}) shares the stream already open for Portal({}):Channel({})".format(ip, portalId, channelId))
                     if web:
-                        return Response(watchPreview(existing, joined, portalId, viewer), mimetype="application/octet-stream")
+                        return Response(watchPreview(existing, joined, tile), mimetype="application/octet-stream")
                     return Response(watchShared(existing, joined), mimetype="application/octet-stream")
             shared = SharedStream(key)
             sharedStreams[key] = shared
         flask.g.startingShare = shared
-        firstViewer = shared.join(ip)
+        firstViewer = shared.join(ip, kind, tile)
 
     freeMac = False
 
@@ -2103,10 +2111,10 @@ def playChannel(portalId, channelId):
                 if web:
                     cmd = ffmpegCommand(link, proxy, realTime=False)
                     startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip)
-                    return Response(watchPreview(shared, firstViewer, portalId, viewer), mimetype="application/octet-stream")
+                    return Response(watchPreview(shared, firstViewer, tile), mimetype="application/octet-stream")
 
                 else:
-                    if getSettings().get("stream method", "ffmpeg") == "ffmpeg":
+                    if recording or getSettings().get("stream method", "ffmpeg") == "ffmpeg":
                         cmd = ffmpegCommand(link, proxy)
                         startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip)
                         return Response(watchShared(shared, firstViewer), mimetype="application/octet-stream")
