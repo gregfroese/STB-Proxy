@@ -47,6 +47,14 @@ class TemplateScriptTest(unittest.TestCase):
     def test_player_script_is_valid_javascript(self):
         self.assertValidJavaScript("_player.html")
 
+    def test_multiview_script_is_valid_javascript(self):
+        self.assertValidJavaScript("multiview.html")
+
+    def test_multiview_helpers_are_valid_javascript(self):
+        result = subprocess.run(["node", "--check", os.path.join(ROOT, "static", "multiview.js")],
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
 
 class PreviewPromptTest(unittest.TestCase):
     def setUp(self):

@@ -785,6 +785,7 @@ def editor_data():
             channelBlocks = portals[portal].get("channel blocks", {})
             deadChannels = portals[portal].get("dead channels", [])
             favouriteChannels = portals[portal].get("favourite channels", [])
+            available = availability.availableChannels(portals[portal], getBlocks())
 
             for mac in macs:
                 try:
@@ -843,6 +844,7 @@ def editor_data():
                             "blocks": channelBlocks.get(channelId, []),
                             "dead": channelId in deadChannels,
                             "favourite": channelId in favouriteChannels,
+                            "available": channelId in available,
                             "link": previewLink(portal, channelId),
                         }
                     )
@@ -1356,6 +1358,12 @@ def channelGuide():
 @authorise
 def guidePage():
     return render_template("guide.html", allBlocks=sorted(availability.blockNames(getPortals())))
+
+
+@app.route("/multiview", methods=["GET"])
+@authorise
+def multiview():
+    return render_template("multiview.html", tuners=tunerCount())
 
 
 @app.route("/guide/search", methods=["GET"])
