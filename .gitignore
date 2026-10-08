@@ -1,5 +1,7 @@
 *.pyc
 config.json
+recordings.json
+recordings.json.bad
 STB-Proxy.log
 changenotes.txt
 .vscode
