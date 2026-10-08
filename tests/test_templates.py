@@ -88,6 +88,17 @@ class TemplateScriptTest(unittest.TestCase):
             with open(os.path.join(ROOT, "templates", template)) as f:
                 self.assertIn('{% include "_record_modal.html" %}', f.read())
 
+    def test_record_menu_cant_start_twice(self):
+        script = inlineScripts("_record_modal.html")
+        self.assertIn('box.querySelectorAll("button").forEach(function (b) { b.disabled = true; });', script)
+
+    def test_recordings_page_shows_finishing_not_stop(self):
+        self.assertIn("Finishing", inlineScripts("recordings.html"))
+
+    def test_recordings_carry_on_once_the_server_is_listening(self):
+        with open(os.path.join(ROOT, "app.py")) as f:
+            self.assertRegex(f.read(), r"threading\.Timer\(\d+, getRecorder\(\)\.resume\)\.start\(\)")
+
     def test_multiview_helpers_are_valid_javascript(self):
         result = subprocess.run(["node", "--check", os.path.join(ROOT, "static", "multiview.js")],
                                 capture_output=True, text=True)

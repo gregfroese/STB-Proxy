@@ -24,6 +24,10 @@ MIN_FREE_TO_CONTINUE = 300 * 1024 ** 2  # below this a recording stops, keeping 
 RETRY_SECONDS = 30  # between tries to get a lost channel back
 SAVE_EVERY = 15  # seconds between saving a recording's progress
 CHUNK = 65536
+REMUX_MARGIN = 50 * 1024 ** 2  # room to spare beyond the MP4 itself when making it
+SHORT_PART_BYTES = 1024 ** 2  # a stream that ended before giving this much...
+SHORT_PART_SECONDS = 10  # ...or lasting this long waits RETRY_SECONDS before reopening
+pathLock = threading.Lock()
 
 
 class RecordingError(Exception):
@@ -49,6 +53,15 @@ def outputPath(folder, title, start, exists=os.path.exists):
     while exists(path):
         path, n = "{} ({}).mp4".format(base, n), n + 1
     return path
+
+
+def reservePath(folder, title, start):
+    """outputPath, made as an empty file at once so two recordings never pick the same name."""
+    with pathLock:
+        path = outputPath(folder, title, start)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        open(path, "x").close()
+        return path
 
 
 class RecordingStore:
@@ -109,18 +122,33 @@ class RecordingStore:
         """Newest first."""
         with self.lock:
             return sorted(copy.deepcopy(list(self.items.values())), key=lambda r: r["start"], reverse=True)
+
+
 def defaultOpen(url):
     return requests.get(url, stream=True, timeout=(10, 60))
 
 
 def defaultRemux(parts, out):
-    """Join .ts parts into one MP4: video as it is, audio as AAC (browsers can't play AC3)."""
-    cmd = ["ffmpeg", "-loglevel", "error", "-y", "-i", "concat:" + "|".join(parts),
-           "-map", "0:v?", "-map", "0:a?", "-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart", out]
+    """Join .ts parts into one MP4 at out: video as it is, audio as AAC (browsers can't play
+    AC3). The concat list lines each part's timestamps up after the one before, so a
+    reopened stream joins cleanly."""
+    folder = os.path.dirname(out)
+    listFile = os.path.join(folder, ".{}.txt".format(uuid.uuid4().hex[:8]))
+    with open(listFile, "w") as f:
+        for part in parts:
+            f.write("file '{}'\n".format(part.replace("'", "'\\''")))
+    cmd = ["ffmpeg", "-loglevel", "error", "-y", "-f", "concat", "-safe", "0", "-i", listFile,
+           "-map", "0:v?", "-map", "0:a?", "-c:v", "copy", "-c:a", "aac", "-movflags", "+faststart", "-f", "mp4", out]
     try:
-        result = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=3 * 3600)
+        result = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, errors="replace",
+                                timeout=3 * 3600)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise RemuxError("ffmpeg didn't run: {}".format(type(e).__name__))
+    finally:
+        try:
+            os.remove(listFile)
+        except OSError:
+            pass
     if result.returncode != 0:
         lines = result.stderr.strip().splitlines()
         raise RemuxError(lines[-1] if lines else "ffmpeg failed ({})".format(result.returncode))
@@ -149,6 +177,14 @@ class Recorder:
         self.running = {}  # id -> {"stop": Event, "response": the open stream or None}
         self.lock = threading.Lock()
 
+    def save(self, id, **fields):
+        """Update a recording, logging rather than raising if the list can't be written
+        (say, the disk is full): the recording itself must still finish."""
+        try:
+            self.store.update(id, **fields)
+        except OSError as e:
+            self.log.error("Couldn't save Recording({}): {}".format(id, e))
+
     def list(self):
         return self.store.all()
 
@@ -158,6 +194,9 @@ class Recorder:
         folder = self.folder()
         if not folder:
             raise RecordingError("Recording is off: choose a recordings folder in Settings.")
+        if any(r["status"] == "recording" and r["portal"] == portal and r["channelId"] == channelId
+               for r in self.store.all()):
+            raise RecordingError("Already recording this channel.")
         try:
             os.makedirs(os.path.join(folder, ".partial"), exist_ok=True)
             free = self.freeSpace(folder)
@@ -170,6 +209,7 @@ class Recorder:
             "id": uuid.uuid4().hex[:12], "portal": portal, "channelId": channelId,
             "channelName": channelName, "title": title or channelName, "folder": folder,
             "start": now, "stop": stop, "ended": None, "status": "recording", "waiting": False,
+            "stopping": False, "finishing": False,
             "parts": [], "gaps": [], "file": None, "size": 0, "updated": now, "error": None,
         }
         response, problem = self.open(rec)
@@ -219,10 +259,11 @@ class Recorder:
             job = self.running.get(id)
         if not job:
             return False
+        self.save(id, stopping=True)  # so a restart before it's finished doesn't carry it on
         job["stop"].set()
         response = job["response"]
         if response is not None:
-            response.close()  # wakes a read waiting on the stream
+            response.close()
         return True
 
     def pastStop(self, rec):
@@ -237,36 +278,48 @@ class Recorder:
                         break
                     response, problem = self.open(rec)
                     if response is None:
-                        self.store.update(id, waiting=True, error=problem)
+                        self.save(id, waiting=True, error=problem)
                         job["stop"].wait(RETRY_SECONDS)
                         continue
-                if gapFrom is not None:
-                    self.store.update(id, gaps=rec["gaps"] + [[gapFrom, time.time()]])
-                    gapFrom = None
-                self.store.update(id, waiting=False, error=None)
+                opened = time.time()
+                self.save(id, waiting=False, error=None)
                 job["response"] = response
-                endedEarly = self.copy(self.store.get(id), job, response)
+                endedEarly, written = self.copy(self.store.get(id), job, response)
                 job["response"] = None
                 response.close()
                 response = None
+                if written and gapFrom is not None:
+                    rec = self.store.get(id)
+                    self.save(id, gaps=rec["gaps"] + [[gapFrom, opened]])
+                    gapFrom = None
                 if not endedEarly:
                     break
-                gapFrom = time.time()
+                if gapFrom is None:
+                    gapFrom = time.time()
                 self.log.info("Recording({}) lost its stream; getting it back".format(id))
+                if written < SHORT_PART_BYTES or time.time() - opened < SHORT_PART_SECONDS:
+                    job["stop"].wait(RETRY_SECONDS)  # don't hammer a portal that drops it at once
             if gapFrom is not None:
                 rec = self.store.get(id)
-                self.store.update(id, gaps=rec["gaps"] + [[gapFrom, time.time()]])
+                self.save(id, gaps=rec["gaps"] + [[gapFrom, time.time()]])
+        except Exception as e:
+            self.log.error("Recording({}) went wrong: {}".format(id, e))
         finally:
-            self.finish(id)
+            try:
+                self.save(id, finishing=True)
+                self.finish(id)
+            except Exception as e:
+                self.log.error("Recording({}) couldn't be finished: {}".format(id, e))
+                self.save(id, status="failed", finishing=False, error="Couldn't finish the recording ({}).".format(e))
             with self.lock:
                 self.running.pop(id, None)
 
     def copy(self, rec, job, response):
         """Write the stream to a new part until stopped, the stop time, or a disk problem.
-        True if the stream ended before any of those (so it should be reopened)."""
+        Returns (whether the stream ended before any of those, bytes written)."""
         id = rec["id"]
         part = os.path.join(rec["folder"], ".partial", "{}.{}.ts".format(id, len(rec["parts"]) + 1))
-        self.store.update(id, parts=rec["parts"] + [part])
+        self.save(id, parts=rec["parts"] + [part])
         written = 0
         lastSave = time.time()
         try:
@@ -285,39 +338,66 @@ class Recorder:
                     written += len(chunk)
                     if time.time() - lastSave >= SAVE_EVERY:
                         lastSave = time.time()
-                        self.store.update(id, size=rec["size"] + written, updated=lastSave)
-                        if self.freeSpace(rec["folder"]) < MIN_FREE_TO_CONTINUE:
-                            self.store.update(id, error="Stopped: the recordings folder is nearly full.")
+                        self.save(id, size=rec["size"] + written, updated=lastSave)
+                        # Keep room for the MP4, which needs about as much again as the parts.
+                        if self.freeSpace(rec["folder"]) < rec["size"] + written + MIN_FREE_TO_CONTINUE:
+                            self.save(id, error="Stopped: the recordings folder is nearly full.")
                             job["stop"].set()
         except OSError as e:
-            self.store.update(id, error="Stopped: couldn't write to the recordings folder ({}).".format(e.strerror or e))
+            self.save(id, error="Stopped: couldn't write to the recordings folder ({}).".format(e.strerror or e))
             job["stop"].set()
-        self.store.update(id, size=rec["size"] + written, updated=time.time())
-        return not (job["stop"].is_set() or self.pastStop(rec))
+        if written == 0:
+            try:
+                os.remove(part)  # nothing came: no empty part to join
+            except OSError:
+                pass
+            self.save(id, parts=rec["parts"])
+        self.save(id, size=rec["size"] + written, updated=time.time())
+        return not (job["stop"].is_set() or self.pastStop(rec)), written
 
     def finish(self, id):
         """Join a recording's parts into its MP4 and say how it went."""
         rec = self.store.get(id)
         parts = [p for p in rec["parts"] if os.path.exists(p) and os.path.getsize(p) > 0]
-        fields = {"ended": time.time(), "waiting": False}
+        fields = {"ended": time.time(), "waiting": False, "finishing": False}
         if not parts:
             fields.update(status="failed", error=rec["error"] or "Nothing was recorded.")
-        else:
-            out = outputPath(rec["folder"], rec["title"], rec["start"])
+            self.save(id, **fields)
+            return
+        size = sum(os.path.getsize(p) for p in parts)
+        try:
+            enough = self.freeSpace(rec["folder"]) >= size + REMUX_MARGIN
+        except OSError:
+            enough = False
+        if not enough:
+            fields.update(status="failed", error="Not enough space to make the MP4. The recorded parts are kept.")
+            self.save(id, **fields)
+            return
+        out = reservePath(rec["folder"], rec["title"], rec["start"])
+        temp = out + ".part"  # out only ever holds a finished MP4
+        try:
+            self.remux(parts, temp)
+            os.replace(temp, out)
+        except Exception as e:
+            for path in (temp, out):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
             try:
-                os.makedirs(os.path.dirname(out), exist_ok=True)
-                self.remux(parts, out)
-            except (RemuxError, OSError) as e:
-                fields.update(status="failed", error="Couldn't make the MP4 ({}). The recorded parts are kept.".format(e))
-            else:
-                for part in rec["parts"]:
-                    try:
-                        os.remove(part)
-                    except OSError:
-                        pass
-                fields.update(status="partial" if rec["gaps"] or rec["error"] else "done",
-                              file=out, size=os.path.getsize(out), parts=[])
-        self.store.update(id, **fields)
+                os.rmdir(os.path.dirname(out))  # the show's folder, if now empty
+            except OSError:
+                pass
+            fields.update(status="failed", error="Couldn't make the MP4 ({}). The recorded parts are kept.".format(e))
+        else:
+            for part in rec["parts"]:
+                try:
+                    os.remove(part)
+                except OSError:
+                    pass
+            fields.update(status="partial" if rec["gaps"] or rec["error"] else "done",
+                          file=out, size=os.path.getsize(out), parts=[])
+        self.save(id, **fields)
         self.log.info("Recording({}) finished: {}".format(id, fields.get("status")))
 
     def delete(self, id):
@@ -339,14 +419,20 @@ class Recorder:
         return True
 
     def resume(self):
-        """After a restart: carry on recordings whose time isn't up; finish the others."""
+        """After a restart: carry on recordings whose time isn't up and that nobody stopped;
+        finish the others."""
         for rec in self.store.all():
             if rec["status"] != "recording":
                 continue
             gapFrom = rec.get("updated") or rec["start"]
-            if rec["stop"] is None or rec["stop"] > time.time():
+            stopped = rec.get("stopping") or rec.get("finishing")
+            if not stopped and (rec["stop"] is None or rec["stop"] > time.time()):
                 self.log.info("Recording({}) carries on after a restart".format(rec["id"]))
                 self.launch(rec["id"], None, gapFrom=gapFrom)
-            else:
-                self.store.update(rec["id"], gaps=rec["gaps"] + [[gapFrom, max(gapFrom, rec["stop"])]])
+                continue
+            if not stopped:
+                self.save(rec["id"], gaps=rec["gaps"] + [[gapFrom, max(gapFrom, rec["stop"])]])
+            try:
                 self.finish(rec["id"])
+            except Exception as e:
+                self.log.error("Recording({}) couldn't be finished: {}".format(rec["id"], e))

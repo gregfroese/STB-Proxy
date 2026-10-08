@@ -3014,7 +3014,9 @@ def lineup():
 
 if __name__ == "__main__":
     config = loadConfig()
-    getRecorder().resume()  # carry on recordings that were running when STB-Proxy stopped
+    # Carry on recordings that were running when STB-Proxy stopped, once it's listening:
+    # they read from its own /play.
+    threading.Timer(3, getRecorder().resume).start()
     if any(looksUpLogos(p) for p in config["portals"].values()):
         currentLogoIndex()  # start fetching channel logos in the background
     if config.get("xmltv ids") != "short":

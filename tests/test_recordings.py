@@ -77,10 +77,11 @@ class NamesTest(unittest.TestCase):
 class FakeResponse:
     """A /play answer: status, a JSON body, and chunks (a number, or endless) until closed."""
 
-    def __init__(self, status=200, chunks=None, body=None):
+    def __init__(self, status=200, chunks=None, body=None, chunkSize=100):
         self.status_code = status
         self.body = body
         self.chunks = chunks
+        self.chunkSize = chunkSize
         self.closed = threading.Event()
 
     def json(self):
@@ -93,7 +94,7 @@ class FakeResponse:
         while not self.closed.is_set() and (self.chunks is None or sent < self.chunks):
             time.sleep(0.005)
             sent += 1
-            yield b"x" * 100
+            yield b"x" * self.chunkSize
 
     def close(self):
         self.closed.set()
@@ -106,7 +107,9 @@ def joinParts(parts, out):
                 f.write(p.read())
 
 
-class RecorderTest(unittest.TestCase):
+class RecorderTestCase(unittest.TestCase):
+    """A recorder with a fake /play, a joining remux and plenty of space; no tests of its own."""
+
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
@@ -131,12 +134,15 @@ class RecorderTest(unittest.TestCase):
             LOG, openStream=self.opener, remux=remux, freeSpace=lambda path: self.free)
 
     def waitUntilDone(self, recorder, id):
-        for _ in range(400):
+        for _ in range(1000):  # generous: a busy machine shouldn't fail a working recorder
             if not recorder.isRunning(id):
                 return self.store.get(id)
             time.sleep(0.01)
         self.fail("still recording")
 
+
+
+class RecorderTest(RecorderTestCase):
     def test_records_until_stopped_then_makes_an_mp4(self):
         self.responses = [FakeResponse()]
         recorder = self.recorder()
@@ -254,6 +260,144 @@ class RecorderTest(unittest.TestCase):
         self.assertEqual(going["gaps"][0][0], now - 5)
         self.assertGreater(os.path.getsize(going["file"]), 1000)  # the old part and the new one
         self.assertEqual(self.store.get("old")["status"], "done")  # left alone
+
+
+def bytesUnder(folder):
+    return sum(os.path.getsize(os.path.join(d, f)) for d, _, files in os.walk(folder) for f in files)
+
+
+class RecorderReviewFixesTest(RecorderTestCase):
+    def test_a_recording_leaves_room_for_its_mp4(self):
+        # A disk that fills as the recording writes; the MP4 needs as much again. Chunks are
+        # bigger than Python's file buffer, as real ones are, so the disk sees each at once.
+        capacity = 200000
+        limits = {"MIN_FREE_TO_START": 20000, "MIN_FREE_TO_CONTINUE": 5000, "REMUX_MARGIN": 0}
+        for name, value in limits.items():
+            patcher = mock.patch.object(recordings, name, value, create=True)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        free = lambda path: capacity - bytesUnder(self.folder)
+
+        def remux(parts, out):
+            size = sum(os.path.getsize(p) for p in parts)
+            if free(None) < size:
+                raise recordings.RemuxError("No space left on device")
+            joinParts(parts, out)
+
+        self.responses = [FakeResponse(chunkSize=9000)]
+        recorder = recordings.Recorder(self.store, lambda: self.folder, lambda *a: "http://local/play", LOG,
+                                       openStream=self.opener, remux=remux, freeSpace=free)
+        rec = recorder.start("p1", "2", "Two")
+        rec = self.waitUntilDone(recorder, rec["id"])
+        self.assertEqual(rec["status"], "partial")
+        self.assertIn("nearly full", rec["error"])
+        self.assertTrue(os.path.exists(rec["file"]))
+        self.assertGreaterEqual(free(None), 5000)
+
+    def test_not_enough_space_for_the_mp4_keeps_the_parts(self):
+        calls = []
+        self.responses = [FakeResponse()]
+        recorder = self.recorder(remux=lambda parts, out: calls.append(out))
+        rec = recorder.start("p1", "2", "Two")
+        time.sleep(0.05)
+        self.free = 1  # the disk filled up from elsewhere
+        recorder.stop(rec["id"])
+        rec = self.waitUntilDone(recorder, rec["id"])
+        self.assertEqual((rec["status"], calls), ("failed", []))
+        self.assertIn("Not enough space", rec["error"])
+        self.assertTrue(rec["parts"] and all(os.path.exists(p) for p in rec["parts"]))
+
+    def test_a_failed_remux_leaves_no_broken_file(self):
+        def halfWritten(parts, out):
+            with open(out, "wb") as f:
+                f.write(b"half")
+            raise recordings.RemuxError("Conversion failed")
+
+        self.responses = [FakeResponse()]
+        recorder = self.recorder(remux=halfWritten)
+        rec = recorder.start("p1", "2", "Two")
+        time.sleep(0.05)
+        recorder.stop(rec["id"])
+        rec = self.waitUntilDone(recorder, rec["id"])
+        self.assertEqual(rec["status"], "failed")
+        show = os.path.join(self.folder, "Two")
+        self.assertEqual(os.listdir(show) if os.path.isdir(show) else [], [])
+
+    def test_an_unexpected_error_finishing_doesnt_leave_it_running(self):
+        def broken(parts, out):
+            raise ValueError("surprise")
+
+        self.responses = [FakeResponse()]
+        recorder = self.recorder(remux=broken)
+        rec = recorder.start("p1", "2", "Two")
+        time.sleep(0.05)
+        recorder.stop(rec["id"])
+        rec = self.waitUntilDone(recorder, rec["id"])
+        self.assertEqual(rec["status"], "failed")
+        self.assertTrue(recorder.delete(rec["id"]))
+
+    def test_a_stream_that_ends_at_once_is_not_reopened_in_a_loop(self):
+        self.responses = [FakeResponse(chunks=3), FakeResponse(chunks=0)]
+        recorder = self.recorder()
+        rec = recorder.start("p1", "2", "Two")
+        time.sleep(0.5)
+        recorder.stop(rec["id"])
+        rec = self.waitUntilDone(recorder, rec["id"])
+        self.assertLessEqual(len(self.urls), 15)  # about one try per RETRY_SECONDS, not hundreds
+        self.assertEqual(len(rec["gaps"]), 1)
+        self.assertEqual(os.listdir(os.path.join(self.folder, ".partial")), [])  # no empty parts left
+
+    def test_a_stop_survives_a_restart(self):
+        self.responses = [FakeResponse()]
+        recorder = self.recorder()
+        rec = recorder.start("p1", "2", "Two")
+        time.sleep(0.05)
+        recorder.stop(rec["id"])
+        self.assertTrue(self.store.get(rec["id"])["stopping"])
+        self.waitUntilDone(recorder, rec["id"])
+        partial = os.path.join(self.folder, ".partial")
+        with open(os.path.join(partial, "s.1.ts"), "wb") as f:
+            f.write(b"y" * 1000)
+        self.store.add(record(id="s", folder=self.folder, start=time.time() - 60, stop=None, stopping=True,
+                              parts=[os.path.join(partial, "s.1.ts")], size=1000))
+        recorder.resume()
+        self.assertFalse(recorder.isRunning("s"))
+        self.assertEqual(self.store.get("s")["status"], "done")
+
+    def test_one_recording_per_channel(self):
+        self.responses = [FakeResponse()]
+        recorder = self.recorder()
+        recorder.start("p1", "2", "Two")
+        with self.assertRaisesRegex(recordings.RecordingError, "Already recording"):
+            recorder.start("p1", "2", "Two")
+
+    def test_recordings_with_one_title_never_share_a_file(self):
+        start = time.time()
+        paths = [recordings.reservePath(self.folder, "Two", start) for _ in range(3)]
+        self.assertEqual(len(set(paths)), 3)
+        self.assertTrue(all(os.path.exists(p) for p in paths))
+
+
+class RemuxCommandTest(unittest.TestCase):
+    def test_parts_are_joined_with_the_concat_list_into_an_mp4(self):
+        seen = {}
+
+        def run(cmd, **kwargs):
+            seen["cmd"], seen["kwargs"] = cmd, kwargs
+            with open(cmd[cmd.index("-i") + 1]) as f:
+                seen["list"] = f.read()
+            return mock.Mock(returncode=0, stderr="")
+
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(recordings.subprocess, "run", side_effect=run):
+            parts = [os.path.join(d, "a.1.ts"), os.path.join(d, "it's|2.ts")]
+            recordings.defaultRemux(parts, os.path.join(d, "out.mp4.part"))
+            self.assertEqual(os.listdir(d), [])  # the list is tidied away
+        cmd = seen["cmd"]
+        self.assertEqual(cmd[cmd.index("-f") + 1], "concat")
+        self.assertEqual(cmd[cmd.index("-safe") + 1], "0")
+        self.assertEqual(cmd[-3:], ["-f", "mp4", os.path.join(d, "out.mp4.part")])
+        self.assertEqual(seen["list"], "file '{}'\nfile '{}'\n".format(parts[0], parts[1].replace("'", "'\\''")))
+        self.assertEqual(seen["kwargs"].get("errors"), "replace")
 
 
 if __name__ == "__main__":

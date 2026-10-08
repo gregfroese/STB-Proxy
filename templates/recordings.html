@@ -95,7 +95,8 @@
                     stbRecordings.formatSize(r.size),
                     (r.stop ? when(r.stop) : "Stopped by hand") +
                     (r.waiting ? '<div class="small text-warning">' + escapeAttr(r.error || "Waiting for the channel") + '</div>' : ''),
-                    '<button type="button" class="btn btn-sm btn-danger" onclick="stopRecording(\'' + r.id + '\')"><i class="fa fa-stop"></i> Stop</button>'];
+                    r.stopping || r.finishing ? '<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Finishing...</span>'
+                        : '<button type="button" class="btn btn-sm btn-danger" onclick="stopRecording(\'' + r.id + '\')"><i class="fa fa-stop"></i> Stop</button>'];
             })) : '<p class="text-muted">Nothing is recording. Record from a Multiview tile or the preview player (<i class="fa fa-circle text-danger"></i>).</p>';
         document.getElementById("doneList").innerHTML = done.length ? table(
             ["Title", "Recorded", "Length", "Size", "", ""],

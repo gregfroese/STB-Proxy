@@ -32,6 +32,7 @@
             button.className = "list-group-item list-group-item-action bg-dark text-light";
             button.textContent = option.label;
             button.addEventListener("click", function () {
+                box.querySelectorAll("button").forEach(function (b) { b.disabled = true; });  // one start at a time
                 status.className = "small mt-2 text-muted";
                 status.textContent = "Starting...";
                 $.ajax({
@@ -45,6 +46,7 @@
                         }
                     })
                     .fail(function (xhr) {
+                        box.querySelectorAll("button").forEach(function (b) { b.disabled = false; });
                         status.className = "small mt-2 text-danger";
                         status.textContent = (xhr.responseJSON && xhr.responseJSON.error) || "Couldn't start recording. Try again.";
                     });
