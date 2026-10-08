@@ -58,8 +58,8 @@ class BlocksTest(unittest.TestCase):
         self.assertEqual(
             availability.blockSummaries(self.portals, {"NHL": "true"}),
             [
-                {"name": "NBA", "enabled": False, "channels": 1, "dead": 0},
-                {"name": "NHL", "enabled": True, "channels": 3, "dead": 1},
+                {"name": "NBA", "enabled": False, "hidden": False, "channels": 1, "dead": 0},
+                {"name": "NHL", "enabled": True, "hidden": False, "channels": 3, "dead": 1},
             ],
         )
 
@@ -70,6 +70,16 @@ class BlocksTest(unittest.TestCase):
             [(s["name"], s["channels"]) for s in availability.blockSummaries(portals, {})],
             [("NHL", 1), ("Sports", 2)],
         )
+
+    def test_summaries_mark_hidden_blocks(self):
+        summaries = availability.blockSummaries(self.portals, {}, ["NBA"])
+        self.assertEqual([(s["name"], s["hidden"]) for s in summaries], [("NBA", True), ("NHL", False)])
+
+    def test_rename_across_portals_keeps_other_blocks(self):
+        portals = {"a": portal(blocks={"1": ["NHL", "Sports"], "2": ["NBA"]}), "b": portal(blocks={"9": ["NHL"]})}
+        availability.renameBlock(portals, "NHL", "Hockey")
+        self.assertEqual(portals["a"]["channel blocks"], {"1": ["Hockey", "Sports"], "2": ["NBA"]})
+        self.assertEqual(portals["b"]["channel blocks"], {"9": ["Hockey"]})
 
     def test_no_blocks(self):
         self.assertEqual(availability.blockSummaries({"a": portal()}, {}), [])

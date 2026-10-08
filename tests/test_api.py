@@ -74,6 +74,17 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(len(status["blocks"]), 2)
         self.assertIn("plex", status)
 
+    def test_hidden_blocks_are_left_out_but_still_work(self):
+        self.app.getBlocks()["NHL"] = "true"
+        self.app.config["hidden blocks"] = ["NHL"]
+        self.assertEqual([b["name"] for b in self.call("GET", "/api/blocks").get_json()], ["Late Night/Movies"])
+        self.assertEqual(len(self.call("GET", "/api/status").get_json()["blocks"]), 1)
+        self.assertEqual(self.call("GET", "/api/blocks/NHL").status_code, 404)
+        self.assertEqual(self.call("POST", "/api/blocks/NHL/off").status_code, 404)
+        self.assertEqual(self.app.getBlocks()["NHL"], "true")
+        lineup = sorted(e["GuideNumber"] for e in self.client.get("/lineup.json").get_json())
+        self.assertEqual(lineup, ["101", "102"])
+
     def test_plex_sync_now(self):
         self.call("POST", "/api/plex/sync")
         self.syncPlex.assert_called_once()
