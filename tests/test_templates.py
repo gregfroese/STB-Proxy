@@ -66,6 +66,18 @@ class PreviewPromptTest(unittest.TestCase):
         # A busy portal (503 from /play) looks the same to the browser as a dead stream.
         self.assertIn('id="retryPreview"', self.html)
         self.assertIn("function retryPreview", self.script)
+
+    def test_previews_say_which_tile_they_play_in(self):
+        self.assertIn('"&tile=player"', self.script)
+
+    def test_a_refused_or_stopped_preview_says_why(self):
+        self.assertIn("/preview/status", self.script)
+        self.assertIn('id="previewProblemText"', self.html)
+
+    def test_send_to_multiview(self):
+        self.assertIn('id="multiviewButton"', self.html)
+        self.assertIn("function sendToMultiview", self.script)
+        self.assertIn("multiview.js", self.html)
         self.assertIn("busy", self.html)
 
     def test_player_does_not_block_the_page(self):
@@ -83,7 +95,8 @@ class PreviewPromptTest(unittest.TestCase):
         self.assertRegex(self.script, r'function selectChannel\(ele\) \{[\s\S]*?stopStream\(\);[\s\S]*?startStream\(0\);[\s\S]*?\n    \}')
 
     def test_failed_preview_retries_once_before_offering_mark_dead(self):
-        self.assertRegex(self.script, r'if \(!retried\) \{[^}]*startStream\(\d+\);\s*return;')
+        # Whether to retry is multiview.failureAction (tested in test_multiview_state).
+        self.assertRegex(self.script, r'if \(action == "retry"\) \{[^}]*retried = true;[^}]*startStream\(\d+\);\s*return;')
 
     def test_player_has_channel_up_and_down(self):
         self.assertIn('onclick="changeChannel(1)"', self.html)
