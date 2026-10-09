@@ -43,11 +43,23 @@
         return keys;
     }
 
+    // "portal/channelId" -> {id, start}, for every channel being recorded now.
+    function recordingsByChannel(recordings) {
+        var byChannel = {};
+        recordings.forEach(function (rec) {
+            if (rec.status == "recording") {
+                byChannel[rec.portal + "/" + rec.channelId] = { id: rec.id, start: rec.start };
+            }
+        });
+        return byChannel;
+    }
+
     var api = {
         formatSize: formatSize,
         formatDuration: formatDuration,
         recordOptions: recordOptions,
         recordingChannels: recordingChannels,
+        recordingsByChannel: recordingsByChannel,
     };
     root.stbRecordings = api;
     if (typeof module !== "undefined") {

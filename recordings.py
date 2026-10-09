@@ -175,6 +175,8 @@ class Recorder:
         self.remux = remux
         self.freeSpace = freeSpace
         self.running = {}  # id -> {"stop": Event, "response": the open stream or None}
+        self.watchers = {}  # id -> how many are watching it from the start
+        self.leftover = {}  # id -> parts of a finished recording, kept until its watchers leave
         self.lock = threading.Lock()
 
     def save(self, id, **fields):
@@ -390,15 +392,84 @@ class Recorder:
                 pass
             fields.update(status="failed", error="Couldn't make the MP4 ({}). The recorded parts are kept.".format(e))
         else:
-            for part in rec["parts"]:
-                try:
-                    os.remove(part)
-                except OSError:
-                    pass
+            with self.lock:
+                watched = bool(self.watchers.get(id))
+                if watched:
+                    self.leftover[id] = list(rec["parts"])  # someone is still watching them
+            if not watched:
+                self.removeParts(rec["parts"])
             fields.update(status="partial" if rec["gaps"] or rec["error"] else "done",
                           file=out, size=os.path.getsize(out), parts=[])
         self.save(id, **fields)
         self.log.info("Recording({}) finished: {}".format(id, fields.get("status")))
+
+    def removeParts(self, parts):
+        for part in parts:
+            try:
+                os.remove(part)
+            except OSError:
+                pass
+
+    def partsOf(self, id):
+        rec = self.store.get(id)
+        if rec and rec["parts"]:
+            return rec["parts"]
+        with self.lock:
+            return list(self.leftover.get(id, []))
+
+    def follow(self, id):
+        """A recording's stream so far, from its start, then whatever it adds as it records:
+        a generator of bytes that ends once the recording has finished and all of it is read.
+        Its parts are kept while anyone follows it."""
+        rec = self.store.get(id)
+        if not rec or rec["status"] != "recording" or not rec["parts"]:
+            return
+        with self.lock:
+            self.watchers[id] = self.watchers.get(id, 0) + 1
+        known = rec["parts"]
+        index = -1
+        f = None
+        finished = False
+        try:
+            while True:
+                chunk = f.read(CHUNK) if f else b""
+                if chunk:
+                    yield chunk
+                    continue
+                parts = self.partsOf(id)
+                if len(parts) > len(known):
+                    known = parts
+                if index + 1 < len(known):  # on to the next part (the stream was reopened)
+                    if f:
+                        f.close()
+                        f = None
+                    index += 1
+                    try:
+                        f = open(known[index], "rb")
+                    except OSError:
+                        pass  # an empty part the recorder dropped
+                    continue
+                if finished:
+                    return
+                if not self.isRunning(id):
+                    finished = True  # one more read for what it wrote at the very end
+                    continue
+                time.sleep(0.5)
+        finally:
+            if f:
+                f.close()
+            self.release(id)
+
+    def release(self, id):
+        """A viewer stopped following; tidy a finished recording's parts after the last one."""
+        with self.lock:
+            left = self.watchers.get(id, 1) - 1
+            if left > 0:
+                self.watchers[id] = left
+                return
+            self.watchers.pop(id, None)
+            parts = self.leftover.pop(id, [])
+        self.removeParts(parts)
 
     def delete(self, id):
         """Delete a finished recording, its file and any kept parts. False while it's running."""

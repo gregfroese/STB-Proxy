@@ -2,9 +2,11 @@ import os
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 import recordings
 from tests.support import PORTAL, loadApp, portalConfig
+from tests.test_app_preview import FakeProcess
 from tests.test_recordings import LOG, FakeResponse, joinParts
 
 
@@ -96,6 +98,37 @@ class RecordingRoutesTest(unittest.TestCase):
         self.assertIn('id="doneList"', body)
         self.assertIn("recordings.js", body)
         self.assertIn('href="/recordings"', self.client.get("/guide").get_data(as_text=True))
+
+    def test_watch_from_the_start_plays_the_recording_so_far_in_the_browser(self):
+        rec = self.start().get_json()
+        time.sleep(0.05)
+        remuxes = []
+
+        def popen(cmd, **kwargs):
+            remuxes.append(FakeProcess(cmd))
+            return remuxes[-1]
+
+        with mock.patch.object(self.app.subprocess, "Popen", side_effect=popen):
+            response = self.client.get("/recordings/{}/watch?viewer=v&tile=player".format(rec["id"]))
+            self.assertEqual(response.status_code, 200)
+            next(iter(response.response))
+            self.assertEqual(remuxes[0].cmd, self.app.PREVIEW_REMUX)  # the same MP4 as live previews
+            for _ in range(100):
+                if remuxes[0].written:
+                    break
+                time.sleep(0.01)
+            self.assertTrue(remuxes[0].written)  # fed from the recording's files
+            response.close()
+        self.assertEqual(self.app.sharedStreams.get((PORTAL, "watch")), None)
+        self.assertEqual(self.client.get("/recordings/nope/watch").status_code, 404)
+
+    def test_watching_a_finished_recording_plays_its_file(self):
+        rec = self.start().get_json()
+        time.sleep(0.05)
+        self.client.post("/recordings/{}/stop".format(rec["id"]))
+        self.finished(rec["id"])
+        response = self.client.get("/recordings/{}/watch".format(rec["id"]))
+        self.assertEqual((response.status_code, response.location.endswith("/recordings/{}/file".format(rec["id"]))), (302, True))
 
 
 if __name__ == "__main__":
