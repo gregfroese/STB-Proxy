@@ -287,6 +287,11 @@ def getRecorder():
         return recorder
 
 
+def plexLineup(portal, blocks=None):
+    """The channels of a portal that go to Plex and Jellyfin (not those only in STB-Proxy-only blocks)."""
+    return availability.lineupChannels(portal, getBlocks() if blocks is None else blocks, getHiddenBlocks())
+
+
 def getHiddenBlocks():
     """Blocks left out of the API, so integrations such as Home Assistant don't see them."""
     return config.setdefault("hidden blocks", [])
@@ -925,7 +930,7 @@ def editorSave():
     logoEdits = json.loads(request.form.get("logoEdits", "[]"))
     portals = getPortals()
     blocks = getBlocks()
-    availableBefore = {p: availability.availableChannels(portals[p], blocks) for p in portals}
+    availableBefore = {p: plexLineup(portals[p], blocks) for p in portals}
     for edit in enabledEdits:
         portal = edit["portal"]
         channelId = edit["channel id"]
@@ -1018,7 +1023,7 @@ def editorSave():
     logger.info("Playlist config saved!")
     flash("Playlist config saved!", "success")
 
-    availableAfter = {p: availability.availableChannels(portals[p], getBlocks()) for p in portals}
+    availableAfter = {p: plexLineup(portals[p]) for p in portals}
     if availableAfter != availableBefore:
         category, message = syncPlex()
         flash(message, category)
@@ -1074,13 +1079,16 @@ def blocksToggle():
         return redirect("/blocks", code=302)
 
     blocks = getBlocks()
+    portals = getPortals()
+    before = {p: plexLineup(portals[p]) for p in portals}
     blocks[name] = "true" if enabled else "false"
     saveBlocks(blocks)
     logger.info("Block({}) switched {}".format(name, "on" if enabled else "off"))
     flash("{} switched {}".format(name, "on" if enabled else "off"), "success")
 
-    category, message = syncPlex()
-    flash(message, category)
+    if {p: plexLineup(portals[p]) for p in portals} != before:  # not for an STB-Proxy-only block
+        category, message = syncPlex()
+        flash(message, category)
     return redirect("/blocks", code=302)
 
 
@@ -1131,11 +1139,17 @@ def blocksHide():
         flash("No block called {}".format(name), "danger")
         return redirect("/blocks", code=302)
 
+    portals = getPortals()
+    before = {p: plexLineup(portals[p]) for p in portals}
     names = [n for n in getHiddenBlocks() if n != name]
     config["hidden blocks"] = names + [name] if hidden else names
     writeConfig(config)
-    logger.info("Block({}) {} the API".format(name, "hidden from" if hidden else "shown in"))
-    flash("{} {} the API".format(name, "hidden from" if hidden else "shown in"), "success")
+    message = "{} is STB-Proxy only" if hidden else "{} is in the API, Plex and Jellyfin again"
+    logger.info("Block({}) {}".format(name, "STB-Proxy only" if hidden else "shared again"))
+    flash(message.format(name), "success")
+    if {p: plexLineup(portals[p]) for p in portals} != before:
+        category, message = syncPlex()
+        flash(message, category)
     return redirect("/blocks", code=302)
 
 
@@ -1158,7 +1172,7 @@ def channelDead():
         return flask.jsonify({"error": "Unknown portal"}), 404
 
     blocks = getBlocks()
-    wasAvailable = channelId in availability.availableChannels(portals[portal], blocks)
+    wasAvailable = channelId in plexLineup(portals[portal], blocks)
     deadChannels = [c for c in portals[portal].get("dead channels", []) if c != channelId]
     if dead:
         deadChannels.append(channelId)
@@ -1169,7 +1183,7 @@ def channelDead():
     )
 
     plexMessage = ""
-    if wasAvailable != (channelId in availability.availableChannels(portals[portal], blocks)):
+    if wasAvailable != (channelId in plexLineup(portals[portal], blocks)):
         _, plexMessage = syncPlex()
     return flask.jsonify({"dead": dead, "plex": plexMessage})
 
@@ -1185,7 +1199,7 @@ def channelBlocks():
         return flask.jsonify({"error": "Unknown portal"}), 404
 
     blocks = getBlocks()
-    wasAvailable = channelId in availability.availableChannels(portals[portal], blocks)
+    wasAvailable = channelId in plexLineup(portals[portal], blocks)
     # Build a new dict rather than mutating: other threads may be iterating the old one.
     channelBlocks = dict(portals[portal].get("channel blocks", {}))
     if names:
@@ -1198,7 +1212,7 @@ def channelBlocks():
     logger.info("Channel({}) for Portal({}) blocks set to {}".format(channelId, portal, names))
 
     plexMessage = ""
-    if wasAvailable != (channelId in availability.availableChannels(portals[portal], getBlocks())):
+    if wasAvailable != (channelId in plexLineup(portals[portal])):
         _, plexMessage = syncPlex()
     return flask.jsonify(
         {"blocks": names, "allBlocks": sorted(availability.blockNames(portals)), "plex": plexMessage}
@@ -1243,7 +1257,7 @@ def channelsBlocks():
 
     portals = getPortals()
     blocks = getBlocks()
-    before = {p: availability.availableChannels(portals[p], blocks) for p in portals}
+    before = {p: plexLineup(portals[p], blocks) for p in portals}
     # Build new dicts rather than mutating: other threads may be iterating the old ones.
     newChannelBlocks = {}
     changed = []
@@ -1271,7 +1285,7 @@ def channelsBlocks():
         "Added" if action == "add" else "Removed", len(changed), "to" if action == "add" else "from", names))
 
     plexMessage = ""
-    if {p: availability.availableChannels(portals[p], getBlocks()) for p in portals} != before:
+    if {p: plexLineup(portals[p]) for p in portals} != before:
         _, plexMessage = syncPlex()
     return flask.jsonify(
         {"channels": changed, "allBlocks": sorted(availability.blockNames(portals)), "plex": plexMessage}
@@ -1730,7 +1744,7 @@ def playlist():
     portals = getPortals()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = availability.availableChannels(portals[portal], getBlocks())
+            enabledChannels = plexLineup(portals[portal])
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -1831,7 +1845,7 @@ def buildXmltv():
     portals = getPortals()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = availability.availableChannels(portals[portal], getBlocks())
+            enabledChannels = plexLineup(portals[portal])
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -2778,7 +2792,7 @@ def setBlock(name, enabled):
 def apiStatus():
     portals = getPortals()
     blocks = getBlocks()
-    lineup = sum(len(availability.availableChannels(portals[p], blocks)) for p in portals if portals[p]["enabled"] == "true")
+    lineup = sum(len(plexLineup(portals[p], blocks)) for p in portals if portals[p]["enabled"] == "true")
     activity = [macActivity(portals[p], mac) for p in portals if portals[p]["enabled"] == "true" for mac in portals[p]["macs"]]
     with sharedStreamsLock:
         streams = [s for s in sharedStreams.values() if not s.done]
@@ -2943,7 +2957,7 @@ def buildLineup():
     blocks = getBlocks()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = availability.availableChannels(portals[portal], blocks)
+            enabledChannels = plexLineup(portals[portal], blocks)
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]

@@ -86,7 +86,7 @@ class BlocksPageTest(unittest.TestCase):
     def test_hide_and_show(self):
         self.client.post("/blocks/hide", data={"name": "NHL", "hidden": "true"})
         self.assertEqual(self.app.getHiddenBlocks(), ["NHL"])
-        self.assertIn("Hidden from API", self.client.get("/blocks").get_data(as_text=True))
+        self.assertIn("STB-Proxy only", self.client.get("/blocks").get_data(as_text=True))
         self.client.post("/blocks/hide", data={"name": "NHL", "hidden": "false"})
         self.assertEqual(self.app.getHiddenBlocks(), [])
         self.client.post("/blocks/hide", data={"name": "Nope", "hidden": "true"})
@@ -103,6 +103,49 @@ class BlocksPageTest(unittest.TestCase):
         response = self.client.post("/blocks/sync")
         self.assertEqual(response.status_code, 302)
         self.syncPlex.assert_called_once()
+
+
+class StbProxyOnlyBlockTest(unittest.TestCase):
+    """A hidden block that's on: its channels stay in STB-Proxy, not Plex or Jellyfin."""
+
+    def setUp(self):
+        cfg = {
+            "portals": {PORTAL: portalConfig(**{"enabled channels": ["1"], "channel blocks": {"2": ["Private"], "3": ["Private"]}})},
+            "blocks": {"Private": "true"},
+            "hidden blocks": ["Private"],
+            "settings": {"plex url": "http://plex.test:32400", "plex token": "tok"},
+        }
+        self.app = loadApp(self, cfg)
+        self.client = self.app.app.test_client()
+        patcher = mock.patch.object(self.app, "syncPlex", return_value=("success", "Plex updated"))
+        self.syncPlex = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_plex_and_jellyfin_dont_get_its_channels(self):
+        self.assertEqual([e["GuideNumber"] for e in self.client.get("/lineup.json").get_json()], ["101"])
+        playlist = self.client.get("/playlist").get_data(as_text=True)
+        self.assertIn("/play/p1/1", playlist)
+        self.assertNotIn("/play/p1/2", playlist)
+        self.assertNotIn('id="p1.2"', self.client.get("/xmltv").get_data(as_text=True))
+        status = self.client.get("/api/status", headers={"X-API-Key": self.app.getSettings()["api token"]}).get_json()
+        self.assertEqual(status["lineup"], 1)
+
+    def test_stb_proxy_still_counts_them_in_the_lineup(self):
+        rows = {r["channelId"]: r["available"] for r in self.client.get("/editor_data").get_json()["data"]}
+        self.assertEqual(rows, {"1": True, "2": True, "3": True})
+
+    def test_hiding_or_showing_a_block_thats_on_updates_plex(self):
+        self.client.post("/blocks/hide", data={"name": "Private", "hidden": "false"})
+        self.syncPlex.assert_called_once()
+        self.assertEqual(sorted(e["GuideNumber"] for e in self.client.get("/lineup.json").get_json()), ["101", "102", "103"])
+
+    def test_switching_a_hidden_block_leaves_plex_alone(self):
+        self.client.post("/blocks/toggle", data={"name": "Private", "enabled": "false"})
+        self.assertEqual(self.app.getBlocks()["Private"], "false")
+        self.syncPlex.assert_not_called()
+
+    def test_the_badge_says_stb_proxy_only(self):
+        self.assertIn("STB-Proxy only", self.client.get("/blocks").get_data(as_text=True))
 
 
 if __name__ == "__main__":

@@ -73,7 +73,7 @@ Make sets of channels available only when you want them.
 - Clear a channel's block name to take it out of the block. A block disappears when no channel uses its name.
 - Click **View** next to a block to list its channels, and play any of them right there.
 - Click ✎ next to a block to rename it. Its channels, on/off state and saved filters move to the new name.
-- Click the eye next to a block to hide it from the API, so Home Assistant and other integrations don't see it. It still works as usual on the Blocks page and in the lineup.
+- Click the eye next to a block to make it **STB-Proxy only**. Home Assistant and other API users don't see it, and when it's on, its channels don't go to Plex or Jellyfin (the HDHomeRun lineup, playlist and XMLTV). They still play everywhere in STB-Proxy: previews, Multiview, the guide and recordings. A channel that's also enabled on its own, or in another block that's on, still goes to Plex.
 
 # Favourites
 
@@ -211,7 +211,7 @@ STB-Proxy has a small JSON API under `/api/`. Every call needs the API token fro
 | `GET /api/plex`, `GET /api/jellyfin` | The last Plex sync or Jellyfin refresh, and when it will try again if it failed |
 | `POST /api/sync` | Update Plex and Jellyfin now (`/api/plex/sync` does the same) |
 
-Blocks hidden on the **Blocks** page are left out of every call: they aren't listed, and `/api/blocks/<name>` answers 404 for them.
+Blocks made **STB-Proxy only** on the **Blocks** page are left out of every call: they aren't listed, `/api/blocks/<name>` answers 404 for them, and their channels don't count in `lineup`.
 
 Switching a block updates Plex and Jellyfin, and the reply says whether that worked. If one can't be reached (say it's restarting), STB-Proxy tries again after 1, 2, 5, 10, 15 and 20 minutes. Syncs run one at a time, so a burst of changes ends in one sync with the final state.
 
