@@ -55,7 +55,7 @@ class TemplateScriptTest(unittest.TestCase):
         self.assertIn('multiview.tabId(multiview.browserStorage("sessionStorage"))', script)
         self.assertIn('"&tile=" + tileId(i)', script)
         self.assertIn('tile: tileId(i)', script)
-        self.assertRegex(script, r't\.video\.addEventListener\("ended", function \(\) \{\s*if \(t\.video\.getAttribute\("src"\)\) \{\s*tileFailed\(i\);')
+        self.assertRegex(script, r't\.video\.addEventListener\("ended", function \(\) \{[\s\S]*?\} else if \(t\.video\.getAttribute\("src"\)\) \{\s*tileFailed\(i\);')
 
     def test_multiview_picker_has_search_favourites_and_blocks(self):
         with open(os.path.join(ROOT, "templates", "multiview.html")) as f:
@@ -81,7 +81,7 @@ class TemplateScriptTest(unittest.TestCase):
     def test_tiles_and_player_can_record(self):
         mv = inlineScripts("multiview.html")
         self.assertIn("openRecordMenu(", mv)
-        self.assertIn("stbRecordings.recordingChannels(", mv)
+        self.assertIn("stbRecordings.recordingsByChannel(", mv)
         player = inlineScripts("_player.html")
         self.assertIn("openRecordMenu(", player)
         for template in ("multiview.html", "_player.html"):
@@ -98,6 +98,29 @@ class TemplateScriptTest(unittest.TestCase):
     def test_recordings_carry_on_once_the_server_is_listening(self):
         with open(os.path.join(ROOT, "app.py")) as f:
             self.assertRegex(f.read(), r"threading\.Timer\(\d+, getRecorder\(\)\.resume\)\.start\(\)")
+
+    def test_lists_show_channels_being_recorded_with_from_start_and_live(self):
+        player = inlineScripts("_player.html")
+        for name in ("function recordingSlot(row)", "function watchFromStart(", "function watchLive(",
+                     "function playRecordingFromStart(", "function backToLive("):
+            self.assertIn(name, player)
+        self.assertIn("/watch?from=start", player)
+        self.assertIn("recordingSlot(row)", inlineScripts("editor.html"))
+        self.assertIn("recordingSlot(row)", inlineScripts("blocks.html"))
+
+    def test_the_end_of_a_recording_isnt_retried_like_a_failure(self):
+        player = inlineScripts("_player.html")
+        self.assertRegex(player, r'player\.addEventListener\("ended", function \(\) \{\s*if \(watchingRecording\) \{\s*recordingEnded\(\);')
+
+    def test_multiview_tiles_watch_a_recording_from_the_start_or_live(self):
+        mv = inlineScripts("multiview.html")
+        for name in (".tile-from-start", ".tile-live", "function fromStart(i)", "function goLive(i)", "/watch?from=start"):
+            self.assertIn(name, mv)
+
+    def test_recording_now_tab_watches_from_the_start_or_live(self):
+        page = inlineScripts("recordings.html")
+        self.assertIn("watchFromStart(", page)
+        self.assertIn("watchLive(", page)
 
     def test_multiview_helpers_are_valid_javascript(self):
         result = subprocess.run(["node", "--check", os.path.join(ROOT, "static", "multiview.js")],
@@ -123,7 +146,7 @@ class PreviewPromptTest(unittest.TestCase):
 
     def test_a_preview_that_ends_is_treated_as_stopped(self):
         # A preview stopped for Plex ends cleanly rather than with an error.
-        self.assertRegex(self.script, r'player\.addEventListener\("ended", function \(\) \{\s*if \(currentChannel && player\.getAttribute\("src"\)\) \{\s*previewFailed\(\);')
+        self.assertRegex(self.script, r'player\.addEventListener\("ended", function \(\) \{[^}]*\} else if \(currentChannel && player\.getAttribute\("src"\)\) \{\s*previewFailed\(\);')
 
     def test_a_refused_or_stopped_preview_says_why(self):
         self.assertIn("/preview/status", self.script)

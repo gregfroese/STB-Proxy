@@ -95,8 +95,12 @@
                     stbRecordings.formatSize(r.size),
                     (r.stop ? when(r.stop) : "Stopped by hand") +
                     (r.waiting ? '<div class="small text-warning">' + escapeAttr(r.error || "Waiting for the channel") + '</div>' : ''),
-                    r.stopping || r.finishing ? '<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Finishing...</span>'
-                        : '<button type="button" class="btn btn-sm btn-danger" onclick="stopRecording(\'' + r.id + '\')"><i class="fa fa-stop"></i> Stop</button>'];
+                    '<span class="text-nowrap">' +
+                    '<button type="button" class="btn btn-sm btn-outline-light me-1" title="Watch from the start" onclick="watchFromStart(\'' + r.id + '\')"><i class="fa fa-step-backward"></i></button>' +
+                    '<button type="button" class="btn btn-sm btn-outline-light me-1" title="Watch live" onclick="watchLive(\'' + r.id + '\')"><i class="fa fa-play"></i></button>' +
+                    (r.stopping || r.finishing ? '<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Finishing...</span>'
+                        : '<button type="button" class="btn btn-sm btn-danger" onclick="stopRecording(\'' + r.id + '\')"><i class="fa fa-stop"></i> Stop</button>') +
+                    '</span>'];
             })) : '<p class="text-muted">Nothing is recording. Record from a Multiview tile or the preview player (<i class="fa fa-circle text-danger"></i>).</p>';
         document.getElementById("doneList").innerHTML = done.length ? table(
             ["Title", "Recorded", "Length", "Size", "", ""],
@@ -140,9 +144,40 @@
 
     function playRecording(id) {
         var r = find(id);
-        document.getElementById("playTitle").textContent = r.title + " · " + when(r.start);
+        openPlayer(r.title + " \u00b7 " + when(r.start), "/recordings/" + id + "/file");
+    }
+
+    // A recording still recording: from its start (it follows as it grows), or the channel live.
+    function watchFromStart(id) {
+        var r = find(id);
+        openPlayer(r.title + " \u00b7 from the start", "/recordings/" + id + "/watch?from=start");
+    }
+
+    function watchLive(id) {
+        var r = find(id);
+        openPlayer(r.title + " \u00b7 live", "/play/" + encodeURIComponent(r.portal) + "/" + encodeURIComponent(r.channelId) +
+            "?web=true&viewer=" + encodeURIComponent(viewerId()) + "&tile=recordings");
+    }
+
+    // The same browser id the preview player sends, so the server keeps this browser's previews apart.
+    function viewerId() {
+        var id = null;
+        try {
+            id = localStorage.getItem("stbViewer");
+        } catch (e) { }
+        if (!id) {
+            id = Math.random().toString(36).slice(2) + Date.now().toString(36);
+            try {
+                localStorage.setItem("stbViewer", id);
+            } catch (e) { }
+        }
+        return id;
+    }
+
+    function openPlayer(title, src) {
+        document.getElementById("playTitle").textContent = title;
         var video = document.getElementById("playVideo");
-        video.src = "/recordings/" + id + "/file";
+        video.src = src;
         if (!playModal) {
             playModal = new bootstrap.Modal(document.getElementById("playModal"));
             document.getElementById("playModal").addEventListener("hidden.bs.modal", function () {

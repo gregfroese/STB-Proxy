@@ -33,6 +33,11 @@ class RecordingsScriptTest(unittest.TestCase):
                 {"id": "b", "portal": "p1", "channelId": "3", "status": "done"}]
         self.assertEqual(self.run_js("return r.recordingChannels(%s);" % json.dumps(recs)), {"p1/2": "a"})
 
+    def test_recordings_by_channel_know_when_they_started(self):
+        recs = [{"id": "a", "portal": "p1", "channelId": "2", "status": "recording", "start": 100},
+                {"id": "b", "portal": "p1", "channelId": "3", "status": "done", "start": 50}]
+        self.assertEqual(self.run_js("return r.recordingsByChannel(%s);" % json.dumps(recs)), {"p1/2": {"id": "a", "start": 100}})
+
 
 if __name__ == "__main__":
     unittest.main()

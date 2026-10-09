@@ -266,6 +266,8 @@
                 '<div class="text-truncate me-auto"><div class="fw-bold text-truncate tile-name"></div>' +
                 '<div class="small text-truncate tile-now"></div></div>' +
                 '<button type="button" class="btn btn-sm btn-outline-light tile-record d-none" title="Record" aria-label="Record"><i class="fa fa-circle text-danger"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-from-start d-none" title="Watch the recording from the start" aria-label="Watch the recording from the start"><i class="fa fa-step-backward"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-danger tile-live d-none" title="Back to live" aria-label="Back to live">Live</button>' +
                 '<button type="button" class="btn btn-sm btn-outline-light tile-audio" title="Sound from this tile" aria-label="Sound from this tile"><i class="fa fa-volume-off"></i></button>' +
                 '<button type="button" class="btn btn-sm btn-outline-light tile-big" title="Make big" aria-label="Make big"><i class="fa fa-arrows-alt"></i></button>' +
                 '<button type="button" class="btn btn-sm btn-outline-light tile-swap" title="Change channel" aria-label="Change channel"><i class="fa fa-exchange"></i></button>' +
@@ -283,6 +285,14 @@
 
     function wireTile(i) {
         var t = tiles[i];
+        t.el.querySelector(".tile-from-start").addEventListener("click", function (e) {
+            e.stopPropagation();
+            fromStart(i);
+        });
+        t.el.querySelector(".tile-live").addEventListener("click", function (e) {
+            e.stopPropagation();
+            goLive(i);
+        });
         t.el.querySelector(".tile-record").addEventListener("click", function (e) {
             e.stopPropagation();
             recordClicked(i);
@@ -322,7 +332,11 @@
         });
         // A live preview never ends by itself: it was stopped (say, for Plex) or the portal dropped it.
         t.video.addEventListener("ended", function () {
-            if (t.video.getAttribute("src")) {
+            if (t.watching) {
+                dropSource(t);
+                showMessage(i, "That's the end of the recording." +
+                    '<button type="button" class="btn btn-sm btn-outline-danger mt-2" onclick="goLive(' + i + ')">Watch live</button>');
+            } else if (t.video.getAttribute("src")) {
                 tileFailed(i);
             }
         });
@@ -383,7 +397,7 @@
         for (var i = 0; i < multiview.TILES; i++) {
             renderTile(i);
             var row = rowFor(state.tiles[i]);
-            var want = isShown(i) && row ? channelKey(row) : null;
+            var want = isShown(i) && row ? channelKey(row) + (tiles[i].watching ? "#recording" : "") : null;
             if (want != tiles[i].playingKey) {
                 stopTile(i);
                 if (want) {
@@ -402,12 +416,13 @@
         }
         var seq = ++t.seq;
         clearTimeout(t.timer);
-        t.playingKey = channelKey(row);
+        t.playingKey = channelKey(row) + (t.watching ? "#recording" : "");
+        var link = t.watching ? "/recordings/" + encodeURIComponent(t.watching.id) + "/watch?from=start" : row.link;
         setTimeout(function () {
             if (seq != t.seq) {
                 return;  // the tile changed or closed meanwhile
             }
-            t.video.src = row.link + "&viewer=" + encodeURIComponent(viewerId) + "&tile=" + tileId(i);
+            t.video.src = link + "&viewer=" + encodeURIComponent(viewerId) + "&tile=" + tileId(i);
             t.video.play().catch(function () { });
             t.timer = setTimeout(function () { tileFailed(i); }, 15000);
         }, delay);
@@ -435,7 +450,8 @@
             return;
         }
         var seq = t.seq;
-        $.getJSON("/preview/status", { viewer: viewerId, tile: tileId(i) })
+        // A recording played from the start uses no tuner, so the server has nothing to say about it.
+        (t.watching ? $.Deferred().resolve({ reason: null }) : $.getJSON("/preview/status", { viewer: viewerId, tile: tileId(i) }))
             .then(function (res) { return res.reason; }, function () { return $.Deferred().resolve(null); })
             .done(function (reason) {
                 if (seq != t.seq) {
@@ -478,6 +494,7 @@
     }
 
     function setChannel(i, row) {
+        tiles[i].watching = null;
         state.tiles[i] = { portal: row.portal, channelId: row.channelId };
         save();
         tiles[i].retried = false;
@@ -527,7 +544,7 @@
     function refreshRecordings() {
         $.getJSON("/recordings/list").done(function (res) {
             recordingOn = !!res.folder;
-            recordingKeys = stbRecordings.recordingChannels(res.recordings);
+            recordingKeys = stbRecordings.recordingsByChannel(res.recordings);
             for (var i = 0; i < multiview.TILES; i++) {
                 showRecordButton(i);
             }
@@ -544,6 +561,32 @@
         button.title = recording ? "Recording: click to stop" : "Record";
         button.setAttribute("aria-label", button.title);
         button.querySelector("i").className = "fa " + (recording ? "fa-stop" : "fa-circle text-danger");
+        tiles[i].el.querySelector(".tile-from-start").classList.toggle("d-none", !recording || !!tiles[i].watching);
+        tiles[i].el.querySelector(".tile-live").classList.toggle("d-none", !tiles[i].watching);
+    }
+
+    // Play the tile's channel's recording from its start (following it as it grows), or go back to live.
+    function fromStart(i) {
+        var ch = state.tiles[i];
+        var rec = ch && recordingKeys[channelKey(ch)];
+        if (!rec) {
+            return;
+        }
+        stopTile(i);
+        tiles[i].watching = rec;
+        tiles[i].retried = false;
+        showMessage(i, "");
+        startTile(i, 0);
+        showRecordButton(i);
+    }
+
+    function goLive(i) {
+        stopTile(i);
+        tiles[i].watching = null;
+        tiles[i].retried = false;
+        showMessage(i, "");
+        startTile(i, 0);
+        showRecordButton(i);
     }
 
     function recordClicked(i) {
@@ -552,7 +595,7 @@
         if (!ch || !row) {
             return;
         }
-        var id = recordingKeys[channelKey(ch)];
+        var id = recordingKeys[channelKey(ch)] && recordingKeys[channelKey(ch)].id;
         if (id) {
             if (confirm("Stop recording " + multiview.channelName(row) + "? What's recorded so far is kept.")) {
                 stopRecording(id, refreshRecordings);
@@ -732,7 +775,7 @@
             }
         });
         var line = tiles[i].el.querySelector(".tile-now");
-        line.textContent = current ? current.title : "";
+        line.textContent = (tiles[i].watching ? "\u23fa From the start \u00b7 " : "") + (current ? current.title : "");
         line.title = line.textContent;
         tiles[i].programme = current;
         tiles[i].el.querySelector(".tile-progress div").style.width =

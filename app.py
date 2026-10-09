@@ -1465,6 +1465,53 @@ def recordingsDelete(id):
     return flask.jsonify({"deleted": True})
 
 
+@app.route("/recordings/<id>/watch", methods=["GET"])
+@authorise
+def recordingsWatch(id):
+    """Watch a recording from its start, even while it's still recording."""
+    rec = getRecorder().store.get(id)
+    if rec and rec["status"] != "recording" and rec.get("file") and os.path.isfile(rec["file"]):
+        return redirect("/recordings/{}/file".format(id), code=302)
+    if not rec or rec["status"] != "recording":
+        return flask.jsonify({"error": "No such recording"}), 404
+    return Response(watchRecording(id), mimetype="application/octet-stream")
+
+
+def watchRecording(id):
+    """A recording so far, from its start, as fragmented MP4 for the browser (as previews
+    are), following it as it grows. It reads the recording's files: no tuner."""
+    remux = subprocess.Popen(PREVIEW_REMUX, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    stop = threading.Event()
+
+    def feed():
+        parts = getRecorder().follow(id)
+        try:
+            for chunk in parts:
+                if stop.is_set():
+                    break
+                remux.stdin.write(chunk)
+        except (OSError, ValueError):
+            pass  # the viewer left
+        finally:
+            parts.close()
+            try:
+                remux.stdin.close()
+            except (OSError, ValueError):
+                pass
+
+    threading.Thread(target=feed, daemon=True).start()
+    try:
+        while True:
+            chunk = remux.stdout.read1(65536)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        stop.set()
+        remux.kill()
+        remux.wait()
+
+
 @app.route("/recordings/<id>/file", methods=["GET"])
 @authorise
 def recordingsFile(id):

@@ -378,6 +378,48 @@ class RecorderReviewFixesTest(RecorderTestCase):
         self.assertTrue(all(os.path.exists(p) for p in paths))
 
 
+class WatchFromStartTest(RecorderTestCase):
+    def watch(self, recorder, id, seconds):
+        """Read follow(id) on a thread for a while; returns (bytes so far list, the generator, thread)."""
+        got = []
+        gen = recorder.follow(id)
+        thread = threading.Thread(target=lambda: [got.append(len(b)) for b in gen], daemon=True)
+        thread.start()
+        time.sleep(seconds)
+        return got, gen, thread
+
+    def test_follows_a_growing_recording_to_its_end(self):
+        self.responses = [FakeResponse()]
+        recorder = self.recorder()
+        rec = recorder.start("p1", "2", "Two")
+        time.sleep(0.1)
+        got, gen, thread = self.watch(recorder, rec["id"], 0.2)
+        recorder.stop(rec["id"])
+        thread.join(5)
+        self.assertFalse(thread.is_alive())  # it ends once the recording has
+        rec = self.waitUntilDone(recorder, rec["id"])
+        self.assertEqual(sum(got), os.path.getsize(rec["file"]))  # every byte, from the start
+
+    def test_parts_are_kept_until_the_last_viewer_leaves(self):
+        self.responses = [FakeResponse()]
+        recorder = self.recorder()
+        rec = recorder.start("p1", "2", "Two")
+        time.sleep(0.05)
+        gen = recorder.follow(rec["id"])
+        next(gen)  # watching
+        recorder.stop(rec["id"])
+        done = self.waitUntilDone(recorder, rec["id"])
+        self.assertEqual(done["status"], "done")
+        partial = os.path.join(self.folder, ".partial")
+        self.assertNotEqual(os.listdir(partial), [])  # still being watched
+        gen.close()
+        self.assertEqual(os.listdir(partial), [])
+
+    def test_following_an_unknown_or_finished_recording_gives_nothing(self):
+        recorder = self.recorder()
+        self.assertEqual(list(recorder.follow("nope")), [])
+
+
 class RemuxCommandTest(unittest.TestCase):
     def test_parts_are_joined_with_the_concat_list_into_an_mp4(self):
         seen = {}
