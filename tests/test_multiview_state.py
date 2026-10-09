@@ -159,6 +159,31 @@ class MultiviewStateTest(unittest.TestCase):
             saved = json.dumps({"layout": "big", "order": list(range(9)), "tiles": [None] * 9, "beforeBig": bad})
             self.assertIsNone(self.run_js("return mv.loadState(storage).beforeBig;", saved=saved), bad)
 
+    def test_a_blocks_favourites_come_first(self):
+        channels = [dict(row("a", "1", "One"), blocks=["Sports"]),
+                    dict(row("b", "9", "Nine"), blocks=["Sports"], blockFavourites=["Sports"]),
+                    dict(row("c", "5", "Five"), blocks=["Sports", "News"], blockFavourites=["News"])]
+        names = self.run_js("return mv.blockChannels(%s, 'Sports', null).map(mv.channelName);" % json.dumps(channels))
+        self.assertEqual(names, ["Nine", "One", "Five"])
+        favs = self.run_js("return mv.blockChannels(%s, 'Sports', mv.isBlockFavouriteIn('Sports')).map(mv.channelName);" % json.dumps(channels))
+        self.assertEqual(favs, ["Nine"])
+
+    def test_channel_up_and_down_through_any_list(self):
+        listed = [row("a", "1", "One"), row("b", "2", "Two"), row("c", "3", "Three")]
+        step = "return mv.nextInList(%s, {portal: 'p1', channelId: '%s'}, %d).channelId;"
+        self.assertEqual(self.run_js(step % (json.dumps(listed), "c", 1)), "a")
+        self.assertEqual(self.run_js(step % (json.dumps(listed), "a", -1)), "c")
+        self.assertEqual(self.run_js(step % (json.dumps(listed), "zz", 1)), "a")
+        self.assertIsNone(self.run_js("return mv.nextInList([], {portal: 'p1', channelId: 'a'}, 1);"))
+
+    def test_a_tile_remembers_the_block_it_was_picked_from(self):
+        saved = json.dumps({"layout": "4", "order": list(range(9)),
+                            "tiles": [{"portal": "p1", "channelId": "2", "block": "Sports", "favouritesOnly": True},
+                                      {"portal": "p1", "channelId": "3", "block": 5}] + [None] * 7})
+        tiles = self.run_js("return mv.loadState(storage).tiles.slice(0, 2);", saved=saved)
+        self.assertEqual(tiles, [{"portal": "p1", "channelId": "2", "block": "Sports", "favouritesOnly": True},
+                                 {"portal": "p1", "channelId": "3"}])
+
 
 if __name__ == "__main__":
     unittest.main()

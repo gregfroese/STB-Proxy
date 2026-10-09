@@ -80,6 +80,7 @@ Make sets of channels available only when you want them.
 - Click the star next to a channel (on the **Blocks** page, in the **Playlist Editor**, or in the preview) to make it a favourite. Click it again to remove it.
 - The **Favourites** tab on the **Blocks** page lists your favourites so you can watch them quickly. **Favourites only**, above the editor table, filters the editor to them.
 - Favourites are just for finding channels. They don't change what's in the playlist or Plex.
+- A block can have favourites of its own, apart from your overall favourites. On the **Blocks** page, click **View** on a block, then the blue bookmark next to a channel. A block's favourites come first in its list, and **Favourites only** shows just them. While a channel from that block plays in the preview player, the bookmark is in the player too, and channel up / down moves through the list you see. They don't appear in the Favourites tab.
 
 # Preview player
 
@@ -95,7 +96,7 @@ Make sets of channels available only when you want them.
 # Multiview
 
 - **Multiview** (in the menu) plays several channels at once. Pick a layout: 1, 2 side by side, 2 × 2, 3 × 3, or one big tile with three small ones (drag the line between them to resize).
-- Click **Add channel** in an empty tile to pick its channel: **Search** every channel by name or number (favourites, then your lineup, first), browse your **Favourites**, or open one of your **Blocks** that's switched on and pick from its channels. The picker opens where you left it, so filling several tiles from one block is quick.
+- Click **Add channel** in an empty tile to pick its channel: **Search** every channel by name or number (favourites, then your lineup, first), browse your **Favourites**, or open one of your **Blocks** that's switched on and pick from its channels (its favourites first; the bookmark and **Favourites only** work as on the Blocks page). A tile picked from a block keeps channel up / down within that block, or its favourites. The picker opens where you left it, so filling several tiles from one block is quick.
 - One tile plays sound, outlined in yellow: click a tile (or its 🔈 button) to hear it. **Page Up / Page Down** changes that tile's channel, through your lineup.
 - ⤢ makes a tile the big one; on the big tile it turns into ⤡, which goes back to the layout you had before. ⇄ changes a tile's channel, and ✕ closes it, which frees its tuner. **F** fills the window.
 - Each different channel needs a tuner (see Streams and portal connections). Tiles on the same channel, or on a channel Plex is watching, share one. With more tiles than tuners, the extra tiles say **No free tuner**. If Plex needs a tuner a tile is using, the tile stops and says so. **Try again** once a tuner is free.

@@ -145,7 +145,11 @@
                 </ul>
                 <div id="pickerBlockBar" class="d-flex align-items-center mb-2 d-none">
                     <button type="button" class="btn btn-sm btn-outline-light me-2" onclick="pickerBack()"><i class="fa fa-chevron-left"></i> Blocks</button>
-                    <span class="fw-bold text-truncate" id="pickerBlockName"></span>
+                    <span class="fw-bold text-truncate me-2" id="pickerBlockName"></span>
+                    <div class="form-check form-switch ms-auto mb-0">
+                        <input class="form-check-input" type="checkbox" id="pickerFavouritesOnly" onchange="pickerFavouritesToggled(this)">
+                        <label class="form-check-label text-nowrap" for="pickerFavouritesOnly">Favourites only <i class="fa fa-bookmark text-info"></i></label>
+                    </div>
                 </div>
                 <input type="search" class="form-control mb-2" id="pickerQuery" placeholder="Channel name or number" autocomplete="off">
                 <div id="pickerResults" class="list-group"></div>
@@ -178,7 +182,7 @@
     var tabId = multiview.tabId(multiview.browserStorage("sessionStorage"));
     var enabledBlocks = JSON.parse(document.getElementById("enabledBlocks").getAttribute("data-blocks"));
     // Where the picker is: a tab, and in Blocks, the block opened (kept while the page is open).
-    var pickerView = { tab: "search", block: null };
+    var pickerView = { tab: "search", block: null, favouritesOnly: false };
     var pickerBlocks = [];
     var PLACEHOLDERS = {
         search: "Channel name or number",
@@ -493,9 +497,14 @@
             });
     }
 
-    function setChannel(i, row) {
+    // source: {block, favouritesOnly} when picked from a block, so channel up/down stays in it.
+    function setChannel(i, row, source) {
         tiles[i].watching = null;
         state.tiles[i] = { portal: row.portal, channelId: row.channelId };
+        if (source) {
+            state.tiles[i].block = source.block;
+            state.tiles[i].favouritesOnly = !!source.favouritesOnly;
+        }
         save();
         tiles[i].retried = false;
         showMessage(i, "");
@@ -625,7 +634,16 @@
         if (!channels || !state.tiles[i] || !isShown(i)) {
             return;
         }
-        var next = multiview.nextChannel(channels, state.tiles[i], step);
+        var tile = state.tiles[i];
+        if (tile.block) {
+            var list = multiview.blockChannels(channels, tile.block, tile.favouritesOnly ? multiview.isBlockFavouriteIn(tile.block) : null);
+            var inBlock = multiview.nextInList(list, tile, step);
+            if (inBlock) {
+                setChannel(i, inBlock, { block: tile.block, favouritesOnly: tile.favouritesOnly });
+            }
+            return;
+        }
+        var next = multiview.nextChannel(channels, tile, step);
         if (next) {
             setChannel(i, next);
         }
@@ -647,13 +665,31 @@
     });
 
     function pickerTab(tab) {
-        pickerView = { tab: tab, block: null };
+        pickerView = { tab: tab, block: null, favouritesOnly: false };
         restartPicker();
     }
 
     function openBlock(k) {
         pickerView.block = pickerBlocks[k].name;
+        pickerView.favouritesOnly = false;
         restartPicker();
+    }
+
+    function pickerFavouritesToggled(input) {
+        pickerView.favouritesOnly = input.checked;
+        renderPicker();
+    }
+
+    // A favourite within the open block (apart from the overall favourites).
+    function toggleBlockFav(k) {
+        var row = pickerRows[k];
+        var block = pickerView.block;
+        var on = !multiview.isBlockFavouriteIn(block)(row);
+        $.post("/block/favourite", { portal: row.portal, channelId: row.channelId, block: block, favourite: on ? "true" : "false" })
+            .done(function (res) {
+                row.blockFavourites = res.blockFavourites;
+                renderPicker();
+            });
     }
 
     function pickerBack() {
@@ -676,6 +712,7 @@
         });
         document.getElementById("pickerBlockBar").classList.toggle("d-none", !inBlock);
         document.getElementById("pickerBlockName").textContent = inBlock ? pickerView.block : "";
+        document.getElementById("pickerFavouritesOnly").checked = inBlock && pickerView.favouritesOnly;
         document.getElementById("pickerQuery").placeholder = PLACEHOLDERS[inBlock ? "block" : pickerView.tab];
         if (!channels) {
             results.innerHTML = '<p class="text-muted mb-0"><i class="fa fa-spinner fa-spin"></i> Loading channels...</p>';
@@ -702,7 +739,10 @@
         if (pickerView.tab == "favourites") {
             pickerRows = multiview.favouriteChoices(channels, matches);
         } else if (inBlock) {
-            pickerRows = multiview.blockChannels(channels, pickerView.block, matches);
+            var favourite = multiview.isBlockFavouriteIn(pickerView.block);
+            pickerRows = multiview.blockChannels(channels, pickerView.block, function (row) {
+                return (!matches || matches(row)) && (!pickerView.favouritesOnly || favourite(row));
+            });
         } else {
             pickerRows = multiview.channelChoices(channels, matches, 50);
         }
@@ -713,8 +753,13 @@
             results.innerHTML = '<p class="text-muted mb-0">' + none + '</p>';
             return;
         }
+        var block = inBlock ? pickerView.block : null;
         results.innerHTML = pickerRows.map(function (row, k) {
-            return '<button type="button" class="list-group-item list-group-item-action bg-dark text-light d-flex align-items-center" onclick="pick(' + k + ')">' +
+            // A div, not a button, so a block's bookmark button can sit inside it.
+            var mark = block ? multiview.isBlockFavouriteIn(block)(row) : false;
+            return '<div role="button" class="list-group-item list-group-item-action bg-dark text-light d-flex align-items-center" onclick="pick(' + k + ')">' +
+                (block ? '<button type="button" class="btn btn-link text-info p-0 me-2" title="' + (mark ? "Favourite in this block" : "Make it a favourite in this block") + '" ' +
+                    'onclick="event.stopPropagation(); toggleBlockFav(' + k + ')"><i class="fa ' + (mark ? 'fa-bookmark' : 'fa-bookmark-o') + '"></i></button>' : '') +
                 (row.logo ? '<img class="channel-logo" loading="lazy" alt="" src="' + escapeAttr(row.logo) + '" onerror="this.style.visibility=\'hidden\'">'
                     : '<span class="channel-logo d-inline-block" style="background: none;"></span>') +
                 '<span class="ms-2 me-2 text-muted">' + escapeAttr(row.customChannelNumber || row.channelNumber) + '</span>' +
@@ -722,7 +767,7 @@
                 (row.favourite ? '<i class="fa fa-star text-warning ms-1"></i>' : '') +
                 (row.dead ? '<span class="badge bg-danger ms-1">dead</span>' : '') +
                 (row.available ? '' : '<span class="badge bg-secondary ms-1">not in lineup</span>') +
-                '</button>';
+                '</div>';
         }).join("");
     }
 
@@ -731,7 +776,9 @@
         picker.hide();
         if (row && pickerTile !== null) {
             unlockSound();
-            setChannel(pickerTile, row);
+            // Picked from a block: channel up/down stays in that block (or its favourites).
+            setChannel(pickerTile, row, pickerView.tab == "blocks" && pickerView.block !== null
+                ? { block: pickerView.block, favouritesOnly: pickerView.favouritesOnly } : null);
             setAudio(pickerTile);
         }
     }

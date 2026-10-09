@@ -161,6 +161,8 @@ def loadConfig():
     data.setdefault("settings", {})
     data.setdefault("blocks", {})
     data.setdefault("saved filters", {})
+    if not isinstance(data.get("block favourites"), dict):
+        data["block favourites"] = {}
     if not isinstance(data.get("hidden blocks"), list):
         data["hidden blocks"] = []
 
@@ -238,7 +240,30 @@ def saveBlocks(blocks):
     config["blocks"] = blocks
     names = availability.blockNames(getPortals())
     config["hidden blocks"] = [name for name in getHiddenBlocks() if name in names]
+    config["block favourites"] = pruneBlockFavourites(getPortals(), getBlockFavourites())
     writeConfig(config)
+
+
+def getBlockFavourites():
+    """Favourites within a block, apart from the overall favourites: {block: {portal: [channelId]}}."""
+    return config.setdefault("block favourites", {})
+
+
+def pruneBlockFavourites(portals, favourites):
+    """Only channels still in the block (and blocks that still have some)."""
+    pruned = {}
+    for block, byPortal in favourites.items():
+        for portal, channelIds in byPortal.items():
+            channelBlocks = portals.get(portal, {}).get("channel blocks", {})
+            kept = [c for c in channelIds if block in channelBlocks.get(c, [])]
+            if kept:
+                pruned.setdefault(block, {})[portal] = kept
+    return pruned
+
+
+def blockFavouritesOf(portal, channelId):
+    """The blocks a channel is a favourite in, by name."""
+    return sorted(b for b, byPortal in getBlockFavourites().items() if channelId in byPortal.get(portal, []))
 
 
 # The recorder, made on first use so tests can load the app against their own config.
@@ -868,6 +893,7 @@ def editor_data():
                             "blocks": channelBlocks.get(channelId, []),
                             "dead": channelId in deadChannels,
                             "favourite": channelId in favouriteChannels,
+                            "blockFavourites": blockFavouritesOf(portal, channelId),
                             "available": channelId in available,
                             "link": previewLink(portal, channelId),
                         }
@@ -1083,6 +1109,9 @@ def blocksRename():
     if name in blocks:
         blocks[newName] = blocks.pop(name)
     config["hidden blocks"] = [newName if n == name else n for n in getHiddenBlocks()]
+    favourites = getBlockFavourites()
+    if name in favourites:
+        favourites[newName] = favourites.pop(name)
     for pageFilters in getSavedFilters().values():
         for filters in pageFilters.values():
             if filters.get("block") == name:
@@ -1174,6 +1203,29 @@ def channelBlocks():
     return flask.jsonify(
         {"blocks": names, "allBlocks": sorted(availability.blockNames(portals)), "plex": plexMessage}
     )
+
+
+@app.route("/block/favourite", methods=["POST"])
+@authorise
+def blockFavourite():
+    """Make a channel a favourite within one of its blocks, or not. Overall favourites are separate."""
+    portal = request.form["portal"]
+    channelId = request.form["channelId"]
+    block = request.form["block"]
+    portals = getPortals()
+    if portal not in portals:
+        return flask.jsonify({"error": "Unknown portal"}), 404
+    if block not in portals[portal].get("channel blocks", {}).get(channelId, []):
+        return flask.jsonify({"error": "That channel isn't in {}".format(block)}), 400
+    favourites = getBlockFavourites()
+    channelIds = [c for c in favourites.get(block, {}).get(portal, []) if c != channelId]
+    if request.form.get("favourite") == "true":
+        channelIds.append(channelId)
+    favourites.setdefault(block, {})[portal] = channelIds
+    saveBlocks(getBlocks())  # tidies empty lists and saves
+    logger.info("Channel({}) for Portal({}) {} favourite in Block({})".format(
+        channelId, portal, "made a" if request.form.get("favourite") == "true" else "no longer a", block))
+    return flask.jsonify({"blockFavourites": blockFavouritesOf(portal, channelId)})
 
 
 @app.route("/channels/blocks", methods=["POST"])
