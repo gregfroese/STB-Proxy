@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+    .changelog h3 { margin-bottom: 1rem; }
+    .changelog h4 { margin-top: 2rem; border-bottom: 1px solid #495057; padding-bottom: 0.5rem; }
+    .changelog h5 { margin-top: 1.5rem; }
+    .changelog li { margin-bottom: 0.35rem; }
+    .changelog code { color: #f8c291; }
+</style>
+
+<div class="container text-light p-lg-5 changelog">
+    <p class="text-muted mb-1">You're running version {{ version }}.</p>
+    {{ body }}
+</div>
+
+{% endblock %}

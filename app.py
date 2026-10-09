@@ -6,6 +6,8 @@ import jellyfin
 import guide
 import logos
 import recordings
+import changelog
+import version
 import os
 import shutil
 import json
@@ -1450,6 +1452,19 @@ def guidePage():
     return render_template("guide.html", allBlocks=sorted(availability.blockNames(getPortals())))
 
 
+@app.context_processor
+def versionForTemplates():
+    return {"version": version.VERSION}
+
+
+@app.route("/changelog", methods=["GET"])
+@authorise
+def changelogPage():
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "CHANGELOG.md")) as f:
+        body = changelog.render(f.read())
+    return render_template("changelog.html", body=flask.Markup(body))
+
+
 @app.route("/multiview", methods=["GET"])
 @authorise
 def multiview():
@@ -2802,6 +2817,7 @@ def apiStatus():
             for v in stream.viewers:
                 viewers[v["kind"]] += 1
     return flask.jsonify({
+        "version": version.VERSION,
         "lineup": lineup,
         "streams": sum(len(v) for v in occupied.values()),
         "tuners": {"total": tunerCount(), "used": len(streams)},
@@ -3126,6 +3142,7 @@ def lineup():
 
 
 if __name__ == "__main__":
+    logger.info("STB-Proxy {} starting".format(version.VERSION))
     config = loadConfig()
     # Carry on recordings that were running when STB-Proxy stopped, once it's listening:
     # they read from its own /play.
