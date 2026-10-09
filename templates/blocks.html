@@ -77,7 +77,7 @@
                         <td>
                             {{ block.name }}
                             {% if block.hidden %}<span class="badge bg-secondary ms-1"
-                                title="Home Assistant and other API users don't see this block">Hidden from API</span>{% endif %}
+                                title="Not in the API, Plex or Jellyfin: its channels play only in STB-Proxy">STB-Proxy only</span>{% endif %}
                         </td>
                         <td>
                             <span class="block-count" data-block="{{ block.name }}">{{ block.channels }}</span> channels
@@ -96,8 +96,8 @@
                                 <input type="hidden" name="name" value="{{ block.name }}">
                                 <input type="hidden" name="hidden" value="{{ 'false' if block.hidden else 'true' }}">
                                 <button class="btn btn-sm btn-outline-light"
-                                    aria-label="{{ 'Show' if block.hidden else 'Hide' }} {{ block.name }} {{ 'in' if block.hidden else 'from' }} the API"
-                                    title="{{ 'Show in the API' if block.hidden else 'Hide from the API (Home Assistant and other integrations)' }}">
+                                    aria-label="{{ 'Share ' ~ block.name ~ ' with the API, Plex and Jellyfin' if block.hidden else 'Keep ' ~ block.name ~ ' in STB-Proxy only' }}"
+                                    title="{{ 'Share with the API, Plex and Jellyfin again' if block.hidden else 'Keep this block in STB-Proxy only (not the API, Plex or Jellyfin)' }}">
                                     <i class="fa {{ 'fa-eye' if block.hidden else 'fa-eye-slash' }}"></i></button>
                             </form>
                         </td>

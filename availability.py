@@ -4,7 +4,8 @@ A channel is available when it is (individually enabled OR in a block that is
 on) AND not marked dead. A channel can be in several blocks: each portal's
 "channel blocks" is {channelId: [blockName, ...]}; whether a block is on lives
 in config["blocks"] ({blockName: "true"|"false"}). Blocks named in
-config["hidden blocks"] still work but are left out of the API.
+config["hidden blocks"] are STB-Proxy only: they work inside STB-Proxy but are left out of
+the API, and their channels out of what Plex and Jellyfin get (see lineupChannels).
 """
 
 
@@ -40,6 +41,12 @@ def availableChannels(portal, blocks):
         if any(blocks.get(name) == "true" for name in channelBlockNames(names)):
             channels.add(channelId)
     return channels - set(portal.get("dead channels", []))
+
+
+def lineupChannels(portal, blocks, hidden):
+    """What goes to Plex and Jellyfin: as availableChannels, except that blocks hidden from the
+    API (STB-Proxy only) add nothing; their channels stay inside STB-Proxy."""
+    return availableChannels(portal, {name: state for name, state in blocks.items() if name not in hidden})
 
 
 def blockNames(portals):

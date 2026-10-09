@@ -74,7 +74,7 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(len(status["blocks"]), 2)
         self.assertIn("plex", status)
 
-    def test_hidden_blocks_are_left_out_but_still_work(self):
+    def test_hidden_blocks_are_left_out_and_stay_in_stb_proxy(self):
         self.app.getBlocks()["NHL"] = "true"
         self.app.config["hidden blocks"] = ["NHL"]
         self.assertEqual([b["name"] for b in self.call("GET", "/api/blocks").get_json()], ["Late Night/Movies"])
@@ -82,8 +82,11 @@ class ApiTest(unittest.TestCase):
         self.assertEqual(self.call("GET", "/api/blocks/NHL").status_code, 404)
         self.assertEqual(self.call("POST", "/api/blocks/NHL/off").status_code, 404)
         self.assertEqual(self.app.getBlocks()["NHL"], "true")
+        # STB-Proxy only: its channels stay out of Plex and Jellyfin, but still work in STB-Proxy.
         lineup = sorted(e["GuideNumber"] for e in self.client.get("/lineup.json").get_json())
-        self.assertEqual(lineup, ["101", "102"])
+        self.assertEqual(lineup, ["101"])
+        available = {r["channelId"]: r["available"] for r in self.client.get("/editor_data").get_json()["data"]}
+        self.assertTrue(available["2"])
 
     def test_plex_sync_now(self):
         self.call("POST", "/api/plex/sync")

@@ -11,6 +11,24 @@ def portal(enabled=(), blocks=None, dead=()):
     }
 
 
+class LineupChannelsTest(unittest.TestCase):
+    """What Plex and Jellyfin get: a hidden block's channels stay in STB-Proxy."""
+
+    def test_a_hidden_blocks_channels_are_left_out(self):
+        p = portal(blocks={"1": ["Private"], "2": ["Private", "NHL"], "3": ["NHL"]}, enabled=["4"])
+        blocks = {"Private": "true", "NHL": "true"}
+        self.assertEqual(availability.lineupChannels(p, blocks, ["Private"]), {"2", "3", "4"})
+        self.assertEqual(availability.availableChannels(p, blocks), {"1", "2", "3", "4"})  # in STB-Proxy
+
+    def test_a_channel_enabled_on_its_own_still_goes(self):
+        p = portal(blocks={"1": ["Private"]}, enabled=["1"], dead=["5"])
+        self.assertEqual(availability.lineupChannels(p, {"Private": "true"}, ["Private"]), {"1"})
+
+    def test_dead_channels_are_still_left_out(self):
+        p = portal(blocks={"1": ["NHL"], "2": ["NHL"]}, dead=["2"])
+        self.assertEqual(availability.lineupChannels(p, {"NHL": "true"}, []), {"1"})
+
+
 class AvailableChannelsTest(unittest.TestCase):
     def test_individually_enabled(self):
         self.assertEqual(availability.availableChannels(portal(["1", "2"]), {}), {"1", "2"})
