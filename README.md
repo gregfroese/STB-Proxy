@@ -259,3 +259,5 @@ rest:
 python3 -m venv .venv && .venv/bin/pip install -r requirements-test.txt
 .venv/bin/python -m unittest discover -s tests -t .
 ```
+
+Versions follow [SemVer](https://semver.org): every change that ships bumps `VERSION` in `version.py` (minor for new features, patch for fixes), adds its entry at the top of [CHANGELOG.md](CHANGELOG.md), and is tagged `vX.Y.Z` with a GitHub release. A test checks that the changelog's newest entry matches `version.py`. STB-Proxy shows its version in the menu (linking to the changelog), on the Settings page, in `/api/status` and in the startup log.
