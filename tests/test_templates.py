@@ -122,6 +122,22 @@ class TemplateScriptTest(unittest.TestCase):
         self.assertIn("watchFromStart(", page)
         self.assertIn("watchLive(", page)
 
+    def test_block_favourites_in_the_player_and_blocks_page(self):
+        player = inlineScripts("_player.html")
+        for name in ("function blockFavouriteMark(row, block)", "function setBlockFavourite(", "playerBlock"):
+            self.assertIn(name, player)
+        with open(os.path.join(ROOT, "templates", "_player.html")) as f:
+            self.assertIn('id="blockFavButton"', f.read())
+        blocks = inlineScripts("blocks.html")
+        self.assertIn("blockFavouriteMark(row, block)", blocks)
+        self.assertIn("function toggleBlockFavouritesOnly(", blocks)
+        self.assertIn("multiview.blockChannels(", blocks)  # favourites first
+
+    def test_block_favourites_in_the_multiview_picker_and_channel_up_down(self):
+        mv = inlineScripts("multiview.html")
+        for name in ("/block/favourite", "pickerFavouritesOnly", "multiview.nextInList(", "favouritesOnly:"):
+            self.assertIn(name, mv)
+
     def test_multiview_helpers_are_valid_javascript(self):
         result = subprocess.run(["node", "--check", os.path.join(ROOT, "static", "multiview.js")],
                                 capture_output=True, text=True)

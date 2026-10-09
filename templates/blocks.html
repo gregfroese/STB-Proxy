@@ -180,17 +180,21 @@
         return row.customChannelNumber || row.channelNumber;
     }
 
-    function channelTable(rows, showBlock) {
-        rows = rows.slice().sort(function (a, b) {
-            return (channelNumber(a) * 1 || 0) - (channelNumber(b) * 1 || 0) ||
-                (a.customChannelName || a.channelName).localeCompare(b.customChannelName || b.channelName);
-        });
+    // block: the block these rows are from, already in its order (its favourites first).
+    function channelTable(rows, showBlock, block) {
+        if (!block) {
+            rows = rows.slice().sort(function (a, b) {
+                return (channelNumber(a) * 1 || 0) - (channelNumber(b) * 1 || 0) ||
+                    (a.customChannelName || a.channelName).localeCompare(b.customChannelName || b.channelName);
+            });
+        }
         var html = '<table class="table table-dark table-sm align-middle mb-0"><thead><tr>' +
             '<th style="width: 0%;">Play</th><th style="width: 0%;"></th><th>Number</th><th>Name</th>' +
             '<th>Genre</th>' + (showBlock ? '<th>Block</th>' : '') + '<th>Portal</th></tr></thead><tbody>';
         rows.forEach(function (row) {
             html += '<tr><td>' + playButton(row) + '</td>' +
-                '<td class="text-nowrap">' + favouriteStar(row) + ' <span class="ms-1">' + guideButton(row) + '</span>' +
+                '<td class="text-nowrap">' + favouriteStar(row) + (block ? ' <span class="ms-1">' + blockFavouriteMark(row, block) + '</span>' : '') +
+                ' <span class="ms-1">' + guideButton(row) + '</span>' +
                 ' <span class="ms-1">' + deadToggle(row) + '</span></td>' +
                 '<td>' + escapeAttr(channelNumber(row)) + '</td>' +
                 '<td><div class="d-flex align-items-center">' + logoImage(row) + '<span class="ms-2">' +
@@ -214,10 +218,40 @@
             });
     }
 
+    var blockFavouritesOnly = {};  // block name -> showing only its favourites
+
     function renderBlock(container) {
         var name = container.getAttribute('data-block');
-        renderInto(container, function (row) { return row.blocks.indexOf(name) != -1; },
-            "None of this block's channels are on an enabled portal.", false);
+        var only = !!blockFavouritesOnly[name];
+        container.innerHTML = '<p class="text-muted m-2"><i class="fa fa-spinner fa-spin"></i> Loading channels...</p>';
+        loadChannels()
+            .done(function () {
+                var rows = multiview.blockChannels(channels, name, only ? multiview.isBlockFavouriteIn(name) : null);
+                container.innerHTML = '<div class="form-check form-switch m-2"><label class="form-check-label">' +
+                    '<input class="form-check-input" type="checkbox" onchange="toggleBlockFavouritesOnly(this)"' + (only ? ' checked' : '') + '> ' +
+                    'Favourites only <i class="fa fa-bookmark text-info"></i></label></div>' +
+                    (rows.length ? channelTable(rows, false, name) : '<p class="text-muted m-2">' + (only
+                        ? 'No favourites in this block yet. Click <i class="fa fa-bookmark-o text-info"></i> next to a channel to add it.'
+                        : "None of this block's channels are on an enabled portal.") + '</p>');
+            })
+            .fail(function () {
+                container.innerHTML = '<p class="text-danger m-2">Couldn\'t load channels from the portals. Try again.</p>';
+            });
+    }
+
+    function toggleBlockFavouritesOnly(input) {
+        var container = input.closest('.block-channels');
+        blockFavouritesOnly[container.getAttribute('data-block')] = input.checked;
+        renderBlock(container);
+    }
+
+    // A channel became (or stopped being) a favourite in a block: its list's order changes.
+    function blockFavouritesChanged(row, block) {
+        document.querySelectorAll('.block-channels[data-block="' + CSS.escape(block) + '"]').forEach(function (container) {
+            if (!container.parentElement.classList.contains('d-none')) {
+                renderBlock(container);
+            }
+        });
     }
 
     function renderFavourites() {

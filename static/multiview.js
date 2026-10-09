@@ -5,7 +5,8 @@
 // State: {layout, order, tiles, audio, big}
 //   layout - "1", "2", "4", "9" or "big" (one big tile and three small)
 //   order  - the nine tile indexes in the order they're shown; the first is the big one
-//   tiles  - by tile index: {portal, channelId}, or null for an empty tile
+//   tiles  - by tile index: {portal, channelId}, or null for an empty tile; picked from a
+//            block, also {block, favouritesOnly}, so channel up/down stays in that list
 //   audio  - the tile index whose sound plays
 //   big    - the big tile's share of the width, in percent
 //   beforeBig - {layout, order} to go back to after making a tile big, or null
@@ -64,7 +65,15 @@
         state.layout = saved.layout;
         state.order = order;
         state.tiles = saved.tiles.map(function (t) {
-            return t && t.portal && t.channelId ? { portal: String(t.portal), channelId: String(t.channelId) } : null;
+            if (!t || !t.portal || !t.channelId) {
+                return null;
+            }
+            var tile = { portal: String(t.portal), channelId: String(t.channelId) };
+            if (typeof t.block == "string" && t.block) {
+                tile.block = t.block;
+                tile.favouritesOnly = t.favouritesOnly === true;
+            }
+            return tile;
         });
         state.audio = isTileIndex(saved.audio) ? saved.audio : 0;
         state.big = typeof saved.big == "number" && saved.big >= 30 && saved.big <= 85 ? saved.big : 66;
@@ -198,29 +207,39 @@
             .map(function (name) { return { name: name, channels: counts[name] }; });
     }
 
-    // One block's channels, by number. matches(row), or null for all.
-    function blockChannels(channels, name, matches) {
-        return channels
-            .filter(function (row) { return (row.blocks || []).indexOf(name) != -1 && (!matches || matches(row)); })
-            .sort(byNumber);
+    // matches(row) for a block's own favourites.
+    function isBlockFavouriteIn(name) {
+        return function (row) { return (row.blockFavourites || []).indexOf(name) != -1; };
     }
 
-    // Channel up/down: the lineup's working channels, by number, wrapping round.
-    function nextChannel(channels, current, step) {
-        var lineup = channels.filter(function (row) { return row.available && !row.dead; }).sort(byNumber);
-        if (!lineup.length) {
+    // One block's channels: its favourites first, then by number. matches(row), or null for all.
+    function blockChannels(channels, name, matches) {
+        var favourite = isBlockFavouriteIn(name);
+        return channels
+            .filter(function (row) { return (row.blocks || []).indexOf(name) != -1 && (!matches || matches(row)); })
+            .sort(function (a, b) { return (favourite(b) - favourite(a)) || byNumber(a, b); });
+    }
+
+    // Channel up/down through a list, wrapping round; from outside the list, its first (or last).
+    function nextInList(list, current, step) {
+        if (!list.length) {
             return null;
         }
         var index = -1;
-        for (var i = 0; i < lineup.length; i++) {
-            if (lineup[i].portal == current.portal && lineup[i].channelId == current.channelId) {
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].portal == current.portal && list[i].channelId == current.channelId) {
                 index = i;
             }
         }
         if (index == -1) {
-            return lineup[step > 0 ? 0 : lineup.length - 1];
+            return list[step > 0 ? 0 : list.length - 1];
         }
-        return lineup[(index + step + lineup.length) % lineup.length];
+        return list[(index + step + list.length) % list.length];
+    }
+
+    // Channel up/down: the lineup's working channels, by number.
+    function nextChannel(channels, current, step) {
+        return nextInList(channels.filter(function (row) { return row.available && !row.dead; }).sort(byNumber), current, step);
     }
 
     // What a tile does when its preview fails. reason is from /preview/status. A busy portal
@@ -248,6 +267,8 @@
         favouriteChoices: favouriteChoices,
         blockChoices: blockChoices,
         blockChannels: blockChannels,
+        isBlockFavouriteIn: isBlockFavouriteIn,
+        nextInList: nextInList,
         chooseLayout: chooseLayout,
         canGoBack: canGoBack,
         toggleBig: toggleBig,

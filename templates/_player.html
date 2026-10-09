@@ -162,6 +162,8 @@
             onclick="changeChannel(1)" title="Channel up: next in the list (Page Up)"><i class="fa fa-chevron-up"></i></button>
         <button type="button" class="btn btn-sm btn-outline-info ms-1" id="guideButton"
             onclick="togglePlayerGuide()" title="This channel's guide (G)"><i class="fa fa-list-alt"></i></button>
+        <button type="button" class="btn btn-sm btn-outline-info ms-1 d-none" id="blockFavButton"
+            onclick="toggleBlockFavourite()" title="Favourite in this block"><i class="fa fa-bookmark-o"></i></button>
         <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="favouriteButton"
             onclick="toggleFavourite()" title="Favourite"><i class="fa fa-star-o"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="fullscreenButton"
@@ -430,6 +432,8 @@
         showPlayerGuide(true);
         showDeadState(row.dead);
         showFavouriteState(row.favourite);
+        playerBlock = currentList ? currentList.getAttribute("data-block") : null;
+        showBlockFavouriteState(row);
         renderBlockChoices(row);
         document.getElementById("blockStatus").textContent = "";
         document.getElementById("newBlock").value = "";
@@ -624,6 +628,72 @@
         closePlayer();  // frees its tuner for the tile
         multiview.addChannel(multiview.browserStorage(), ch);
         location.href = "/multiview";
+    }
+
+    // ---- Favourites within a block (apart from the overall favourites): a blue bookmark
+    var playerBlock = null;  // the block the playing channel was started from, if any
+
+    function isBlockFavourite(row, block) {
+        return (row.blockFavourites || []).indexOf(block) != -1;
+    }
+
+    function blockFavouriteMark(row, block) {
+        var on = isBlockFavourite(row, block);
+        return '<button class="btn btn-link text-info p-0 block-fav" title="' + escapeAttr((on ? "Favourite in " : "Make it a favourite in ") + block) + '" ' +
+            'onclick="blockFavouriteClicked(this)" data-key="' + escapeAttr(channelKey(row)) + '" data-block="' + escapeAttr(block) + '">' +
+            '<i class="fa ' + (on ? 'fa-bookmark' : 'fa-bookmark-o') + '"></i></button>';
+    }
+
+    function blockFavouriteClicked(button) {
+        var key = button.getAttribute("data-key");
+        var cut = key.indexOf("/");
+        var ch = { portal: key.slice(0, cut), channelId: key.slice(cut + 1) };
+        var row = rowFor(ch);
+        if (row) {
+            setBlockFavourite(ch, button.getAttribute("data-block"), !isBlockFavourite(row, button.getAttribute("data-block")));
+        }
+    }
+
+    function toggleBlockFavourite() {
+        var row = currentChannel && rowFor(currentChannel);
+        if (row && playerBlock) {
+            setBlockFavourite(currentChannel, playerBlock, !isBlockFavourite(row, playerBlock));
+        }
+    }
+
+    function setBlockFavourite(ch, block, on) {
+        $.post("/block/favourite", { portal: ch.portal, channelId: ch.channelId, block: block, favourite: on ? "true" : "false" })
+            .done(function (res) {
+                var row = rowFor(ch);
+                if (!row) {
+                    return;
+                }
+                row.blockFavourites = res.blockFavourites;
+                var key = channelKey(row);
+                document.querySelectorAll('.block-fav[data-key="' + CSS.escape(key) + '"][data-block="' + CSS.escape(block) + '"]').forEach(function (mark) {
+                    mark.outerHTML = blockFavouriteMark(row, block);
+                });
+                if (currentChannel && channelKey(currentChannel) == key) {
+                    showBlockFavouriteState(row);
+                }
+                if (typeof blockFavouritesChanged == "function") {
+                    blockFavouritesChanged(row, block);
+                }
+            })
+            .fail(function () {
+                alert("Couldn't save that. Try again.");
+            });
+    }
+
+    function showBlockFavouriteState(row) {
+        var button = document.getElementById("blockFavButton");
+        var shown = !!playerBlock && (row.blocks || []).indexOf(playerBlock) != -1;
+        button.classList.toggle("d-none", !shown);
+        if (shown) {
+            var on = isBlockFavourite(row, playerBlock);
+            button.title = (on ? "Favourite in " : "Make it a favourite in ") + playerBlock;
+            button.innerHTML = '<i class="fa ' + (on ? 'fa-bookmark' : 'fa-bookmark-o') + '"></i>';
+        }
     }
 
     // ---- Channels being recorded: a REC badge in channel lists, to watch from the start or live
