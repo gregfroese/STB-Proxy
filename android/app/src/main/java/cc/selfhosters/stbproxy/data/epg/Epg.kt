@@ -12,6 +12,7 @@ data class Programme(
     val title: String,
     val start: Instant,
     val stop: Instant? = null,
+    val description: String? = null,
 ) {
     /** `HH:mm–HH:mm` (or just the start when [stop] is missing) in [zone]. */
     fun timeRange(zone: ZoneId): String {
