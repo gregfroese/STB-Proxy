@@ -2,6 +2,27 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.1.0] - 2026-10-12
+
+### Viewer accounts
+
+- **Accounts**: viewer logins (username and password) for the feed endpoints, each mapped to a set of **Blocks**. A request authenticating as an account gets its public channels plus the channels of its assigned, switched-on blocks. Hidden (STB-Proxy only) blocks stay invisible to accounts. Passwords are stored only as salted PBKDF2-SHA256 hashes.
+- A new **Accounts** page to create, edit, reset the password of, enable or delete accounts, and to assign their blocks. Renaming or emptying a block keeps every account's assignment in step.
+- The operator login and the API token are unchanged; accounts are viewer-only, over HTTP Basic, so Plex, Jellyfin and any M3U/HDHomeRun player are scoped per account for free.
+
+### Account-scoped feeds and API
+
+- `/playlist`, `/xmltv`, `/lineup.json` and `/lineup.post` are scoped to the account presented in the request. Operator and unauthenticated requests behave exactly as before.
+- **`GET /api/lineup`**: one flat, enveloped JSON endpoint for clients — `account`, `blocks`, `channels` (each with portal, name, number, logo, genre, XMLTV id, its blocks and a relative play URL) and `failedPortals`. It uses the same account credentials as the feeds.
+- **Default blocks**: an optional, default-off setting on the Blocks page that scopes requests with no account the same way an account's blocks do. It is not a filter, so individually enabled public channels stay visible.
+
+### Android app — "STB Proxy"
+
+- A single app for **phone and Android TV** (launcher entry only), sideloaded as a self-signed release APK. Log in as an account over HTTP Basic; several accounts can share one proxy address.
+- **Channel picker** grouped by block: a block rail (TV) or chip strip (phone) beside a grid of channel tiles with logo, number, name and block tags, and a search across every block.
+- **Player** with a persistent now/next sidebar (TV) or bottom sheet (phone), channel up/down through the block a channel was launched from, and clear states for all-tuners-busy, an unreachable stream and a redirect.
+- **Multiview**: several channels at once — 2 × 2 on TV, 1 × 2 on phone landscape, a single full-bleed tile in portrait — with per-tile pick, swap, audio and remove, and tuner budgeting.
+
 ## [1.0.0] - 2026-10-09
 
 ### Channel blocks

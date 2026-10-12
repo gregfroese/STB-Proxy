@@ -13,3 +13,5 @@ devices.json
 *.tmp
 # Downloaded channel logo index (lives next to config.json).
 logo-index.json
+# The Android APK offered for download (dropped in at deploy time, not committed).
+static/*.apk
