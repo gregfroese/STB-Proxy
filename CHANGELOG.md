@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.5.0] - 2026-10-12
+
+### Accounts
+
+- **STB-Proxy-only blocks can be assigned to accounts.** A hidden block is still kept out of anonymous and operator requests, the public API, Plex and Jellyfin — but you can now assign it to an **Account**, and that account sees its channels on every feed (`/playlist`, `/xmltv`, `/lineup.json`, `/lineup.post` and `/api/lineup`). Hidden blocks are marked in the Accounts block picker; the anonymous **Default blocks** picker still excludes them.
+
 ## [1.4.1] - 2026-10-12
 
 ### Android app

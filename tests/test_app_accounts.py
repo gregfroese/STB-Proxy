@@ -89,17 +89,17 @@ class HiddenBlockTest(unittest.TestCase):
         self.app = loadApp(self, accountConfig(**{"hidden blocks": ["Kids"]}))
         self.client = self.app.app.test_client()
 
-    def test_hidden_blocks_are_not_offered_and_never_leak(self):
+    def test_hidden_blocks_are_offered_with_a_marker(self):
         self.app.getAccounts().append(
             {"username": "katie", "hash": "h", "blocks": ["Kids", "Sports"], "enabled": True}
         )
         body = self.client.get("/accounts").get_data(as_text=True)
-        self.assertNotIn("Kids", body)
+        self.assertIn("Kids (STB-Proxy only)", body)
         self.assertIn("Sports", body)
 
-    def test_hidden_blocks_cannot_be_assigned(self):
+    def test_hidden_blocks_can_be_assigned(self):
         self.client.post("/accounts/create", data={"username": "katie", "password": "x", "blocks": ["Kids"]})
-        self.assertEqual(self.app.getAccounts()[0]["blocks"], [])
+        self.assertEqual(self.app.getAccounts()[0]["blocks"], ["Kids"])
 
 
 class CascadeTest(unittest.TestCase):

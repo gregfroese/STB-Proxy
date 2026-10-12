@@ -98,11 +98,16 @@ class HiddenBlockScopingTest(ScopingTestCase):
         self.client = self.app.app.test_client()
         self.addAccount("katie", "secret", ["Kids", "Sports"])
 
-    def test_hidden_block_never_leaks_to_an_account(self):
-        self.assertEqual(self.playlist("katie"), {"1", "2"})
+    def test_an_account_assigned_a_hidden_block_sees_it(self):
+        self.assertEqual(self.playlist("katie"), {"1", "2", "3"})
+        _, numbers = self.lineupNumbers("katie")
+        self.assertEqual(numbers, ["101", "102", "103"])
 
     def test_hidden_block_stays_out_of_the_full_lineup(self):
         self.assertEqual(self.playlist(), {"1", "2"})
+
+    def test_hidden_block_stays_out_for_the_operator(self):
+        self.assertEqual(self.playlist("admin", "12345"), {"1", "2"})
 
 
 class DeadChannelScopingTest(ScopingTestCase):

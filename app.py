@@ -320,12 +320,25 @@ def getRecorder():
 
 def plexLineup(portal, blocks=None):
     """The channels of a portal that go to Plex and Jellyfin (not those only in STB-Proxy-only blocks)."""
-    return availability.lineupChannels(portal, getBlocks() if blocks is None else blocks, getHiddenBlocks())
+    return availability.lineupChannels(portal, getBlocks() if blocks is None else blocks, viewerHidden())
 
 
 def getHiddenBlocks():
     """Blocks left out of the API, so integrations such as Home Assistant don't see them."""
     return config.setdefault("hidden blocks", [])
+
+
+def viewerHidden():
+    """Which hidden blocks to leave out of this request's lineup.
+
+    A hidden ("STB-Proxy only") block is kept out of anonymous and operator requests
+    (so Plex, Jellyfin and the API never see it), but an Account assigned to it does
+    see it. Admin and background callers have no Account on flask.g, so they get the
+    full hidden list as before.
+    """
+    if flask.has_request_context() and getattr(g, "account", None) is not None:
+        return []
+    return getHiddenBlocks()
 
 
 def resolveViewer():
@@ -1144,7 +1157,7 @@ def blocksPage():
         "blocks.html",
         blocks=availability.blockSummaries(getPortals(), getBlocks(), getHiddenBlocks()),
         allBlocks=sorted(availability.blockNames(getPortals())),
-        assignableBlocks=assignableBlocks(),
+        assignableBlocks=defaultBlockChoices(),
         defaultBlocks=getDefaultBlocks(),
         favourites=sum(
             len(p.get("favourite channels", [])) for p in getPortals().values() if p["enabled"] == "true"
@@ -1254,7 +1267,7 @@ def blocksSync():
 @app.route("/blocks/defaults", methods=["POST"])
 @authorise
 def blocksDefaults():
-    assignable = set(assignableBlocks())
+    assignable = set(defaultBlockChoices())
     names = [name for name in request.form.getlist("default blocks") if name in assignable]
     saveDefaultBlocks(names)
     logger.info("Default blocks set to {}".format(names))
@@ -1262,27 +1275,39 @@ def blocksDefaults():
     return redirect("/blocks", code=302)
 
 
-def assignableBlocks():
-    """Block names an account can be assigned: every block except STB-Proxy-only ones."""
+def accountBlocks():
+    """Every block name an account can be assigned.
+
+    STB-Proxy-only ("hidden") blocks are included: an account assigned one does see it,
+    while anonymous and operator requests still never see it (see viewerHidden()).
+    """
+    return sorted(availability.blockNames(getPortals()))
+
+
+def defaultBlockChoices():
+    """Blocks offered for the anonymous "default blocks" set.
+
+    Never STB-Proxy-only ("hidden") blocks: that set scopes public requests.
+    """
     hidden = set(getHiddenBlocks())
     return sorted(name for name in availability.blockNames(getPortals()) if name not in hidden)
 
 
 def accountBlocksFromForm():
-    """The blocks ticked on an account form, ignoring unknown and STB-Proxy-only ones."""
-    assignable = set(assignableBlocks())
-    return [name for name in request.form.getlist("blocks") if name in assignable]
+    """The blocks ticked on an account form, ignoring unknown ones."""
+    known = set(accountBlocks())
+    return [name for name in request.form.getlist("blocks") if name in known]
 
 
 @app.route("/accounts", methods=["GET"])
 @authorise
 def accountsPage():
-    # STB-Proxy-only blocks are never offered to an account, so don't even show the ones
-    # a record may still carry: they must not leak.
-    assignable = assignableBlocks()
-    visible = set(assignable)
-    shown = [dict(record, blocks=[n for n in record["blocks"] if n in visible]) for record in getAccounts()]
-    return render_template("accounts.html", accounts=shown, allBlocks=assignable)
+    return render_template(
+        "accounts.html",
+        accounts=getAccounts(),
+        allBlocks=accountBlocks(),
+        hiddenBlocks=sorted(getHiddenBlocks()),
+    )
 
 
 @app.route("/accounts/create", methods=["POST"])
@@ -3283,12 +3308,13 @@ def buildLineup(blocks=None):
 
 
 def visibleBlockNames(blocks):
-    """The blocks that may appear in /api/lineup: globally on and not hidden.
+    """The blocks that may appear in /api/lineup: globally on and not hidden to this viewer.
 
     blocks is the dict viewerBlocks() returns: an account's assigned blocks with their
-    global state, or None for the full lineup (operator / anonymous).
+    global state, or None for the full lineup (operator / anonymous). An Account sees the
+    hidden blocks assigned to it; operator and anonymous requests never see hidden blocks.
     """
-    hidden = set(getHiddenBlocks())
+    hidden = set(viewerHidden())
     states = getBlocks() if blocks is None else blocks
     return {name for name, state in states.items() if state == "true" and name not in hidden}
 

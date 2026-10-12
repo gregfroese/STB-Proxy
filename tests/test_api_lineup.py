@@ -145,11 +145,18 @@ class VisibilityTest(ApiLineupTestCase):
         data = self.data("katie")
         self.assertEqual(set(self.byId(data)), {"1", "2", "3", "4"})
 
-    def test_hidden_block_never_appears(self):
+    def test_hidden_block_not_assigned_never_appears(self):
         data = self.data("katie")
         self.assertNotIn("Hidden", data["blocks"])
         for channel in data["channels"]:
             self.assertNotIn("Hidden", channel["blocks"])
+
+    def test_an_account_assigned_a_hidden_block_sees_it(self):
+        self.addAccount("mike", "secret", ["Hidden"])
+        data = self.data("mike")
+        self.assertIn("Hidden", data["blocks"])
+        self.assertIn("6", self.byId(data))
+        self.assertEqual(self.byId(data)["6"]["blocks"], ["Hidden"])
 
     def test_off_block_never_appears(self):
         data = self.data("katie")
