@@ -13,17 +13,22 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
+/**
+ * Loading / loaded / error state for the channel list. While [loading] is true the
+ * fetch is in flight; once it settles exactly one of [error] (message) or the
+ * loaded [channels] / [blocks] applies.
+ */
 data class PickerUiState(
     val loading: Boolean = false,
-    val blocks: List<String> = listOf("Other"),
+    val blocks: List<String> = emptyList(),
     val channels: List<Channel> = emptyList(),
     val error: String? = null,
 )
 
 /**
- * ViewModel scaffolding: state is exposed as a [StateFlow] to Compose. The real
- * `/api/lineup` fetch arrives with the picker ticket; the manual-DI factory is
- * wired now so the seam exists.
+ * Drives `GET /api/lineup` through the manual-DI [ApiClient] and exposes the
+ * result as a [StateFlow] (spec 2.2/2.3). The full Block-grouped picker UX lands
+ * in a later ticket; this is the walking skeleton that proves the data layer.
  */
 class PickerViewModel(
     private val apiClient: ApiClient,
@@ -32,11 +37,28 @@ class PickerViewModel(
     private val _state = MutableStateFlow(PickerUiState())
     val state: StateFlow<PickerUiState> = _state.asStateFlow()
 
+    init {
+        refresh()
+    }
+
     fun refresh() {
         _state.update { it.copy(loading = true, error = null) }
         viewModelScope.launch {
-            // Placeholder: fetchLineup() is wired in a later ticket.
-            _state.update { it.copy(loading = false) }
+            try {
+                val lineup = apiClient.fetchLineup()
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        blocks = lineup.blocks,
+                        channels = lineup.channels,
+                        error = null,
+                    )
+                }
+            } catch (e: Exception) {
+                _state.update {
+                    it.copy(loading = false, error = e.message ?: "Failed to load channels")
+                }
+            }
         }
     }
 
