@@ -1,6 +1,7 @@
 package cc.selfhosters.stbproxy.ui.player
 
 import android.content.Context
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -21,15 +22,24 @@ import java.io.IOException
  * account Basic rides along); cross-protocol redirects are left disabled by the
  * client (spec 2.6/2.9).
  */
-fun buildStreamPlayer(context: Context, dataSourceFactory: DataSource.Factory): ExoPlayer {
+fun buildStreamPlayer(
+    context: Context,
+    dataSourceFactory: DataSource.Factory,
+    handleAudioFocus: Boolean = true,
+): ExoPlayer {
     val renderersFactory = DefaultRenderersFactory(context)
         .setEnableDecoderFallback(true)
         .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_OFF)
     val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
         .setLoadErrorHandlingPolicy(StreamLoadErrorPolicy())
-    return ExoPlayer.Builder(context, renderersFactory)
+    val player = ExoPlayer.Builder(context, renderersFactory)
         .setMediaSourceFactory(mediaSourceFactory)
         .build()
+    // Multiview runs several players at once: they must not fight over audio
+    // focus (the loser is paused and looks "frozen"). There, audio is managed by
+    // per-tile volume instead.
+    player.setAudioAttributes(AudioAttributes.DEFAULT, handleAudioFocus)
+    return player
 }
 
 /**

@@ -1,9 +1,13 @@
 package cc.selfhosters.stbproxy.ui.multiview
 
 import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.Button
@@ -34,6 +39,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -45,10 +54,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.ui.compose.PlayerSurface
 import cc.selfhosters.stbproxy.R
 import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.di.LocalAppContainer
+import cc.selfhosters.stbproxy.ui.common.ImmersiveEffect
+import cc.selfhosters.stbproxy.ui.common.KeepScreenOnEffect
+import cc.selfhosters.stbproxy.ui.common.VideoSurface
+import cc.selfhosters.stbproxy.ui.common.rememberAutoHideControls
 import cc.selfhosters.stbproxy.ui.picker.ChannelPickerOverlay
 import cc.selfhosters.stbproxy.ui.player.PlaybackError
 import cc.selfhosters.stbproxy.ui.player.buildStreamPlayer
@@ -57,10 +69,11 @@ import cc.selfhosters.stbproxy.ui.player.mediaItemFor
 import androidx.compose.ui.res.stringResource
 
 /**
- * The Multiview grid (spec 2.7). One Compose surface with three densities: TV a
- * 2x2, phone landscape a 1x2, phone portrait the focused Tile full-bleed. Each
- * Tile is its own ExoPlayer fed `/play/<portal>/<channelId>`, bounded by the
- * proxy's tuner budget.
+ * The Multiview grid (spec 2.7). TV a 2x2; phone landscape a 1x2; phone portrait
+ * the two Tiles stacked. Each Tile is its own ExoPlayer fed
+ * `/play/<portal>/<channelId>`, bounded by the proxy's tuner budget. Controls
+ * fade after a few seconds and return on a tap or remote key; the phone has a
+ * full-screen toggle.
  */
 @Composable
 fun MultiviewScreen(
@@ -78,33 +91,59 @@ fun MultiviewScreen(
         Configuration.UI_MODE_TYPE_TELEVISION
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    Column(
+    var immersive by remember { mutableStateOf(isTv || landscape) }
+    LaunchedEffect(isTv, landscape) {
+        if (!isTv) immersive = landscape
+    }
+    ImmersiveEffect(enabled = immersive)
+    KeepScreenOnEffect()
+
+    val controls = rememberAutoHideControls()
+    val interactions = Modifier
+        .onPreviewKeyEvent { event ->
+            if (event.type == KeyEventType.KeyDown) controls.show()
+            false
+        }
+        .pointerInput(Unit) { detectTapGestures { controls.show() } }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(MaterialTheme.colorScheme.background)
+            .then(if (immersive) Modifier else Modifier.safeDrawingPadding())
+            .then(interactions),
     ) {
-        MultiviewTopBar(state = state, onBack = onBack, onRetry = viewModel::load)
-
-        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
-            when {
-                state.loading -> Centered {
-                    CircularProgressIndicator()
-                }
-                state.lineupError != null -> Centered {
-                    Label(state.lineupError.orEmpty(), MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = viewModel::load) { Text("Retry") }
-                }
-                else -> MultiviewGrid(
+        Column(modifier = Modifier.fillMaxSize()) {
+            AnimatedVisibility(visible = controls.visible, enter = fadeIn(), exit = fadeOut()) {
+                MultiviewTopBar(
                     state = state,
-                    viewModel = viewModel,
-                    isTv = isTv,
-                    landscape = landscape,
+                    showFullscreen = !isTv,
+                    immersive = immersive,
+                    onToggleFullscreen = { immersive = !immersive },
+                    onBack = onBack,
+                    onRetry = viewModel::load,
                 )
             }
-        }
 
-        if (!isTv && !landscape) {
-            SlotStrip(state = state, onFocus = viewModel::setFocus)
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                when {
+                    state.loading -> Centered {
+                        CircularProgressIndicator()
+                    }
+                    state.lineupError != null -> Centered {
+                        Label(state.lineupError.orEmpty(), MaterialTheme.colorScheme.onSurfaceVariant)
+                        Button(onClick = viewModel::load) { Text("Retry") }
+                    }
+                    else -> MultiviewGrid(
+                        state = state,
+                        viewModel = viewModel,
+                        isTv = isTv,
+                        landscape = landscape,
+                        controlsVisible = controls.visible,
+                        onInteract = controls::show,
+                    )
+                }
+            }
         }
     }
 
@@ -125,6 +164,8 @@ private fun MultiviewGrid(
     viewModel: MultiviewViewModel,
     isTv: Boolean,
     landscape: Boolean,
+    controlsVisible: Boolean,
+    onInteract: () -> Unit,
 ) {
     val gap = 8.dp
     when {
@@ -142,6 +183,8 @@ private fun MultiviewGrid(
                             tile = tile,
                             state = state,
                             viewModel = viewModel,
+                            controlsVisible = controlsVisible,
+                            onInteract = onInteract,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                         )
                     }
@@ -158,20 +201,25 @@ private fun MultiviewGrid(
                     tile = tile,
                     state = state,
                     viewModel = viewModel,
+                    controlsVisible = controlsVisible,
+                    onInteract = onInteract,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
             }
         }
 
-        else -> {
-            val focused = state.tiles.firstOrNull { it.slot == state.focusSlot }
-                ?: state.tiles.firstOrNull()
-            if (focused != null) {
+        else -> Column(
+            modifier = Modifier.fillMaxSize().padding(gap),
+            verticalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            state.tiles.take(2).forEach { tile ->
                 TileCell(
-                    tile = focused,
+                    tile = tile,
                     state = state,
                     viewModel = viewModel,
-                    modifier = Modifier.fillMaxSize().padding(gap),
+                    controlsVisible = controlsVisible,
+                    onInteract = onInteract,
+                    modifier = Modifier.fillMaxWidth().weight(1f),
                 )
             }
         }
@@ -183,6 +231,8 @@ private fun TileCell(
     tile: MultiviewTile,
     state: MultiviewUiState,
     viewModel: MultiviewViewModel,
+    controlsVisible: Boolean,
+    onInteract: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     key(tile.slot) {
@@ -207,7 +257,10 @@ private fun TileCell(
                     shape = shape,
                 )
                 .onFocusChanged { focused = it.isFocused }
-                .clickable { viewModel.onTileClick(tile.slot) },
+                .clickable {
+                    onInteract()
+                    viewModel.onTileClick(tile.slot)
+                },
         ) {
             when (status) {
                 TileStatus.Empty -> EmptyTile(onAdd = { viewModel.openPicker(tile.slot) })
@@ -236,6 +289,14 @@ private fun TileCell(
             tile.channel?.let { channel ->
                 ChannelTag(channel = channel)
                 if (isAudio) AudioBadge(Modifier.align(Alignment.BottomStart))
+            }
+
+            AnimatedVisibility(
+                visible = controlsVisible && tile.channel != null,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.BottomEnd),
+            ) {
                 TileChrome(
                     armed = armed,
                     isAudio = isAudio,
@@ -243,7 +304,6 @@ private fun TileCell(
                     onSwap = { viewModel.swap(tile.slot) },
                     onAudio = { viewModel.setAudio(tile.slot) },
                     onRemove = { viewModel.remove(tile.slot) },
-                    modifier = Modifier.align(Alignment.BottomEnd),
                 )
             }
 
@@ -276,7 +336,11 @@ private fun TileVideo(
 ) {
     val context = LocalContext.current
     val dataSourceFactory = LocalAppContainer.current.playerDataSourceFactory
-    val player = remember { buildStreamPlayer(context, dataSourceFactory) }
+    // Several players run at once here, so none of them takes audio focus (they
+    // would pause each other); audio is per-tile volume instead.
+    val player = remember {
+        buildStreamPlayer(context, dataSourceFactory, handleAudioFocus = false)
+    }
 
     DisposableEffect(player) {
         onDispose { player.release() }
@@ -302,7 +366,7 @@ private fun TileVideo(
         player.volume = if (muted) 0f else 1f
     }
 
-    PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
+    VideoSurface(player = player, modifier = Modifier.fillMaxSize(), useTextureView = true)
 }
 
 @Composable
@@ -418,10 +482,9 @@ private fun TileChrome(
     onSwap: () -> Unit,
     onAudio: () -> Unit,
     onRemove: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier.padding(8.dp),
+        modifier = Modifier.padding(8.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         ChromeButton("Pick", onClick = onPick)
@@ -464,6 +527,9 @@ private fun ChromeButton(
 @Composable
 private fun MultiviewTopBar(
     state: MultiviewUiState,
+    showFullscreen: Boolean,
+    immersive: Boolean,
+    onToggleFullscreen: () -> Unit,
     onBack: () -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -485,46 +551,9 @@ private fun MultiviewTopBar(
             11.sp,
         )
         TextButton(onClick = onRetry) { Text("Refresh") }
-    }
-}
-
-/** Portrait only: pick which Tile is full-bleed on a phone (spec 2.7). */
-@Composable
-private fun SlotStrip(state: MultiviewUiState, onFocus: (Int) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        state.tiles.forEach { tile ->
-            val selected = tile.slot == state.focusSlot
-            val isAudio = state.audioSlot == tile.slot
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(
-                        if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent,
-                    )
-                    .border(
-                        width = if (isAudio) 2.dp else 1.dp,
-                        color = if (isAudio) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.surfaceVariant,
-                        shape = RoundedCornerShape(9.dp),
-                    )
-                    .clickable { onFocus(tile.slot) }
-                    .padding(vertical = 8.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Label(
-                    tile.channel?.let { "Tile ${tile.slot + 1} · CH ${it.number ?: "—"}" }
-                        ?: "Tile ${tile.slot + 1} · empty",
-                    MaterialTheme.colorScheme.onSurface,
-                    11.sp,
-                    maxLines = 1,
-                )
+        if (showFullscreen) {
+            TextButton(onClick = onToggleFullscreen) {
+                Text(if (immersive) "Exit full screen" else "Full screen")
             }
         }
     }

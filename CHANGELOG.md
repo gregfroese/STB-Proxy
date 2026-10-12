@@ -2,6 +2,17 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.3.0] - 2026-10-12
+
+### Android app
+
+- **Controls that get out of the way**: the on-screen controls fade after a few seconds and return on a tap or a remote key, in the single player and in Multiview.
+- **Video keeps its shape**: streams are letterboxed to their real aspect ratio instead of being stretched — in the player and in every Multiview Tile. Multiview in portrait now stacks two Tiles rather than stretching one to fill the screen.
+- **Full-screen Multiview** on phones, with the same full-screen toggle as the player.
+- **A dismissible guide**: the full-screen now/next panel has a ✕ Close button and can be swiped off to the right.
+- **The screen stays awake** while a video is playing.
+- **Multiview playback fixes**: Tiles no longer take audio focus from each other (which could freeze the silent Tile), and each Tile uses a texture surface for reliability.
+
 ## [1.2.0] - 2026-10-12
 
 ### Android app

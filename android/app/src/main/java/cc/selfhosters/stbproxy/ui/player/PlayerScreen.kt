@@ -1,10 +1,15 @@
 package cc.selfhosters.stbproxy.ui.player
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +18,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -40,28 +47,30 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.view.WindowCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
-import androidx.media3.ui.compose.PlayerSurface
 import cc.selfhosters.stbproxy.di.LocalAppContainer
+import cc.selfhosters.stbproxy.ui.common.ImmersiveEffect
+import cc.selfhosters.stbproxy.ui.common.KeepScreenOnEffect
+import cc.selfhosters.stbproxy.ui.common.VideoSurface
+import cc.selfhosters.stbproxy.ui.common.rememberAutoHideControls
+import kotlin.math.roundToInt
 
 /**
  * The split player screen (spec 2.6): video plus a persistent now/next sidebar.
  * TV = video pane + right-hand sidebar; phone = video with the sidebar as a
- * bottom sheet, or full-screen in landscape. Channel up/down walks the launch
- * Block; error states replace the video but leave the sidebar live.
+ * bottom sheet, or full-screen in landscape. On-screen controls fade after a
+ * few seconds and return on a tap or a remote key.
  */
 @Composable
 fun PlayerScreen(
@@ -115,7 +124,6 @@ fun PlayerScreen(
         onDispose { player.removeListener(listener) }
     }
 
-    // Re-prepare from scratch whenever the URL changes or a retry is requested.
     LaunchedEffect(state.streamUrl, state.prepareNonce) {
         val url = state.streamUrl ?: return@LaunchedEffect
         player.setMediaItem(mediaItemFor(url))
@@ -125,7 +133,7 @@ fun PlayerScreen(
 
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onForeground() }
 
-    // Full-screen playback: automatic on a phone in landscape, toggleable anywhere.
+    KeepScreenOnEffect()
     var immersive by remember { mutableStateOf(shouldAutoFullscreen(isTv, isLandscape)) }
     var guideVisible by remember { mutableStateOf(false) }
     LaunchedEffect(isTv, isLandscape) {
@@ -133,29 +141,35 @@ fun PlayerScreen(
     }
     ImmersiveEffect(enabled = immersive)
 
-    val keyHandler = Modifier.onPreviewKeyEvent { event ->
-        if (event.type != KeyEventType.KeyDown) {
-            false
-        } else {
-            when (event.key) {
-                Key.DirectionUp, Key.ChannelUp -> {
-                    viewModel.zap(1); true
+    val controls = rememberAutoHideControls()
+
+    val interactions = Modifier
+        .onPreviewKeyEvent { event ->
+            if (event.type != KeyEventType.KeyDown) {
+                false
+            } else {
+                controls.show()
+                when (event.key) {
+                    Key.DirectionUp, Key.ChannelUp -> {
+                        viewModel.zap(1); true
+                    }
+                    Key.DirectionDown, Key.ChannelDown -> {
+                        viewModel.zap(-1); true
+                    }
+                    else -> false
                 }
-                Key.DirectionDown, Key.ChannelDown -> {
-                    viewModel.zap(-1); true
-                }
-                else -> false
             }
         }
-    }
+        .pointerInput(Unit) { detectTapGestures { controls.show() } }
 
     if (isTv) {
-        Row(modifier = Modifier.fillMaxSize().background(Color.Black).then(keyHandler)) {
+        Row(modifier = Modifier.fillMaxSize().background(Color.Black).then(interactions)) {
             VideoPane(
                 state = state,
                 player = player,
                 playing = playing,
                 buffering = buffering,
+                controlsVisible = controls.visible,
                 onOpenSettings = onOpenSettings,
                 onRetry = viewModel::retry,
                 onWaitForTuner = viewModel::waitForTuner,
@@ -175,12 +189,13 @@ fun PlayerScreen(
             )
         }
     } else if (immersive) {
-        Box(modifier = Modifier.fillMaxSize().background(Color.Black).then(keyHandler)) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black).then(interactions)) {
             VideoPane(
                 state = state,
                 player = player,
                 playing = playing,
                 buffering = buffering,
+                controlsVisible = controls.visible,
                 onOpenSettings = onOpenSettings,
                 onRetry = viewModel::retry,
                 onWaitForTuner = viewModel::waitForTuner,
@@ -193,14 +208,15 @@ fun PlayerScreen(
                 modifier = Modifier.fillMaxSize(),
             )
             if (guideVisible) {
-                PlayerSidebar(
+                GuideOverlay(
                     state = state,
-                    isTv = false,
                     onSelectChannel = viewModel::selectChannel,
+                    onClose = { guideVisible = false },
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .fillMaxHeight()
-                        .width(320.dp),
+                        .width(320.dp)
+                        .padding(top = 56.dp),
                 )
             }
         }
@@ -210,6 +226,7 @@ fun PlayerScreen(
             player = player,
             playing = playing,
             buffering = buffering,
+            controlsVisible = controls.visible,
             onOpenSettings = onOpenSettings,
             onRetry = viewModel::retry,
             onWaitForTuner = viewModel::waitForTuner,
@@ -217,47 +234,52 @@ fun PlayerScreen(
             onSelectChannel = viewModel::selectChannel,
             onOpenMultiview = onOpenMultiview,
             onToggleFullscreen = { immersive = true },
-            modifier = keyHandler,
+            modifier = interactions,
         )
     }
 }
 
 /**
- * Hides the system bars while full-screen, and restores them (and normal window
- * fitting) on exit or when the screen leaves composition.
+ * The full-screen now/next panel. Dismissed with its ✕ button, or by dragging
+ * it off to the right.
  */
 @Composable
-private fun ImmersiveEffect(enabled: Boolean) {
-    val view = LocalView.current
-    DisposableEffect(enabled, view) {
-        val window = view.context.findActivity()?.window
-        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        if (window != null) {
-            WindowCompat.setDecorFitsSystemWindows(window, !enabled)
-        }
-        if (enabled) {
-            controller?.systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            controller?.hide(WindowInsetsCompat.Type.systemBars())
-        } else {
-            controller?.show(WindowInsetsCompat.Type.systemBars())
-        }
-        onDispose {
-            if (window != null) {
-                WindowCompat.setDecorFitsSystemWindows(window, true)
-            }
-            controller?.show(WindowInsetsCompat.Type.systemBars())
+private fun GuideOverlay(
+    state: PlayerUiState,
+    onSelectChannel: (Int) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var offsetX by remember { mutableFloatStateOf(0f) }
+    Box(
+        modifier = modifier
+            .offset { IntOffset(offsetX.roundToInt(), 0) }
+            .draggable(
+                orientation = Orientation.Horizontal,
+                state = rememberDraggableState { delta ->
+                    offsetX = (offsetX + delta).coerceAtLeast(0f)
+                },
+                onDragStopped = { if (offsetX > 120f) onClose() else offsetX = 0f },
+            ),
+    ) {
+        PlayerSidebar(
+            state = state,
+            isTv = false,
+            onSelectChannel = onSelectChannel,
+            modifier = Modifier.fillMaxSize(),
+        )
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xCC000000))
+                .clickable(onClick = onClose)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        ) {
+            Text(text = "✕ Close", color = Color.White, fontSize = 12.sp)
         }
     }
-}
-
-private fun Context.findActivity(): Activity? {
-    var context: Context = this
-    while (context is ContextWrapper) {
-        if (context is Activity) return context
-        context = context.baseContext
-    }
-    return null
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -267,6 +289,7 @@ private fun PhonePlayerLayout(
     player: Player,
     playing: Boolean,
     buffering: Boolean,
+    controlsVisible: Boolean,
     onOpenSettings: () -> Unit,
     onRetry: () -> Unit,
     onWaitForTuner: () -> Unit,
@@ -297,6 +320,7 @@ private fun PhonePlayerLayout(
             player = player,
             playing = playing,
             buffering = buffering,
+            controlsVisible = controlsVisible,
             onOpenSettings = onOpenSettings,
             onRetry = onRetry,
             onWaitForTuner = onWaitForTuner,
@@ -320,6 +344,7 @@ private fun VideoPane(
     player: Player,
     playing: Boolean,
     buffering: Boolean,
+    controlsVisible: Boolean,
     onOpenSettings: () -> Unit,
     onRetry: () -> Unit,
     onWaitForTuner: () -> Unit,
@@ -333,7 +358,7 @@ private fun VideoPane(
 ) {
     Box(modifier = modifier.background(Color.Black)) {
         if (state.streamUrl != null) {
-            PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
+            VideoSurface(player = player, modifier = Modifier.fillMaxSize())
         }
 
         if (state.loading || state.lineupError != null) {
@@ -367,21 +392,31 @@ private fun VideoPane(
                 )
             }
         } else {
-            LiveBadge(playing = playing, buffering = buffering, block = state.launchBlock)
+            AnimatedVisibility(
+                visible = controlsVisible,
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier.align(Alignment.TopStart),
+            ) {
+                LiveBadge(playing = playing, buffering = buffering, block = state.launchBlock)
+            }
         }
 
-        // Kept on top of every state, so the sidebar/player actions stay reachable
-        // even when the video shows an error.
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(10.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        AnimatedVisibility(
+            visible = controlsVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopEnd),
         ) {
-            OverlayButton("Multiview", onOpenMultiview)
-            onToggleGuide?.let { OverlayButton(if (guideVisible) "Hide guide" else "Guide", it) }
-            onToggleFullscreen?.let {
-                OverlayButton(if (immersive) "Exit full screen" else "Full screen", it)
+            Row(
+                modifier = Modifier.padding(10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OverlayButton("Multiview", onOpenMultiview)
+                onToggleGuide?.let { OverlayButton(if (guideVisible) "Hide guide" else "Guide", it) }
+                onToggleFullscreen?.let {
+                    OverlayButton(if (immersive) "Exit full screen" else "Full screen", it)
+                }
             }
         }
     }
