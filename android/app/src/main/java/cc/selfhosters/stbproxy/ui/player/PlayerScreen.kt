@@ -1,11 +1,13 @@
 package cc.selfhosters.stbproxy.ui.player
 
 import android.content.res.Configuration
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.draggable
@@ -41,6 +43,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -143,27 +147,54 @@ fun PlayerScreen(
 
     val controls = rememberAutoHideControls()
 
+    // Back closes the guide first; a second Back leaves the player.
+    BackHandler(enabled = guideVisible) { guideVisible = false }
+
+    // Compose for TV needs something focused for the D-pad. Focus the first action
+    // button while the controls are up, and the screen itself once they fade, so any
+    // key still reaches the app and brings the controls back.
+    val screenFocus = remember { FocusRequester() }
+    val actionFocus = remember { FocusRequester() }
+    LaunchedEffect(isTv, controls.visible, guideVisible) {
+        if (!isTv || guideVisible) return@LaunchedEffect
+        runCatching {
+            if (controls.visible) actionFocus.requestFocus() else screenFocus.requestFocus()
+        }
+    }
+
     val interactions = Modifier
         .onPreviewKeyEvent { event ->
             if (event.type != KeyEventType.KeyDown) {
                 false
             } else {
                 controls.show()
-                when (event.key) {
-                    Key.DirectionUp, Key.ChannelUp -> {
-                        viewModel.zap(1); true
+                // While the guide is open the D-pad navigates its list instead of zapping.
+                if (guideVisible) {
+                    false
+                } else {
+                    when (event.key) {
+                        Key.DirectionUp, Key.ChannelUp -> {
+                            viewModel.zap(1); true
+                        }
+                        Key.DirectionDown, Key.ChannelDown -> {
+                            viewModel.zap(-1); true
+                        }
+                        else -> false
                     }
-                    Key.DirectionDown, Key.ChannelDown -> {
-                        viewModel.zap(-1); true
-                    }
-                    else -> false
                 }
             }
         }
         .pointerInput(Unit) { detectTapGestures { controls.show() } }
 
     if (isTv) {
-        Row(modifier = Modifier.fillMaxSize().background(Color.Black).then(interactions)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .then(interactions)
+                .focusRequester(screenFocus)
+                .focusable(),
+        ) {
             VideoPane(
                 state = state,
                 player = player,
@@ -177,16 +208,23 @@ fun PlayerScreen(
                 onOpenMultiview = onOpenMultiview,
                 onToggleFullscreen = null,
                 immersive = false,
-                onToggleGuide = null,
-                guideVisible = false,
-                modifier = Modifier.weight(1f).fillMaxSize(),
+                onToggleGuide = { guideVisible = !guideVisible },
+                guideVisible = guideVisible,
+                multiviewFocusRequester = actionFocus,
+                modifier = Modifier.fillMaxSize(),
             )
-            PlayerSidebar(
-                state = state,
-                isTv = true,
-                onSelectChannel = viewModel::selectChannel,
-                modifier = Modifier.width(SidebarWidth).fillMaxSize(),
-            )
+            if (guideVisible) {
+                GuideOverlay(
+                    state = state,
+                    onSelectChannel = viewModel::selectChannel,
+                    onClose = { guideVisible = false },
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(SidebarWidth)
+                        .padding(top = 56.dp),
+                )
+            }
         }
     } else if (immersive) {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black).then(interactions)) {
@@ -251,6 +289,9 @@ private fun GuideOverlay(
     modifier: Modifier = Modifier,
 ) {
     var offsetX by remember { mutableFloatStateOf(0f) }
+    // A remote lands on the ✕ first, then the D-pad walks the channel list.
+    val closeFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { closeFocus.requestFocus() } }
     Box(
         modifier = modifier
             .offset { IntOffset(offsetX.roundToInt(), 0) }
@@ -274,6 +315,7 @@ private fun GuideOverlay(
                 .padding(8.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xCC000000))
+                .focusRequester(closeFocus)
                 .clickable(onClick = onClose)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
@@ -354,6 +396,7 @@ private fun VideoPane(
     immersive: Boolean,
     onToggleGuide: (() -> Unit)?,
     guideVisible: Boolean,
+    multiviewFocusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.background(Color.Black)) {
@@ -412,7 +455,7 @@ private fun VideoPane(
                 modifier = Modifier.padding(10.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OverlayButton("Multiview", onOpenMultiview)
+                OverlayButton("Multiview", onOpenMultiview, focusRequester = multiviewFocusRequester)
                 onToggleGuide?.let { OverlayButton(if (guideVisible) "Hide guide" else "Guide", it) }
                 onToggleFullscreen?.let {
                     OverlayButton(if (immersive) "Exit full" else "Full screen", it)
@@ -423,10 +466,17 @@ private fun VideoPane(
 }
 
 @Composable
-private fun OverlayButton(text: String, onClick: () -> Unit) {
+private fun OverlayButton(
+    text: String,
+    onClick: () -> Unit,
+    focusRequester: FocusRequester? = null,
+) {
     OutlinedButton(
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+        modifier = Modifier.then(
+            if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier,
+        ),
     ) {
         Text(text = text, fontSize = 12.sp, maxLines = 1, softWrap = false)
     }

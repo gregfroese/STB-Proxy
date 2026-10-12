@@ -7,6 +7,21 @@ import cc.selfhosters.stbproxy.ui.player.PlaybackError
 const val MULTIVIEW_SLOTS = 4
 
 /**
+ * The grid arrangement the viewer can pick for Multiview on TV (spec 2.7 follow-up).
+ * [columns] x [rows] Tiles are shown, in slot order, out of the [MULTIVIEW_SLOTS] slots.
+ */
+enum class MultiviewLayout(val columns: Int, val rows: Int, val label: String) {
+    ONE_BY_ONE(1, 1, "1×1"),
+    TWO_BY_ONE(2, 1, "2×1"),
+    ONE_BY_TWO(1, 2, "1×2"),
+    TWO_BY_TWO(2, 2, "2×2"),
+}
+
+/** The Tiles a [layout] shows, in slot order. */
+fun visibleTiles(tiles: List<MultiviewTile>, layout: MultiviewLayout): List<MultiviewTile> =
+    tiles.take(layout.columns * layout.rows)
+
+/**
  * Tuner budget used when `GET /discover.json` can't be read (spec 2.7). The
  * proxy's own `tunerCount()` floors at 1, but a budget of 1 would render a 2x2
  * grid almost entirely busy on first launch, so the app assumes the common

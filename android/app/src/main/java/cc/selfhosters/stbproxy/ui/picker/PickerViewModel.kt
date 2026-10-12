@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import cc.selfhosters.stbproxy.data.SessionController
+import cc.selfhosters.stbproxy.data.SessionState
 import cc.selfhosters.stbproxy.data.epg.EpgRepository
 import cc.selfhosters.stbproxy.data.epg.NowNext
 import cc.selfhosters.stbproxy.data.model.Channel
@@ -15,6 +16,9 @@ import cc.selfhosters.stbproxy.data.network.OPERATOR_LABEL
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -51,6 +55,14 @@ class PickerViewModel(
 
     init {
         refresh()
+        // Switching accounts changes the lineup: reload whenever the active account changes.
+        viewModelScope.launch {
+            session.state
+                .map { (it as? SessionState.LoggedIn)?.accountLabel }
+                .distinctUntilChanged()
+                .drop(1)
+                .collect { refresh() }
+        }
     }
 
     fun refresh() {

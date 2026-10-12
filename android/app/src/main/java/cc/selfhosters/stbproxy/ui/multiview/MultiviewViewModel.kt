@@ -36,18 +36,22 @@ data class MultiviewUiState(
     val focusSlot: Int = 0,
     val errors: Map<Int, PlaybackError> = emptyMap(),
     val prepareNonces: Map<Int, Int> = emptyMap(),
+    val layout: MultiviewLayout = MultiviewLayout.TWO_BY_TWO,
 ) {
+    /** The Tiles the current layout actually shows. */
+    val shownTiles: List<MultiviewTile> get() = visibleTiles(tiles, layout)
+
     /** The slots that may open a stream with the current budget (spec 2.7). */
-    val playableSlots: Set<Int> get() = playableSlots(tiles, tunerCount)
+    val playableSlots: Set<Int> get() = playableSlots(shownTiles, tunerCount)
 
     /** Slots with a channel but no tuner for it. */
-    val overBudget: Set<Int> get() = overBudgetSlots(tiles, tunerCount)
+    val overBudget: Set<Int> get() = overBudgetSlots(shownTiles, tunerCount)
 
     /** The one Tile that is unmuted (spec 2.7), or null when the grid is empty. */
-    val audioSlot: Int? get() = effectiveAudioSlot(tiles, audioRequested, playableSlots)
+    val audioSlot: Int? get() = effectiveAudioSlot(shownTiles, audioRequested, playableSlots)
 
     /** Distinct channels currently requested — the tuner-demand figure. */
-    val tunersUsed: Int get() = distinctChannelCount(tiles)
+    val tunersUsed: Int get() = distinctChannelCount(shownTiles)
 }
 
 /**
@@ -102,6 +106,22 @@ class MultiviewViewModel(
 
     fun setFocus(slot: Int) {
         _state.update { it.copy(focusSlot = slot) }
+    }
+
+    /** Choose the TV grid arrangement (2x1, 1x2, 2x2, 1x1). */
+    fun setLayout(layout: MultiviewLayout) {
+        _state.update {
+            it.copy(layout = layout, focusSlot = it.focusSlot.coerceIn(0, layout.columns * layout.rows - 1))
+        }
+    }
+
+    /** Step to the next grid arrangement — one remote-friendly button cycles them. */
+    fun cycleLayout() {
+        _state.update {
+            val all = MultiviewLayout.entries
+            val next = all[(all.indexOf(it.layout) + 1) % all.size]
+            it.copy(layout = next, focusSlot = it.focusSlot.coerceIn(0, next.columns * next.rows - 1))
+        }
     }
 
     /** Opens the picker overlay to choose [slot]'s channel (spec 2.7 Pick). */

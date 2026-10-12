@@ -200,4 +200,13 @@ class MultiviewLogicTest {
     fun `a playable tile with no error is live`() {
         assertEquals(TileStatus.Live, tileStatus(MultiviewTile(0, a), emptySet(), null))
     }
+
+    @Test
+    fun `each layout shows the right number of tiles`() {
+        val tiles = emptyTiles()
+        assertEquals(1, visibleTiles(tiles, MultiviewLayout.ONE_BY_ONE).size)
+        assertEquals(2, visibleTiles(tiles, MultiviewLayout.TWO_BY_ONE).size)
+        assertEquals(2, visibleTiles(tiles, MultiviewLayout.ONE_BY_TWO).size)
+        assertEquals(4, visibleTiles(tiles, MultiviewLayout.TWO_BY_TWO).size)
+    }
 }

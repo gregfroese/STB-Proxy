@@ -41,13 +41,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -136,6 +144,7 @@ fun PickerScreen(
             query = state.query,
             onQueryChange = viewModel::onQueryChange,
             palette = palette,
+            isTv = isTv,
         )
         if (state.credentialsUnverified) {
             BasicLabel(
@@ -396,6 +405,7 @@ private fun SearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     palette: PickerPalette,
+    isTv: Boolean = false,
 ) {
     val shape = RoundedCornerShape(11.dp)
     Box(
@@ -416,7 +426,11 @@ private fun SearchField(
             singleLine = true,
             textStyle = TextStyle(color = palette.onSurface, fontSize = 14.sp),
             cursorBrush = SolidColor(palette.accent),
-            modifier = Modifier.fillMaxWidth(),
+            // A text field traps the D-pad (it eats Up/Down). On TV it isn't focusable,
+            // so the remote walks straight between the top bar and the channel list.
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (isTv) Modifier.focusProperties { canFocus = false } else Modifier),
         )
     }
 }
@@ -556,7 +570,7 @@ fun ChannelPickerOverlay(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             )
-            SearchField(query = query, onQueryChange = { query = it }, palette = palette)
+            SearchField(query = query, onQueryChange = { query = it }, palette = palette, isTv = isTv)
             Box(modifier = Modifier.fillMaxWidth().height(420.dp)) {
                 if (isTv) {
                     Row(modifier = Modifier.fillMaxSize()) {

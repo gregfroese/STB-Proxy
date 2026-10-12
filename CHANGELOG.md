@@ -2,6 +2,15 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.5.1] - 2026-10-12
+
+### Android app
+
+- **TV single view is full-screen**: the guide starts hidden (the video fills the screen); a **Guide** button overlays it, the remote's **Back** closes it, and a second **Back** leaves the player.
+- **TV Multiview gets a layout chooser**: a **Grid** button cycles **1×1 / 2×1 / 1×2 / 2×2**. The first Tile is focused so the remote can navigate the grid, and selecting an empty Tile opens the channel picker.
+- **Fix**: Settings and the Accounts list were dark text on the dark background; the theme now sets a proper content colour, so everything is readable.
+- **Switching accounts reloads the channel lineup** — the picker no longer keeps the previous account's channels.
+
 ## [1.5.0] - 2026-10-12
 
 ### Accounts

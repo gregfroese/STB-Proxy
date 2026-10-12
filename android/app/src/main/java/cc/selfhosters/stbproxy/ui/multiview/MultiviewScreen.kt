@@ -37,6 +37,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
@@ -106,6 +108,18 @@ fun MultiviewScreen(
         }
         .pointerInput(Unit) { detectTapGestures { controls.show() } }
 
+    // Compose for TV needs a focused element for the D-pad. Focus the selected Tile on
+    // entry and when it changes, and return focus to it whenever the controls fade. It
+    // is deliberately NOT re-focused when the controls appear, so the remote can move up
+    // into the top bar (the layout chooser).
+    val tileFocus = remember { FocusRequester() }
+    LaunchedEffect(isTv, state.focusSlot) {
+        if (isTv) runCatching { tileFocus.requestFocus() }
+    }
+    LaunchedEffect(isTv, controls.visible) {
+        if (isTv && !controls.visible) runCatching { tileFocus.requestFocus() }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -118,8 +132,10 @@ fun MultiviewScreen(
                 MultiviewTopBar(
                     state = state,
                     showFullscreen = !isTv,
+                    showLayout = isTv,
                     immersive = immersive,
                     onToggleFullscreen = { immersive = !immersive },
+                    onCycleLayout = viewModel::cycleLayout,
                     onBack = onBack,
                     onRetry = viewModel::load,
                 )
@@ -141,6 +157,7 @@ fun MultiviewScreen(
                         landscape = landscape,
                         controlsVisible = controls.visible,
                         onInteract = controls::show,
+                        tileFocus = tileFocus,
                     )
                 }
             }
@@ -166,6 +183,7 @@ private fun MultiviewGrid(
     landscape: Boolean,
     controlsVisible: Boolean,
     onInteract: () -> Unit,
+    tileFocus: FocusRequester?,
 ) {
     val gap = 8.dp
     when {
@@ -173,7 +191,7 @@ private fun MultiviewGrid(
             modifier = Modifier.fillMaxSize().padding(gap),
             verticalArrangement = Arrangement.spacedBy(gap),
         ) {
-            state.tiles.chunked(2).forEach { rowTiles ->
+            state.shownTiles.chunked(state.layout.columns).forEach { rowTiles ->
                 Row(
                     modifier = Modifier.fillMaxWidth().weight(1f),
                     horizontalArrangement = Arrangement.spacedBy(gap),
@@ -185,6 +203,7 @@ private fun MultiviewGrid(
                             viewModel = viewModel,
                             controlsVisible = controlsVisible,
                             onInteract = onInteract,
+                            focusRequester = if (isTv && tile.slot == state.focusSlot) tileFocus else null,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                         )
                     }
@@ -203,6 +222,7 @@ private fun MultiviewGrid(
                     viewModel = viewModel,
                     controlsVisible = controlsVisible,
                     onInteract = onInteract,
+                    focusRequester = if (isTv && tile.slot == state.focusSlot) tileFocus else null,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
             }
@@ -219,6 +239,7 @@ private fun MultiviewGrid(
                     viewModel = viewModel,
                     controlsVisible = controlsVisible,
                     onInteract = onInteract,
+                    focusRequester = if (isTv && tile.slot == state.focusSlot) tileFocus else null,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
             }
@@ -233,6 +254,7 @@ private fun TileCell(
     viewModel: MultiviewViewModel,
     controlsVisible: Boolean,
     onInteract: () -> Unit,
+    focusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier,
 ) {
     key(tile.slot) {
@@ -256,10 +278,17 @@ private fun TileCell(
                     },
                     shape = shape,
                 )
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
                 .onFocusChanged { focused = it.isFocused }
                 .clickable {
                     onInteract()
-                    viewModel.onTileClick(tile.slot)
+                    // An empty Tile opens the picker; a filled one takes the tile action
+                    // (focus / complete a swap). Its "Pick" chrome changes the channel.
+                    if (tile.channel == null) {
+                        viewModel.openPicker(tile.slot)
+                    } else {
+                        viewModel.onTileClick(tile.slot)
+                    }
                 },
         ) {
             when (status) {
@@ -528,8 +557,10 @@ private fun ChromeButton(
 private fun MultiviewTopBar(
     state: MultiviewUiState,
     showFullscreen: Boolean,
+    showLayout: Boolean,
     immersive: Boolean,
     onToggleFullscreen: () -> Unit,
+    onCycleLayout: () -> Unit,
     onBack: () -> Unit,
     onRetry: () -> Unit,
 ) {
@@ -540,6 +571,16 @@ private fun MultiviewTopBar(
     ) {
         TextButton(onClick = onBack) {
             Text(stringResource(R.string.back), maxLines = 1, softWrap = false)
+        }
+        if (showLayout) {
+            TextButton(onClick = onCycleLayout) {
+                Text(
+                    text = "Grid ${state.layout.label}",
+                    maxLines = 1,
+                    softWrap = false,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
         Spacer(Modifier.weight(1f))
         Label(
