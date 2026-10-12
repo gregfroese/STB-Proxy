@@ -137,6 +137,10 @@ class EnvelopeTest(ApiLineupTestCase):
 
 
 class VisibilityTest(ApiLineupTestCase):
+    def test_blocks_follow_the_operator_order(self):
+        self.app.config["block order"] = ["Sports", "Kids"]
+        self.assertEqual(self.data("katie")["blocks"], ["Sports", "Kids"])
+
     def test_operator_gets_full_lineup(self):
         data = self.data("admin", "12345")
         self.assertIsNone(data["account"])

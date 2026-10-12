@@ -72,7 +72,14 @@ def renameBlock(portals, old, new):
                 channelBlocks[channelId] = parseBlockNames(",".join(new if n == old else n for n in names))
 
 
-def blockSummaries(portals, blocks, hidden=()):
+def orderedNames(names, order):
+    """[names] in the operator's [order] first, then the rest alphabetically."""
+    names = list(names)
+    rank = {name: i for i, name in enumerate(order or [])}
+    return sorted(names, key=lambda name: (rank.get(name, len(rank)), name))
+
+
+def blockSummaries(portals, blocks, hidden=(), order=None):
     summaries = {}
     for portal in portals.values():
         dead = set(portal.get("dead channels", []))
@@ -86,4 +93,4 @@ def blockSummaries(portals, blocks, hidden=()):
                 summary["channels"] += 1
                 if channelId in dead:
                     summary["dead"] += 1
-    return [summaries[name] for name in sorted(summaries)]
+    return [summaries[name] for name in orderedNames(summaries, order)]

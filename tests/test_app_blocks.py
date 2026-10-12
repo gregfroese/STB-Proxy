@@ -104,6 +104,16 @@ class BlocksPageTest(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.syncPlex.assert_called_once()
 
+    def test_move_reorders_blocks(self):
+        self.app.getPortals()[PORTAL]["channel blocks"] = {"1": ["A"], "2": ["B"], "3": ["C"]}
+        self.app.getBlocks().update({"A": "true", "B": "true", "C": "true"})
+        self.client.post("/blocks/move", data={"name": "C", "direction": "up"})
+        self.assertEqual(self.app.getBlockOrder()[:3], ["A", "C", "B"])
+        # And the Blocks page lists them in that order.
+        body = self.client.get("/blocks").get_data(as_text=True)
+        self.assertLess(body.index(">A<"), body.index(">C<"))
+        self.assertLess(body.index(">C<"), body.index(">B<"))
+
 
 class StbProxyOnlyBlockTest(unittest.TestCase):
     """A hidden block that's on: its channels stay in STB-Proxy, not Plex or Jellyfin."""

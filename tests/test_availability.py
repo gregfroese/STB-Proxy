@@ -72,6 +72,11 @@ class BlocksTest(unittest.TestCase):
         blocks = {"NHL": "true", "Old": "true", "NBA": "false"}
         self.assertEqual(availability.pruneBlocks(self.portals, blocks), {"NHL": "true", "NBA": "false"})
 
+    def test_ordered_names_uses_order_then_alphabetical(self):
+        self.assertEqual(availability.orderedNames({"B", "A", "C"}, ["C", "A"]), ["C", "A", "B"])
+        self.assertEqual(availability.orderedNames({"B", "A"}, []), ["A", "B"])
+        self.assertEqual(availability.orderedNames({"A", "B"}, ["Z"]), ["A", "B"])  # unknown ignored
+
     def test_summaries_count_channels_and_dead_sorted_by_name(self):
         self.assertEqual(
             availability.blockSummaries(self.portals, {"NHL": "true"}),

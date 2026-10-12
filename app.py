@@ -173,6 +173,10 @@ def loadConfig():
         data["default blocks"] = []
     else:
         data["default blocks"] = [name for name in data["default blocks"] if isinstance(name, str)]
+    if not isinstance(data.get("block order"), list):
+        data["block order"] = []
+    else:
+        data["block order"] = [name for name in data["block order"] if isinstance(name, str)]
     data["accounts"] = accounts.normaliseAccounts(data.get("accounts"))
 
     settings = data["settings"]
@@ -250,9 +254,25 @@ def saveBlocks(blocks):
     names = availability.blockNames(getPortals())
     config["hidden blocks"] = [name for name in getHiddenBlocks() if name in names]
     config["default blocks"] = [name for name in getDefaultBlocks() if name in names]
+    config["block order"] = [name for name in getBlockOrder() if name in names]
     config["block favourites"] = pruneBlockFavourites(getPortals(), getBlockFavourites())
     accounts.pruneBlocks(getAccounts(), names)
     writeConfig(config)
+
+
+def getBlockOrder():
+    """The operator's block order: names first in this list, then the rest alphabetically."""
+    return config.setdefault("block order", [])
+
+
+def saveBlockOrder(order):
+    config["block order"] = order
+    writeConfig(config)
+
+
+def orderedBlockNames():
+    """Every block name in the operator's order, then any new ones alphabetically."""
+    return availability.orderedNames(availability.blockNames(getPortals()), getBlockOrder())
 
 
 def getDefaultBlocks():
@@ -1155,8 +1175,8 @@ def editorReset():
 def blocksPage():
     return render_template(
         "blocks.html",
-        blocks=availability.blockSummaries(getPortals(), getBlocks(), getHiddenBlocks()),
-        allBlocks=sorted(availability.blockNames(getPortals())),
+        blocks=availability.blockSummaries(getPortals(), getBlocks(), getHiddenBlocks(), getBlockOrder()),
+        allBlocks=orderedBlockNames(),
         assignableBlocks=defaultBlockChoices(),
         defaultBlocks=getDefaultBlocks(),
         favourites=sum(
@@ -1168,6 +1188,23 @@ def blocksPage():
         jellyfinConfigured=jellyfinConfigured(),
         retryAt=syncRetry["at"],
     )
+
+
+@app.route("/blocks/move", methods=["POST"])
+@authorise
+def blocksMove():
+    """Move a block up or down in the operator's order."""
+    name = request.form["name"]
+    order = orderedBlockNames()
+    if name not in order:
+        flash("No block called {}".format(name), "danger")
+        return redirect("/blocks", code=302)
+    i = order.index(name)
+    j = i - 1 if request.form.get("direction") == "up" else i + 1
+    if 0 <= j < len(order):
+        order[i], order[j] = order[j], order[i]
+        saveBlockOrder(order)
+    return redirect("/blocks", code=302)
 
 
 @app.route("/blocks/toggle", methods=["POST"])
@@ -1281,16 +1318,16 @@ def accountBlocks():
     STB-Proxy-only ("hidden") blocks are included: an account assigned one does see it,
     while anonymous and operator requests still never see it (see viewerHidden()).
     """
-    return sorted(availability.blockNames(getPortals()))
+    return orderedBlockNames()
 
 
 def defaultBlockChoices():
-    """Blocks offered for the anonymous "default blocks" set.
+    """Blocks offered for the anonymous "default blocks" set, in the operator's order.
 
     Never STB-Proxy-only ("hidden") blocks: that set scopes public requests.
     """
     hidden = set(getHiddenBlocks())
-    return sorted(name for name in availability.blockNames(getPortals()) if name not in hidden)
+    return [name for name in orderedBlockNames() if name not in hidden]
 
 
 def accountBlocksFromForm():
@@ -3375,7 +3412,9 @@ def apiLineup():
         c["number"],
         c["name"],
     ))
-    blocksOut = sorted({block for channel in channels for block in channel["blocks"]})
+    # The blocks that have a visible channel, in the operator's block order.
+    visibleBlocks = {block for channel in channels for block in channel["blocks"]}
+    blocksOut = [name for name in orderedBlockNames() if name in visibleBlocks]
 
     return flask.jsonify({
         "account": account["username"] if account else None,

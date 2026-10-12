@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.7.0] - 2026-10-12
+
+### Block ordering
+
+- **Order your blocks**: the Blocks page has **up/down** buttons to arrange them, saved as a top-level `block order` in `config.json`. The order is used everywhere — the Blocks page, the Accounts and Default-blocks pickers, and the Android app's block rail (via `/api/lineup`).
+
 ## [1.6.2] - 2026-10-12
 
 ### Accounts
