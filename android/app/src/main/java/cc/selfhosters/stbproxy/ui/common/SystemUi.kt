@@ -3,6 +3,8 @@ package cc.selfhosters.stbproxy.ui.common
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.view.Window
+import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -47,13 +49,36 @@ fun ImmersiveEffect(enabled: Boolean) {
     }
 }
 
-/** Keeps the screen awake while a video is on screen (spec follow-up). */
+/**
+ * Keeps the screen awake while a video is on screen (spec follow-up).
+ *
+ * The window flag is reference-counted: the player and Multiview both hold it,
+ * and when you move from one to the other the old screen's release must not
+ * clear the flag the new screen just set.
+ */
 @Composable
 fun KeepScreenOnEffect() {
     val view = LocalView.current
-    DisposableEffect(view) {
-        view.keepScreenOn = true
-        onDispose { view.keepScreenOn = false }
+    DisposableEffect(Unit) {
+        val window = view.context.findActivity()?.window
+        if (window != null) ScreenAwake.acquire(window)
+        onDispose { if (window != null) ScreenAwake.release(window) }
+    }
+}
+
+private object ScreenAwake {
+    private var holders = 0
+
+    fun acquire(window: Window) {
+        holders += 1
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    fun release(window: Window) {
+        holders = (holders - 1).coerceAtLeast(0)
+        if (holders == 0) {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 }
 

@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.4.1] - 2026-10-12
+
+### Android app
+
+- **Fix: the screen no longer sleeps while watching.** Keep-screen-on is now a reference-counted window flag, so moving between the player and Multiview (or between Tiles) no longer drops it.
+
 ## [1.4.0] - 2026-10-12
 
 ### Android app
