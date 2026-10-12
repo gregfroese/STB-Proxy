@@ -1,9 +1,12 @@
 package cc.selfhosters.stbproxy.di
 
 import android.content.Context
+import android.util.Xml
 import cc.selfhosters.stbproxy.data.AccountStore
 import cc.selfhosters.stbproxy.data.AndroidAccountStorage
 import cc.selfhosters.stbproxy.data.SessionController
+import cc.selfhosters.stbproxy.data.epg.EpgRepository
+import cc.selfhosters.stbproxy.data.epg.XmltvParser
 import cc.selfhosters.stbproxy.data.network.ApiClient
 import cc.selfhosters.stbproxy.data.network.BasicAuthInterceptor
 import cc.selfhosters.stbproxy.data.network.ConnectionProbe
@@ -50,5 +53,12 @@ class AppContainer(
         client = okHttpClient,
         json = json,
         baseUrlProvider = { accountStore.state.value.baseUrl },
+    )
+
+    /** Best-effort now/next source for the picker teaser and the player (spec 2.8). */
+    val epgRepository: EpgRepository = EpgRepository(
+        client = okHttpClient,
+        baseUrlProvider = { accountStore.state.value.baseUrl },
+        parser = XmltvParser { Xml.newPullParser() },
     )
 }
