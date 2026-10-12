@@ -29,7 +29,7 @@
                     <label class="form-label">Blocks</label>
                     <select class="form-select" name="blocks" multiple size="1">
                         {% for name in allBlocks %}
-                        <option value="{{ name }}">{{ name }}{% if name in hiddenBlocks %} (STB-Proxy only){% endif %}</option>
+                        <option value="{{ name }}">{{ name }}{% if name in hiddenBlocks %} (STB-Proxy only){% endif %}{% if name in offBlocks %} — off{% endif %}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -75,7 +75,7 @@
                         <input type="hidden" name="username" value="{{ account.username }}">
                         <select class="form-select form-select-sm" name="blocks" multiple size="1" style="max-width: 20rem;">
                             {% for name in allBlocks %}
-                            <option value="{{ name }}" {{ "selected" if name in account.blocks }}>{{ name }}{% if name in hiddenBlocks %} (STB-Proxy only){% endif %}</option>
+                            <option value="{{ name }}" {{ "selected" if name in account.blocks }}>{{ name }}{% if name in hiddenBlocks %} (STB-Proxy only){% endif %}{% if name in offBlocks %} — off{% endif %}</option>
                             {% endfor %}
                         </select>
                         <button class="btn btn-sm btn-outline-light" title="Save blocks"><i class="fa fa-save"></i></button>

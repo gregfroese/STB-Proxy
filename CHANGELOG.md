@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.6.2] - 2026-10-12
+
+### Accounts
+
+- The **Accounts** page now marks blocks that are **switched off** (`Canada — off`) alongside STB-Proxy-only ones. A block must be **on** (Blocks page) to contribute channels, even to an account it's assigned to — this makes it obvious why assigning an off block changes nothing.
+
 ## [1.6.1] - 2026-10-12
 
 ### Android app

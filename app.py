@@ -1307,6 +1307,8 @@ def accountsPage():
         accounts=getAccounts(),
         allBlocks=accountBlocks(),
         hiddenBlocks=sorted(getHiddenBlocks()),
+        # A block must be switched on to contribute; show that where it's assigned.
+        offBlocks=sorted(name for name in accountBlocks() if getBlocks().get(name) != "true"),
     )
 
 
