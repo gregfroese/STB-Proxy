@@ -37,7 +37,7 @@ fun emptyTiles(count: Int = MULTIVIEW_SLOTS): List<MultiviewTile> =
  * Tiles are consumed in slot order, so which Tile loses the race is
  * deterministic.
  */
-fun withinTunerBudget(tiles: List<MultiviewTile>, tunerCount: Int): Set<Int> {
+fun playableSlots(tiles: List<MultiviewTile>, tunerCount: Int): Set<Int> {
     val budget = tunerCount.coerceAtLeast(1)
     val opened = LinkedHashSet<Pair<String, String>>()
     val playable = LinkedHashSet<Int>()
@@ -54,7 +54,7 @@ fun withinTunerBudget(tiles: List<MultiviewTile>, tunerCount: Int): Set<Int> {
 
 /** Slots with a channel but no tuner to open it (spec 2.7). */
 fun overBudgetSlots(tiles: List<MultiviewTile>, tunerCount: Int): Set<Int> {
-    val playable = withinTunerBudget(tiles, tunerCount)
+    val playable = playableSlots(tiles, tunerCount)
     return tiles.filter { it.channel != null && it.slot !in playable }.map { it.slot }.toSet()
 }
 

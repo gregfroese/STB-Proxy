@@ -155,6 +155,19 @@ class ConnectionProbeTest {
     }
 
     @Test
+    fun `an unexpected 403 is not stb proxy, not a server error`() = runBlocking {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setResponseCode(403))
+        server.start()
+        try {
+            val result = probeFor(server).probe(base(server), "katie", "x")
+            assertTrue(result is ProbeResult.NotStbProxy)
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
     fun `a timeout is unreachable`() = runBlocking {
         val server = MockWebServer()
         server.enqueue(

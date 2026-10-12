@@ -3178,66 +3178,106 @@ def status():
     return flask.jsonify(data)
 
 
-def buildLineup():
+def portalLineup(portalId, blocks):
+    """One portal's channels for a scoped lineup, with their display values resolved.
+
+    Walks the portal's MACs to a channel list and resolves custom names, numbers, genres,
+    epg ids and logos. Returns (name, channels, genres, status): status is "empty" when the
+    portal is disabled or has nothing in these blocks, "failed" when its channel list
+    couldn't be read, else "ok". channels is empty unless the status is "ok". The walk is
+    shared by the HDHomeRun feed and /api/lineup so both resolve channels the same way.
+    """
+    portal = getPortals()[portalId]
+    name = portal["name"]
+    if portal["enabled"] != "true":
+        return name, [], None, "empty"
+    enabledChannels = plexLineup(portal, blocks)
+    if len(enabledChannels) == 0:
+        return name, [], None, "empty"
+
+    url = portal["url"]
+    macs = list(portal["macs"].keys())
+    proxy = portal["proxy"]
+    customChannelNames = portal.get("custom channel names", {})
+    customGenres = portal.get("custom genres", {})
+    customChannelNumbers = portal.get("custom channel numbers", {})
+    customEpgIds = portal.get("custom epg ids", {})
+
+    allChannels = genres = None
+    for mac in macs:
+        try:
+            token = stb.getToken(url, mac, proxy)
+            stb.getProfile(url, mac, token, proxy)
+            allChannels = stb.getAllChannels(url, mac, token, proxy)
+        except:
+            allChannels = None
+            continue
+        try:
+            genres = stb.getGenreNames(url, mac, token, proxy)
+        except:
+            genres = None
+        break
+
+    if not allChannels:
+        logger.error("Error making lineup for {}, skipping".format(name))
+        return name, [], None, "failed"
+
+    matched = matchedLogos(portalId, allChannels, genres)
+    channels = []
+    for channel in allChannels:
+        channelId = str(channel.get("id"))
+        if channelId not in enabledChannels:
+            continue
+        channelName = customChannelNames.get(channelId)
+        if channelName == None:
+            channelName = str(channel.get("name"))
+        genre = customGenres.get(channelId)
+        if genre == None:
+            genre = str((genres or {}).get(str(channel.get("tv_genre_id"))))
+        channelNumber = customChannelNumbers.get(channelId)
+        if channelNumber == None:
+            channelNumber = str(channel.get("number"))
+        epgId = customEpgIds.get(channelId)
+        if epgId == None:
+            epgId = defaultEpgId(portalId, channelId)
+
+        channels.append(
+            {
+                "channelId": channelId,
+                "name": channelName,
+                "number": channelNumber,
+                "genre": genre,
+                "epgId": epgId,
+                "logo": channelLogo(portal, channelId, channel.get("logo"), matched),
+            }
+        )
+    return name, channels, genres, "ok"
+
+
+def buildLineup(blocks=None):
     """Every available channel as an HDHomeRun lineup entry plus its XMLTV id.
 
-    Returns (entries, failedPortals). failedPortals names the portals whose
-    channel list couldn't be fetched, so callers can tell an empty lineup from
-    a failed one.
+    blocks scopes the lineup to a viewer (see viewerBlocks); None is the full lineup, which
+    is what server-side syncs want so the default blocks never leak into Plex or Jellyfin.
+    Returns (entries, failedPortals). failedPortals names the portals whose channel list
+    couldn't be fetched, so callers can tell an empty lineup from a failed one.
     """
     entries = []
     failedPortals = []
-    portals = getPortals()
-    blocks = viewerBlocks()
-    for portal in portals:
-        if portals[portal]["enabled"] == "true":
-            enabledChannels = plexLineup(portals[portal], blocks)
-            if len(enabledChannels) != 0:
-                name = portals[portal]["name"]
-                url = portals[portal]["url"]
-                macs = list(portals[portal]["macs"].keys())
-                proxy = portals[portal]["proxy"]
-                customChannelNames = portals[portal].get("custom channel names", {})
-                customChannelNumbers = portals[portal].get("custom channel numbers", {})
-                customEpgIds = portals[portal].get("custom epg ids", {})
-
-                for mac in macs:
-                    try:
-                        token = stb.getToken(url, mac, proxy)
-                        stb.getProfile(url, mac, token, proxy)
-                        allChannels = stb.getAllChannels(url, mac, token, proxy)
-                        break
-                    except:
-                        allChannels = None
-
-                if allChannels:
-                    for channel in allChannels:
-                        channelId = str(channel.get("id"))
-                        if channelId in enabledChannels:
-                            channelName = customChannelNames.get(channelId)
-                            if channelName == None:
-                                channelName = str(channel.get("name"))
-                            channelNumber = customChannelNumbers.get(channelId)
-                            if channelNumber == None:
-                                channelNumber = str(channel.get("number"))
-
-                            entries.append(
-                                {
-                                    "GuideNumber": channelNumber,
-                                    "GuideName": channelName,
-                                    "URL": "http://"
-                                    + host
-                                    + "/play/"
-                                    + portal
-                                    + "/"
-                                    + channelId,
-                                    "epgId": customEpgIds.get(channelId)
-                                    or defaultEpgId(portal, channelId),
-                                }
-                            )
-                else:
-                    logger.error("Error making lineup for {}, skipping".format(name))
-                    failedPortals.append(name)
+    for portal in getPortals():
+        name, channels, _, status = portalLineup(portal, blocks)
+        if status == "failed":
+            failedPortals.append(name)
+            continue
+        for channel in channels:
+            entries.append(
+                {
+                    "GuideNumber": channel["number"],
+                    "GuideName": channel["name"],
+                    "URL": "http://" + host + "/play/" + portal + "/" + channel["channelId"],
+                    "epgId": channel["epgId"],
+                }
+            )
 
     return entries, failedPortals
 
@@ -3267,78 +3307,34 @@ def apiLineup():
     channels = []
     failedPortals = []
     for portal in portals:
-        if portals[portal]["enabled"] != "true":
+        name, portalChannels, genres, status = portalLineup(portal, blocks)
+        if status == "empty":
             continue
-        enabledChannels = plexLineup(portals[portal], blocks)
-        if len(enabledChannels) == 0:
-            continue
-
-        name = portals[portal]["name"]
-        url = portals[portal]["url"]
-        macs = list(portals[portal]["macs"].keys())
-        proxy = portals[portal]["proxy"]
-        customChannelNames = portals[portal].get("custom channel names", {})
-        customGenres = portals[portal].get("custom genres", {})
-        customChannelNumbers = portals[portal].get("custom channel numbers", {})
-        customEpgIds = portals[portal].get("custom epg ids", {})
-        channelBlocks = portals[portal].get("channel blocks", {})
-
-        allChannels = genres = None
-        for mac in macs:
-            try:
-                token = stb.getToken(url, mac, proxy)
-                stb.getProfile(url, mac, token, proxy)
-                allChannels = stb.getAllChannels(url, mac, token, proxy)
-                genres = stb.getGenreNames(url, mac, token, proxy)
-                break
-            except:
-                allChannels = None
-                genres = None
-
-        if not allChannels or not genres:
-            logger.error("Error making lineup for {}, skipping".format(name))
+        if status == "failed" or not genres:
             failedPortals.append(name)
             continue
 
-        matched = matchedLogos(portal, allChannels, genres)
-        for channel in allChannels:
-            channelId = str(channel.get("id"))
-            if channelId not in enabledChannels:
-                continue
-
-            channelName = customChannelNames.get(channelId)
-            if channelName == None:
-                channelName = str(channel.get("name"))
-            genre = customGenres.get(channelId)
-            if genre == None:
-                genre = str(genres.get(str(channel.get("tv_genre_id"))))
-            channelNumber = customChannelNumbers.get(channelId)
-            if channelNumber == None:
-                channelNumber = str(channel.get("number"))
-            epgId = customEpgIds.get(channelId)
-            if epgId == None:
-                epgId = defaultEpgId(portal, channelId)
-            logo = channelLogo(portals[portal], channelId, channel.get("logo"), matched)
-
+        channelBlocks = portals[portal].get("channel blocks", {})
+        for channel in portalChannels:
             # Every visible block the channel is in: a visible channel in a visible block
             # guarantees that block has >=1 visible channel, so empty blocks never appear.
             memberBlocks = sorted(
                 block
-                for block in availability.channelBlockNames(channelBlocks.get(channelId, []))
+                for block in availability.channelBlockNames(channelBlocks.get(channel["channelId"], []))
                 if block in visible
             )
 
             channels.append({
                 "portal": portal,
                 "portalName": name,
-                "channelId": channelId,
-                "name": channelName,
-                "number": channelNumber,
-                "logo": logo,
-                "genre": genre,
-                "epgId": epgId,
+                "channelId": channel["channelId"],
+                "name": channel["name"],
+                "number": channel["number"],
+                "logo": channel["logo"],
+                "genre": channel["genre"],
+                "epgId": channel["epgId"],
                 "blocks": memberBlocks,
-                "url": "/play/{}/{}".format(portal, channelId),
+                "url": "/play/{}/{}".format(portal, channel["channelId"]),
             })
 
     channels.sort(key=lambda c: (c["number"], c["name"]))
@@ -3463,7 +3459,7 @@ def runPlexSync():
 @app.route("/lineup.post", methods=["POST"])
 @hdhr
 def lineup():
-    entries, _ = buildLineup()
+    entries, _ = buildLineup(viewerBlocks())
     return flask.jsonify(
         [{k: v for k, v in entry.items() if k != "epgId"} for entry in entries]
     )

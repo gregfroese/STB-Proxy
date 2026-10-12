@@ -66,7 +66,10 @@ import androidx.compose.ui.res.stringResource
 fun MultiviewScreen(
     onBack: () -> Unit,
     viewModel: MultiviewViewModel = viewModel(
-        factory = MultiviewViewModel.factory(LocalAppContainer.current.apiClient),
+        factory = MultiviewViewModel.factory(
+            LocalAppContainer.current.apiClient,
+            LocalAppContainer.current.sessionController,
+        ),
     ),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -108,6 +111,7 @@ fun MultiviewScreen(
     state.pickFor?.let { slot ->
         ChannelPickerOverlay(
             title = "Pick channel for Tile ${slot + 1}",
+            blocks = state.blocks,
             channels = state.channels,
             onSelect = viewModel::pick,
             onDismiss = viewModel::dismissPicker,

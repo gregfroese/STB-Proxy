@@ -29,14 +29,14 @@ class MultiviewLogicTest {
     @Test
     fun `two distinct channels with two tuners are both playable`() {
         val tiles = grid(a, b)
-        assertEquals(setOf(0, 1), withinTunerBudget(tiles, 2))
+        assertEquals(setOf(0, 1), playableSlots(tiles, 2))
         assertTrue(overBudgetSlots(tiles, 2).isEmpty())
     }
 
     @Test
     fun `a third distinct channel is over budget`() {
         val tiles = grid(a, b, c)
-        assertEquals(setOf(0, 1), withinTunerBudget(tiles, 2))
+        assertEquals(setOf(0, 1), playableSlots(tiles, 2))
         assertEquals(setOf(2), overBudgetSlots(tiles, 2))
     }
 
@@ -44,7 +44,7 @@ class MultiviewLogicTest {
     fun `two tiles on the same channel cost one tuner`() {
         val tiles = grid(a, a, b)
         // Slots 0 and 1 share channel a (one tuner); slot 2 opens b (the second).
-        assertEquals(setOf(0, 1, 2), withinTunerBudget(tiles, 2))
+        assertEquals(setOf(0, 1, 2), playableSlots(tiles, 2))
         assertTrue(overBudgetSlots(tiles, 2).isEmpty())
         assertEquals(2, distinctChannelCount(tiles))
     }
@@ -52,7 +52,7 @@ class MultiviewLogicTest {
     @Test
     fun `empty tiles never consume a tuner`() {
         val tiles = grid(null, a, null, b)
-        assertEquals(setOf(1, 3), withinTunerBudget(tiles, 2))
+        assertEquals(setOf(1, 3), playableSlots(tiles, 2))
         assertTrue(overBudgetSlots(tiles, 2).isEmpty())
     }
 
@@ -61,14 +61,14 @@ class MultiviewLogicTest {
         // a and b take the two tuners; c (slot 2) and c (slot 3) both overflow,
         // and the duplicate doesn't sneak in.
         val tiles = grid(a, b, c, c)
-        assertEquals(setOf(0, 1), withinTunerBudget(tiles, 2))
+        assertEquals(setOf(0, 1), playableSlots(tiles, 2))
         assertEquals(setOf(2, 3), overBudgetSlots(tiles, 2))
     }
 
     @Test
     fun `a zero tuner count is floored to one`() {
         val tiles = grid(a, b)
-        assertEquals(setOf(0), withinTunerBudget(tiles, 0))
+        assertEquals(setOf(0), playableSlots(tiles, 0))
         assertEquals(setOf(1), overBudgetSlots(tiles, 0))
     }
 
@@ -166,7 +166,7 @@ class MultiviewLogicTest {
     @Test
     fun `audio prefers a playable tile over an over-budget one`() {
         val tiles = grid(a, b, c)
-        val playable = withinTunerBudget(tiles, 2)
+        val playable = playableSlots(tiles, 2)
         // Slot 2 is requested but over budget; audio moves to a playable tile.
         assertEquals(0, effectiveAudioSlot(tiles, requested = 2, playable = playable))
     }
