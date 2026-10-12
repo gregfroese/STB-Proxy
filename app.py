@@ -169,6 +169,10 @@ def loadConfig():
         data["block favourites"] = {}
     if not isinstance(data.get("hidden blocks"), list):
         data["hidden blocks"] = []
+    if not isinstance(data.get("default blocks"), list):
+        data["default blocks"] = []
+    else:
+        data["default blocks"] = [name for name in data["default blocks"] if isinstance(name, str)]
     data["accounts"] = accounts.normaliseAccounts(data.get("accounts"))
 
     settings = data["settings"]
@@ -245,8 +249,19 @@ def saveBlocks(blocks):
     config["blocks"] = blocks
     names = availability.blockNames(getPortals())
     config["hidden blocks"] = [name for name in getHiddenBlocks() if name in names]
+    config["default blocks"] = [name for name in getDefaultBlocks() if name in names]
     config["block favourites"] = pruneBlockFavourites(getPortals(), getBlockFavourites())
     accounts.pruneBlocks(getAccounts(), names)
+    writeConfig(config)
+
+
+def getDefaultBlocks():
+    """Block names scoping requests that resolve to neither Operator nor Account (off when empty)."""
+    return config.setdefault("default blocks", [])
+
+
+def saveDefaultBlocks(names):
+    config["default blocks"] = names
     writeConfig(config)
 
 
@@ -336,15 +351,23 @@ def resolveViewer():
 
 def viewerBlocks():
     """The block dict to scope a request with: the account's assigned blocks with their
-    global on/off state, or None for the full lineup (operator / anonymous).
+    global on/off state, the configured default blocks for an anonymous request, or None
+    for the full lineup (operator / no request context).
 
     None reproduces today's full lineup exactly; offering only the account's assigned,
-    globally-on blocks makes plexLineup yield public channels union those blocks.
+    globally-on blocks makes plexLineup yield public channels union those blocks. An
+    anonymous request takes the same shape using the configured default blocks.
     """
-    account = getattr(g, "account", None) if flask.has_request_context() else None
-    if account is None:
+    if not flask.has_request_context():
         return None
-    return {name: getBlocks().get(name, "false") for name in account["blocks"]}
+    account = getattr(g, "account", None)
+    if account is not None:
+        return {name: getBlocks().get(name, "false") for name in account["blocks"]}
+    if getattr(g, "viewer", None) is None:
+        defaultBlocks = getDefaultBlocks()
+        if defaultBlocks:
+            return {name: getBlocks().get(name, "false") for name in defaultBlocks}
+    return None
 
 
 def authorise(f):
@@ -1121,6 +1144,8 @@ def blocksPage():
         "blocks.html",
         blocks=availability.blockSummaries(getPortals(), getBlocks(), getHiddenBlocks()),
         allBlocks=sorted(availability.blockNames(getPortals())),
+        assignableBlocks=assignableBlocks(),
+        defaultBlocks=getDefaultBlocks(),
         favourites=sum(
             len(p.get("favourite channels", [])) for p in getPortals().values() if p["enabled"] == "true"
         ),
@@ -1180,6 +1205,7 @@ def blocksRename():
     if name in blocks:
         blocks[newName] = blocks.pop(name)
     config["hidden blocks"] = [newName if n == name else n for n in getHiddenBlocks()]
+    config["default blocks"] = [newName if n == name else n for n in getDefaultBlocks()]
     favourites = getBlockFavourites()
     if name in favourites:
         favourites[newName] = favourites.pop(name)
@@ -1222,6 +1248,17 @@ def blocksHide():
 def blocksSync():
     category, message = syncPlex()
     flash(message, category)
+    return redirect("/blocks", code=302)
+
+
+@app.route("/blocks/defaults", methods=["POST"])
+@authorise
+def blocksDefaults():
+    assignable = set(assignableBlocks())
+    names = [name for name in request.form.getlist("default blocks") if name in assignable]
+    saveDefaultBlocks(names)
+    logger.info("Default blocks set to {}".format(names))
+    flash("Default blocks updated", "success")
     return redirect("/blocks", code=302)
 
 
