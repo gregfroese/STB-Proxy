@@ -76,6 +76,7 @@ private fun MainNavHost() {
                     )
                 },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onOpenMultiview = { navController.navigate(Routes.MULTIVIEW) },
             )
         }
         composable(
@@ -96,7 +97,7 @@ private fun MainNavHost() {
             )
         }
         composable(Routes.MULTIVIEW) {
-            MultiviewScreen()
+            MultiviewScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(onBack = { navController.popBackStack() })

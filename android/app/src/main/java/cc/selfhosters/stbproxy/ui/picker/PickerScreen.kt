@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cc.selfhosters.stbproxy.R
@@ -84,6 +86,7 @@ internal data class PickerPalette(
 fun PickerScreen(
     onChannelClick: (Channel, launchBlock: String) -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenMultiview: () -> Unit,
     viewModel: PickerViewModel = viewModel(
         factory = PickerViewModel.factory(
             LocalAppContainer.current.apiClient,
@@ -120,7 +123,11 @@ fun PickerScreen(
             .fillMaxSize()
             .background(palette.background),
     ) {
-        PickerTopBar(state = state, onOpenSettings = onOpenSettings)
+        PickerTopBar(
+            state = state,
+            onOpenSettings = onOpenSettings,
+            onOpenMultiview = onOpenMultiview,
+        )
         SearchField(
             query = state.query,
             onQueryChange = viewModel::onQueryChange,
@@ -275,7 +282,7 @@ private fun PickerGrid(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun ChannelTile(
+internal fun ChannelTile(
     channel: Channel,
     nowNext: NowNext?,
     activeBlock: String?,
@@ -409,7 +416,11 @@ private fun SearchField(
 }
 
 @Composable
-private fun PickerTopBar(state: PickerUiState, onOpenSettings: () -> Unit) {
+private fun PickerTopBar(
+    state: PickerUiState,
+    onOpenSettings: () -> Unit,
+    onOpenMultiview: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -430,8 +441,13 @@ private fun PickerTopBar(state: PickerUiState, onOpenSettings: () -> Unit) {
                 )
             }
         }
-        TextButton(onClick = onOpenSettings) {
-            M3Text(stringResource(R.string.nav_settings))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onOpenMultiview) {
+                M3Text(stringResource(R.string.nav_multiview))
+            }
+            TextButton(onClick = onOpenSettings) {
+                M3Text(stringResource(R.string.nav_settings))
+            }
         }
     }
 }
@@ -486,3 +502,66 @@ private fun initials(name: String): String =
         .map { it.first().uppercaseChar() }
         .joinToString("")
         .take(2)
+
+/**
+ * The 2.5 picker re-presented as an overlay, so Multiview can choose one Tile's
+ * channel without leaving the grid (spec 2.7 Pick). Reuses the picker's tiles and
+ * search; selecting a channel hands it back and closes.
+ */
+@Composable
+fun ChannelPickerOverlay(
+    title: String,
+    channels: List<Channel>,
+    onSelect: (Channel) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val palette = pickerPalette()
+    var query by remember { mutableStateOf("") }
+    val visible = remember(channels, query) { searchChannels(channels, query) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(palette.background)
+                .border(1.dp, palette.surfaceVariant, RoundedCornerShape(16.dp)),
+        ) {
+            M3Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            )
+            SearchField(query = query, onQueryChange = { query = it }, palette = palette)
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 150.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(420.dp),
+                contentPadding = PaddingValues(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                itemsIndexed(
+                    visible,
+                    key = { _, channel -> "${channel.portal}/${channel.channelId}" },
+                ) { _, channel ->
+                    ChannelTile(
+                        channel = channel,
+                        nowNext = null,
+                        activeBlock = null,
+                        searching = false,
+                        palette = palette,
+                        onClick = { onSelect(channel) },
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                TextButton(onClick = onDismiss) { M3Text(stringResource(R.string.cancel)) }
+            }
+        }
+    }
+}
