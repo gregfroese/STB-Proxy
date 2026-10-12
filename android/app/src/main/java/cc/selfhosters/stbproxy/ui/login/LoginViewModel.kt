@@ -61,7 +61,7 @@ class LoginViewModel(
         _state.update { it.copy(connecting = true, error = null) }
         viewModelScope.launch {
             when (val outcome = session.connect(current.baseUrl, current.username.trim(), current.password)) {
-                ConnectOutcome.Connected -> _state.update { it.copy(connecting = false) }
+                ConnectOutcome.Connected -> _state.update { it.copy(connecting = false, password = "") }
                 is ConnectOutcome.Failed ->
                     _state.update { it.copy(connecting = false, error = outcome.message) }
             }
