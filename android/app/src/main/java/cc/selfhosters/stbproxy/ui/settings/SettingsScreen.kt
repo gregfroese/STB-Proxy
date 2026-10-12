@@ -2,34 +2,155 @@ package cc.selfhosters.stbproxy.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import cc.selfhosters.stbproxy.R
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import cc.selfhosters.stbproxy.di.LocalAppContainer
 
-/** Placeholder for proxy URL / account management (spec 2.4). */
+/**
+ * Settings (spec 2.4): edit the proxy URL, add/switch/remove accounts, sign out.
+ * Adding an account reuses the same *Connect* probe as the login form.
+ */
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onBack: () -> Unit = {}) {
+    val container = LocalAppContainer.current
+    val viewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModel.factory(container.sessionController, container.accountStore),
+    )
+    val state by viewModel.state.collectAsStateWithLifecycle()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = stringResource(R.string.settings_title),
-            style = MaterialTheme.typography.headlineSmall,
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Settings", style = MaterialTheme.typography.headlineSmall)
+            TextButton(onClick = onBack) { Text("Back") }
+        }
+
+        Text("Proxy address", style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(
+            value = state.baseUrl,
+            onValueChange = viewModel::onBaseUrlChange,
+            label = { Text("Proxy address") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+            modifier = Modifier.fillMaxWidth(),
         )
-        Text(
-            text = "Settings placeholder.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Button(onClick = viewModel::saveBaseUrl) { Text("Save address") }
+
+        HorizontalDivider()
+
+        Text("Accounts", style = MaterialTheme.typography.titleMedium)
+        if (state.accounts.isEmpty()) {
+            Text(
+                text = "No accounts saved.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            state.accounts.forEach { username ->
+                AccountRow(
+                    username = username,
+                    active = username == state.activeUsername,
+                    enabled = !state.busy,
+                    onSwitch = { viewModel.switchTo(username) },
+                    onRemove = { viewModel.remove(username) },
+                )
+            }
+        }
+
+        HorizontalDivider()
+
+        Text("Add account", style = MaterialTheme.typography.titleMedium)
+        OutlinedTextField(
+            value = state.addUsername,
+            onValueChange = viewModel::onAddUsernameChange,
+            label = { Text("Username") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+            modifier = Modifier.fillMaxWidth(),
         )
+        OutlinedTextField(
+            value = state.addPassword,
+            onValueChange = viewModel::onAddPasswordChange,
+            label = { Text("Password") },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Button(
+            onClick = viewModel::addAccount,
+            enabled = !state.busy,
+        ) { Text(if (state.busy) "Checking…" else "Add account") }
+
+        state.message?.let {
+            Text(text = it, color = MaterialTheme.colorScheme.primary)
+        }
+        state.error?.let {
+            Text(text = it, color = MaterialTheme.colorScheme.error)
+        }
+
+        HorizontalDivider()
+
+        OutlinedButton(onClick = viewModel::signOut) { Text("Sign out") }
+    }
+}
+
+@Composable
+private fun AccountRow(
+    username: String,
+    active: Boolean,
+    enabled: Boolean,
+    onSwitch: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text(username, style = MaterialTheme.typography.bodyLarge)
+            if (active) {
+                Text(
+                    text = "Active",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = onSwitch, enabled = enabled && !active) { Text("Switch") }
+            TextButton(onClick = onRemove, enabled = enabled) { Text("Remove") }
+        }
     }
 }

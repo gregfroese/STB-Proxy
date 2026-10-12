@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -14,6 +15,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -23,6 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cc.selfhosters.stbproxy.R
+import cc.selfhosters.stbproxy.data.network.NO_CHANNELS_NOTICE
+import cc.selfhosters.stbproxy.data.network.SECURITY_OFF_NOTICE
 import cc.selfhosters.stbproxy.di.LocalAppContainer
 
 /**
@@ -33,8 +37,12 @@ import cc.selfhosters.stbproxy.di.LocalAppContainer
 @Composable
 fun PickerScreen(
     onChannelClick: () -> Unit,
+    onOpenSettings: () -> Unit,
     viewModel: PickerViewModel = viewModel(
-        factory = PickerViewModel.factory(LocalAppContainer.current.apiClient),
+        factory = PickerViewModel.factory(
+            LocalAppContainer.current.apiClient,
+            LocalAppContainer.current.sessionController,
+        ),
     ),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -45,10 +53,36 @@ fun PickerScreen(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = stringResource(R.string.picker_title),
-            style = MaterialTheme.typography.headlineSmall,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text(
+                    text = stringResource(R.string.picker_title),
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                state.accountLabel?.let { label ->
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            TextButton(onClick = onOpenSettings) {
+                Text(stringResource(R.string.nav_settings))
+            }
+        }
+
+        if (state.credentialsUnverified) {
+            Text(
+                text = SECURITY_OFF_NOTICE,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         when {
             state.loading -> CenteredMessage {
@@ -67,7 +101,7 @@ fun PickerScreen(
 
             state.channels.isEmpty() -> CenteredMessage {
                 Text(
-                    text = "This account has no channels.",
+                    text = NO_CHANNELS_NOTICE,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

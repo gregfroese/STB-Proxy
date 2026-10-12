@@ -10,6 +10,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 
+/** A non-2xx HTTP response, carrying the status code (e.g. 401 for re-auth). */
+class ApiException(val code: Int) : IOException("HTTP $code")
+
 /**
  * Minimal OkHttp wrapper. Only `GET /api/lineup` is modelled for now; `/xmltv`
  * and `/play` land in later tickets. Relative channel `url`s are joined onto the
@@ -39,6 +42,7 @@ class ApiClient(
             try {
                 return@withContext execute(request)
             } catch (e: IOException) {
+                if (e is ApiException && e.code in 400..499) throw e
                 lastError = e
                 if (attempt < retryDelaysMs.size) {
                     delay(retryDelaysMs[attempt])
@@ -51,7 +55,7 @@ class ApiClient(
     private fun execute(request: Request): Lineup {
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
-                throw IOException("HTTP ${response.code}")
+                throw ApiException(response.code)
             }
             val body = response.body?.string() ?: throw IOException("Empty response body")
             return json.decodeFromString(Lineup.serializer(), body)
