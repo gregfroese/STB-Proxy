@@ -1,5 +1,6 @@
 import flask
 import stb
+import accounts
 import availability
 import plex
 import jellyfin
@@ -167,6 +168,7 @@ def loadConfig():
         data["block favourites"] = {}
     if not isinstance(data.get("hidden blocks"), list):
         data["hidden blocks"] = []
+    data["accounts"] = accounts.normaliseAccounts(data.get("accounts"))
 
     settings = data["settings"]
     settingsOut = {}
@@ -243,6 +245,17 @@ def saveBlocks(blocks):
     names = availability.blockNames(getPortals())
     config["hidden blocks"] = [name for name in getHiddenBlocks() if name in names]
     config["block favourites"] = pruneBlockFavourites(getPortals(), getBlockFavourites())
+    accounts.pruneBlocks(getAccounts(), names)
+    writeConfig(config)
+
+
+def getAccounts():
+    """Viewer accounts: {"username", "hash", "blocks", "enabled"} records (see accounts.py)."""
+    return config["accounts"]
+
+
+def saveAccounts(records):
+    config["accounts"] = records
     writeConfig(config)
 
 
@@ -1126,6 +1139,7 @@ def blocksRename():
         for filters in pageFilters.values():
             if filters.get("block") == name:
                 filters["block"] = newName
+    accounts.renameBlock(getAccounts(), name, newName)
     saveBlocks(blocks)
     logger.info("Block({}) renamed to {}".format(name, newName))
     flash("{} renamed to {}".format(name, newName), "success")
@@ -1161,6 +1175,125 @@ def blocksSync():
     category, message = syncPlex()
     flash(message, category)
     return redirect("/blocks", code=302)
+
+
+def assignableBlocks():
+    """Block names an account can be assigned: every block except STB-Proxy-only ones."""
+    hidden = set(getHiddenBlocks())
+    return sorted(name for name in availability.blockNames(getPortals()) if name not in hidden)
+
+
+def accountBlocksFromForm():
+    """The blocks ticked on an account form, ignoring unknown and STB-Proxy-only ones."""
+    assignable = set(assignableBlocks())
+    return [name for name in request.form.getlist("blocks") if name in assignable]
+
+
+@app.route("/accounts", methods=["GET"])
+@authorise
+def accountsPage():
+    # STB-Proxy-only blocks are never offered to an account, so don't even show the ones
+    # a record may still carry: they must not leak.
+    assignable = assignableBlocks()
+    visible = set(assignable)
+    shown = [dict(record, blocks=[n for n in record["blocks"] if n in visible]) for record in getAccounts()]
+    return render_template("accounts.html", accounts=shown, allBlocks=assignable)
+
+
+@app.route("/accounts/create", methods=["POST"])
+@authorise
+def accountsCreate():
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    if not username:
+        flash("Give the account a username", "danger")
+        return redirect("/accounts", code=302)
+    if not password:
+        flash("Give the account a password", "danger")
+        return redirect("/accounts", code=302)
+    if accounts.findAccount(getAccounts(), username):
+        flash("There's already an account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+
+    records = getAccounts()
+    records.append({
+        "username": username,
+        "hash": accounts.hashPassword(password),
+        "blocks": accountBlocksFromForm(),
+        "enabled": request.form.get("enabled") == "true",
+    })
+    saveAccounts(records)
+    logger.info("Account({}) created".format(username))
+    flash("Account {} created".format(username), "success")
+    return redirect("/accounts", code=302)
+
+
+@app.route("/accounts/update", methods=["POST"])
+@authorise
+def accountsUpdate():
+    username = request.form.get("username", "").strip()
+    account = accounts.findAccount(getAccounts(), username)
+    if not account:
+        flash("No account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+
+    account["blocks"] = accountBlocksFromForm()
+    saveAccounts(getAccounts())
+    logger.info("Account({}) blocks changed".format(username))
+    flash("Account {} updated".format(username), "success")
+    return redirect("/accounts", code=302)
+
+
+@app.route("/accounts/password", methods=["POST"])
+@authorise
+def accountsPassword():
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    account = accounts.findAccount(getAccounts(), username)
+    if not account:
+        flash("No account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+    if not password:
+        flash("Give the account a password", "danger")
+        return redirect("/accounts", code=302)
+
+    account["hash"] = accounts.hashPassword(password)
+    saveAccounts(getAccounts())
+    logger.info("Account({}) password reset".format(username))
+    flash("Password for {} reset".format(username), "success")
+    return redirect("/accounts", code=302)
+
+
+@app.route("/accounts/toggle", methods=["POST"])
+@authorise
+def accountsToggle():
+    username = request.form.get("username", "").strip()
+    enabled = request.form.get("enabled") == "true"
+    account = accounts.findAccount(getAccounts(), username)
+    if not account:
+        flash("No account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+
+    account["enabled"] = enabled
+    saveAccounts(getAccounts())
+    logger.info("Account({}) {}".format(username, "enabled" if enabled else "disabled"))
+    flash("{} {}".format(username, "enabled" if enabled else "disabled"), "success")
+    return redirect("/accounts", code=302)
+
+
+@app.route("/accounts/delete", methods=["POST"])
+@authorise
+def accountsDelete():
+    username = request.form.get("username", "").strip()
+    records = [record for record in getAccounts() if record["username"] != username]
+    if len(records) == len(getAccounts()):
+        flash("No account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+
+    saveAccounts(records)
+    logger.info("Account({}) deleted".format(username))
+    flash("Account {} deleted".format(username), "success")
+    return redirect("/accounts", code=302)
 
 
 @app.route("/channel/dead", methods=["POST"])

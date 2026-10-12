@@ -24,6 +24,7 @@ WORKDIR /app
 # Copy files
 COPY /app.py /app/app.py
 COPY /stb.py /app/stb.py
+COPY /accounts.py /app/accounts.py
 COPY /availability.py /app/availability.py
 COPY /plex.py /app/plex.py
 COPY /jellyfin.py /app/jellyfin.py
