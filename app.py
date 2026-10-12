@@ -3341,6 +3341,7 @@ def apiLineup():
             continue
 
         channelBlocks = portals[portal].get("channel blocks", {})
+        favouriteChannels = portals[portal].get("favourite channels", [])
         for channel in portalChannels:
             # Every visible block the channel is in: a visible channel in a visible block
             # guarantees that block has >=1 visible channel, so empty blocks never appear.
@@ -3360,10 +3361,18 @@ def apiLineup():
                 "genre": channel["genre"],
                 "epgId": channel["epgId"],
                 "blocks": memberBlocks,
+                "favourite": channel["channelId"] in favouriteChannels,
+                "blockFavourites": blockFavouritesOf(portal, channel["channelId"]),
                 "url": "/play/{}/{}".format(portal, channel["channelId"]),
             })
 
-    channels.sort(key=lambda c: (c["number"], c["name"]))
+    # Favourites first (overall, then block favourites), then by number and name.
+    channels.sort(key=lambda c: (
+        not c["favourite"],
+        not c["blockFavourites"],
+        c["number"],
+        c["name"],
+    ))
     blocksOut = sorted({block for channel in channels for block in channel["blocks"]})
 
     return flask.jsonify({

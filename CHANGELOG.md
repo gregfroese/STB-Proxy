@@ -2,6 +2,18 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.6.0] - 2026-10-12
+
+### Favourites in the app
+
+- **`/api/lineup`** now carries each channel's **`favourite`** flag and its **`blockFavourites`** list, and sorts favourites first (overall favourites, then block favourites, then the rest by number and name).
+- The Android picker has **All / ★ Favourites / ★ Block faves** filter chips, and favourites sort to the top of the list.
+
+### Android TV Multiview
+
+- The **D-pad drives Multiview directly**: Left/Right/Up/Down move between Tiles, and selecting a Tile opens a **screen-level action bar** (Pick / Swap / Audio / Remove / Close) navigated with Left/Right and Enter — so you can set a Tile's **audio source** or **change its channel**.
+- TV buttons now show a bright focus ring when selected.
+
 ## [1.5.1] - 2026-10-12
 
 ### Android app

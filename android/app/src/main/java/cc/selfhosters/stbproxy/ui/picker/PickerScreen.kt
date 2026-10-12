@@ -72,6 +72,7 @@ import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.data.network.NO_CHANNELS_NOTICE
 import cc.selfhosters.stbproxy.data.network.SECURITY_OFF_NOTICE
 import cc.selfhosters.stbproxy.di.LocalAppContainer
+import cc.selfhosters.stbproxy.ui.common.focusRing
 import coil.compose.AsyncImage
 
 /** Focus ring colour for D-pad navigation (spec 2.10). */
@@ -115,12 +116,13 @@ fun PickerScreen(
         blockRail(state.blocks, state.channels)
     }
     val searching = state.query.isNotBlank()
-    val visibleChannels = remember(state.channels, state.activeBlock, state.query, searching) {
-        if (searching) {
+    val visibleChannels = remember(state.channels, state.activeBlock, state.query, searching, state.filter) {
+        val base = if (searching) {
             searchChannels(state.channels, state.query)
         } else {
             state.activeBlock?.let { channelsInBlock(state.channels, it) }.orEmpty()
         }
+        sortChannels(applyChannelFilter(base, state.filter))
     }
     val blockCounts = remember(state.channels, rail, state.query, searching) {
         if (searching) blockMatchCounts(state.channels, rail.map { it.name }, state.query)
@@ -145,6 +147,11 @@ fun PickerScreen(
             onQueryChange = viewModel::onQueryChange,
             palette = palette,
             isTv = isTv,
+        )
+        FilterRow(
+            filter = state.filter,
+            onFilter = viewModel::onFilterChange,
+            palette = palette,
         )
         if (state.credentialsUnverified) {
             BasicLabel(
@@ -435,6 +442,39 @@ private fun SearchField(
     }
 }
 
+/** All / Favourites / Block favourites filter chips. */
+@Composable
+private fun FilterRow(
+    filter: ChannelFilter,
+    onFilter: (ChannelFilter) -> Unit,
+    palette: PickerPalette,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        ChannelFilter.entries.forEach { option ->
+            val selected = option == filter
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (selected) palette.accent else palette.surfaceVariant)
+                    .focusRing(RoundedCornerShape(20.dp))
+                    .clickable { onFilter(option) }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                BasicLabel(
+                    option.label,
+                    if (selected) palette.background else palette.onSurface,
+                    12.sp,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun PickerTopBar(
     state: PickerUiState,
@@ -467,10 +507,10 @@ private fun PickerTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            FilledTonalButton(onClick = onOpenMultiview) {
+            FilledTonalButton(onClick = onOpenMultiview, modifier = Modifier.focusRing()) {
                 M3Text(stringResource(R.string.nav_multiview))
             }
-            OutlinedButton(onClick = onOpenSettings) {
+            OutlinedButton(onClick = onOpenSettings, modifier = Modifier.focusRing()) {
                 M3Text(stringResource(R.string.nav_settings))
             }
         }
@@ -546,12 +586,14 @@ fun ChannelPickerOverlay(
     val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK ==
         Configuration.UI_MODE_TYPE_TELEVISION
     var query by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf(ChannelFilter.ALL) }
     val rail = remember(blocks, channels) { blockRail(blocks, channels) }
     var activeBlock by remember(rail) { mutableStateOf(rail.firstOrNull()?.name) }
     val searching = query.isNotBlank()
-    val visible = remember(channels, activeBlock, query, searching) {
-        if (searching) searchChannels(channels, query)
+    val visible = remember(channels, activeBlock, query, searching, filter) {
+        val base = if (searching) searchChannels(channels, query)
         else activeBlock?.let { channelsInBlock(channels, it) }.orEmpty()
+        sortChannels(applyChannelFilter(base, filter))
     }
     val blockCounts = remember(channels, rail, query, searching) {
         if (searching) blockMatchCounts(channels, rail.map { it.name }, query) else emptyMap()
@@ -571,6 +613,7 @@ fun ChannelPickerOverlay(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             )
             SearchField(query = query, onQueryChange = { query = it }, palette = palette, isTv = isTv)
+            FilterRow(filter = filter, onFilter = { filter = it }, palette = palette)
             Box(modifier = Modifier.fillMaxWidth().height(420.dp)) {
                 if (isTv) {
                     Row(modifier = Modifier.fillMaxSize()) {

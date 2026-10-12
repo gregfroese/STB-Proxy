@@ -28,4 +28,6 @@ data class Channel(
     val genre: String? = null,
     val epgId: String? = null,
     val blocks: List<String> = emptyList(),
+    val favourite: Boolean = false,
+    val blockFavourites: List<String> = emptyList(),
 )

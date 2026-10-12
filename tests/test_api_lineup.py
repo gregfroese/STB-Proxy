@@ -24,6 +24,8 @@ CHANNEL_FIELDS = {
     "genre",
     "epgId",
     "blocks",
+    "favourite",
+    "blockFavourites",
     "url",
 }
 
@@ -174,6 +176,17 @@ class VisibilityTest(ApiLineupTestCase):
 
     def test_public_channel_in_no_block_gets_empty_list(self):
         self.assertEqual(self.byId(self.data("katie"))["1"]["blocks"], [])
+
+    def test_favourites_are_flagged_and_sorted_first(self):
+        self.app.getPortals()[PORTAL]["favourite channels"] = ["4"]
+        self.app.config["block favourites"] = {"Kids": {PORTAL: ["2"]}}
+        data = self.data("katie")
+        byId = self.byId(data)
+        self.assertTrue(byId["4"]["favourite"])
+        self.assertEqual(byId["2"]["blockFavourites"], ["Kids"])
+        self.assertFalse(byId["2"]["favourite"])
+        # The overall favourite is first, then the block favourite, then the rest.
+        self.assertEqual([c["channelId"] for c in data["channels"]][:2], ["4", "2"])
 
     def test_envelope_blocks_only_those_with_visible_channels(self):
         self.assertEqual(self.data("katie")["blocks"], ["Kids", "Sports"])

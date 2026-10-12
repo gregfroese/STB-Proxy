@@ -67,6 +67,7 @@ import cc.selfhosters.stbproxy.di.LocalAppContainer
 import cc.selfhosters.stbproxy.ui.common.ImmersiveEffect
 import cc.selfhosters.stbproxy.ui.common.KeepScreenOnEffect
 import cc.selfhosters.stbproxy.ui.common.VideoSurface
+import cc.selfhosters.stbproxy.ui.common.focusRing
 import cc.selfhosters.stbproxy.ui.common.rememberAutoHideControls
 import kotlin.math.roundToInt
 
@@ -315,6 +316,7 @@ private fun GuideOverlay(
                 .padding(8.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xCC000000))
+                .focusRing(RoundedCornerShape(8.dp))
                 .focusRequester(closeFocus)
                 .clickable(onClick = onClose)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -474,9 +476,9 @@ private fun OverlayButton(
     OutlinedButton(
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-        modifier = Modifier.then(
-            if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier,
-        ),
+        modifier = Modifier
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .focusRing(RoundedCornerShape(50)),
     ) {
         Text(text = text, fontSize = 12.sp, maxLines = 1, softWrap = false)
     }

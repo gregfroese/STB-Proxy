@@ -209,4 +209,15 @@ class MultiviewLogicTest {
         assertEquals(2, visibleTiles(tiles, MultiviewLayout.ONE_BY_TWO).size)
         assertEquals(4, visibleTiles(tiles, MultiviewLayout.TWO_BY_TWO).size)
     }
+
+    @Test
+    fun `dpad moves around the 2x2 grid and clamps at the edges`() {
+        // slots: 0 1 / 2 3
+        assertEquals(1, moveFocusSlot(0, 2, 2, dx = 1, dy = 0))
+        assertEquals(2, moveFocusSlot(0, 2, 2, dx = 0, dy = 1))
+        assertEquals(3, moveFocusSlot(1, 2, 2, dx = 1, dy = 1))
+        assertEquals(0, moveFocusSlot(0, 2, 2, dx = -1, dy = 0)) // clamped left
+        assertEquals(0, moveFocusSlot(0, 2, 2, dx = 0, dy = -1)) // clamped up
+        assertEquals(3, moveFocusSlot(3, 2, 2, dx = 1, dy = 1)) // clamped right/down
+    }
 }

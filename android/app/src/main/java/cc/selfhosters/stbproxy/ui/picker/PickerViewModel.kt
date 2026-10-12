@@ -34,6 +34,7 @@ data class PickerUiState(
     val nowNext: Map<String, NowNext> = emptyMap(),
     val query: String = "",
     val activeBlock: String? = null,
+    val filter: ChannelFilter = ChannelFilter.ALL,
     val error: String? = null,
     val accountLabel: String? = null,
     val credentialsUnverified: Boolean = false,
@@ -113,6 +114,11 @@ class PickerViewModel(
     /** Block navigation is suspended while searching (spec 2.5). */
     fun onBlockSelected(block: String) {
         _state.update { if (it.query.isBlank()) it.copy(activeBlock = block) else it }
+    }
+
+    /** Show all channels, only overall favourites, or only block favourites. */
+    fun onFilterChange(filter: ChannelFilter) {
+        _state.update { it.copy(filter = filter) }
     }
 
     companion object {

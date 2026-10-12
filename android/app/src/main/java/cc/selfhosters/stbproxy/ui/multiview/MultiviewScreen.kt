@@ -1,12 +1,15 @@
 package cc.selfhosters.stbproxy.ui.multiview
 
 import android.content.res.Configuration
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,6 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,6 +35,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -38,10 +43,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
@@ -61,7 +69,9 @@ import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.di.LocalAppContainer
 import cc.selfhosters.stbproxy.ui.common.ImmersiveEffect
 import cc.selfhosters.stbproxy.ui.common.KeepScreenOnEffect
+import cc.selfhosters.stbproxy.ui.common.TvFocusColor
 import cc.selfhosters.stbproxy.ui.common.VideoSurface
+import cc.selfhosters.stbproxy.ui.common.focusRing
 import cc.selfhosters.stbproxy.ui.common.rememberAutoHideControls
 import cc.selfhosters.stbproxy.ui.picker.ChannelPickerOverlay
 import cc.selfhosters.stbproxy.ui.player.PlaybackError
@@ -101,23 +111,79 @@ fun MultiviewScreen(
     KeepScreenOnEffect()
 
     val controls = rememberAutoHideControls()
+    // TV: selecting a Tile opens a screen-level action bar for it, and the D-pad is driven
+    // here rather than by Compose focus (which is unreliable across nested Tiles).
+    var actionSlot by remember { mutableStateOf<Int?>(null) }
+    var barIndex by remember { mutableIntStateOf(0) }
+    BackHandler(enabled = actionSlot != null) { actionSlot = null }
+
+    fun selectTile(slot: Int) {
+        val tile = state.tiles.firstOrNull { it.slot == slot } ?: return
+        when {
+            tile.channel == null -> viewModel.openPicker(slot)
+            state.swapFrom != null && state.swapFrom != slot -> viewModel.onTileClick(slot)
+            else -> {
+                viewModel.onTileClick(slot)
+                actionSlot = slot
+                barIndex = 0
+            }
+        }
+    }
+
+    fun activateBar(slot: Int, index: Int) {
+        when (index) {
+            0 -> viewModel.openPicker(slot)
+            1 -> viewModel.swap(slot)
+            2 -> viewModel.setAudio(slot)
+            3 -> viewModel.remove(slot)
+        }
+        actionSlot = null
+    }
+
+    fun moveTile(dx: Int, dy: Int) {
+        viewModel.setFocus(
+            moveFocusSlot(state.focusSlot, state.layout.columns, state.layout.rows, dx, dy),
+        )
+    }
+
     val interactions = Modifier
         .onPreviewKeyEvent { event ->
-            if (event.type == KeyEventType.KeyDown) controls.show()
-            false
+            if (event.type != KeyEventType.KeyDown) {
+                false
+            } else {
+                controls.show()
+                val slot = actionSlot
+                if (slot != null) {
+                    when (event.key) {
+                        Key.DirectionLeft -> {
+                            barIndex = (barIndex - 1).coerceAtLeast(0); true
+                        }
+                        Key.DirectionRight -> {
+                            barIndex = (barIndex + 1).coerceAtMost(4); true
+                        }
+                        Key.Enter, Key.DirectionCenter -> {
+                            activateBar(slot, barIndex); true
+                        }
+                        else -> false
+                    }
+                } else {
+                    when (event.key) {
+                        Key.DirectionLeft -> { moveTile(-1, 0); true }
+                        Key.DirectionRight -> { moveTile(1, 0); true }
+                        Key.DirectionUp -> { moveTile(0, -1); true }
+                        Key.DirectionDown -> { moveTile(0, 1); true }
+                        Key.Enter, Key.DirectionCenter -> { selectTile(state.focusSlot); true }
+                        else -> false
+                    }
+                }
+            }
         }
         .pointerInput(Unit) { detectTapGestures { controls.show() } }
 
-    // Compose for TV needs a focused element for the D-pad. Focus the selected Tile on
-    // entry and when it changes, and return focus to it whenever the controls fade. It
-    // is deliberately NOT re-focused when the controls appear, so the remote can move up
-    // into the top bar (the layout chooser).
+    // Keep something focused so the preview key handler above receives the keys.
     val tileFocus = remember { FocusRequester() }
     LaunchedEffect(isTv, state.focusSlot) {
         if (isTv) runCatching { tileFocus.requestFocus() }
-    }
-    LaunchedEffect(isTv, controls.visible) {
-        if (isTv && !controls.visible) runCatching { tileFocus.requestFocus() }
     }
 
     Box(
@@ -157,9 +223,26 @@ fun MultiviewScreen(
                         landscape = landscape,
                         controlsVisible = controls.visible,
                         onInteract = controls::show,
+                        onSelectTile = { actionSlot = it },
                         tileFocus = tileFocus,
                     )
                 }
+            }
+        }
+
+        if (isTv) {
+            actionSlot?.let { slot ->
+                MultiviewActionBar(
+                    slot = slot,
+                    selected = barIndex,
+                    isAudio = state.audioSlot == slot,
+                    onPick = { viewModel.openPicker(slot); actionSlot = null },
+                    onSwap = { viewModel.swap(slot); actionSlot = null },
+                    onAudio = { viewModel.setAudio(slot); actionSlot = null },
+                    onRemove = { viewModel.remove(slot); actionSlot = null },
+                    onClose = { actionSlot = null },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
         }
     }
@@ -183,6 +266,7 @@ private fun MultiviewGrid(
     landscape: Boolean,
     controlsVisible: Boolean,
     onInteract: () -> Unit,
+    onSelectTile: (Int) -> Unit,
     tileFocus: FocusRequester?,
 ) {
     val gap = 8.dp
@@ -201,8 +285,10 @@ private fun MultiviewGrid(
                             tile = tile,
                             state = state,
                             viewModel = viewModel,
+                            isTv = isTv,
                             controlsVisible = controlsVisible,
                             onInteract = onInteract,
+                            onSelectTile = onSelectTile,
                             focusRequester = if (isTv && tile.slot == state.focusSlot) tileFocus else null,
                             modifier = Modifier.weight(1f).fillMaxHeight(),
                         )
@@ -220,8 +306,10 @@ private fun MultiviewGrid(
                     tile = tile,
                     state = state,
                     viewModel = viewModel,
+                    isTv = isTv,
                     controlsVisible = controlsVisible,
                     onInteract = onInteract,
+                    onSelectTile = onSelectTile,
                     focusRequester = if (isTv && tile.slot == state.focusSlot) tileFocus else null,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
@@ -237,8 +325,10 @@ private fun MultiviewGrid(
                     tile = tile,
                     state = state,
                     viewModel = viewModel,
+                    isTv = isTv,
                     controlsVisible = controlsVisible,
                     onInteract = onInteract,
+                    onSelectTile = onSelectTile,
                     focusRequester = if (isTv && tile.slot == state.focusSlot) tileFocus else null,
                     modifier = Modifier.fillMaxWidth().weight(1f),
                 )
@@ -252,8 +342,10 @@ private fun TileCell(
     tile: MultiviewTile,
     state: MultiviewUiState,
     viewModel: MultiviewViewModel,
+    isTv: Boolean,
     controlsVisible: Boolean,
     onInteract: () -> Unit,
+    onSelectTile: (Int) -> Unit,
     focusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -263,6 +355,9 @@ private fun TileCell(
         val armed = state.swapFrom == tile.slot
         val accent = MaterialTheme.colorScheme.primary
         var focused by remember { mutableStateOf(false) }
+        // TV: the D-pad-selected Tile (its focus requester is attached) is the highlighted one.
+        val highlighted = focusRequester != null
+        val ring = focused || highlighted
         val shape = RoundedCornerShape(10.dp)
 
         Box(
@@ -270,24 +365,30 @@ private fun TileCell(
                 .clip(shape)
                 .background(Color.Black)
                 .border(
-                    width = if (isAudio) 3.dp else 1.dp,
+                    width = if (isAudio || ring) 3.dp else 1.dp,
                     color = when {
+                        ring -> TvFocusColor
                         isAudio -> accent
-                        focused -> Color(0xFFFFD34D)
                         else -> MaterialTheme.colorScheme.surfaceVariant
                     },
                     shape = shape,
                 )
                 .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-                .onFocusChanged { focused = it.isFocused }
+                // hasFocus: true while focus is anywhere in this Tile, including its chrome.
+                .onFocusChanged { focused = it.hasFocus }
                 .clickable {
                     onInteract()
-                    // An empty Tile opens the picker; a filled one takes the tile action
-                    // (focus / complete a swap). Its "Pick" chrome changes the channel.
-                    if (tile.channel == null) {
-                        viewModel.openPicker(tile.slot)
-                    } else {
-                        viewModel.onTileClick(tile.slot)
+                    when {
+                        // Empty Tile: choose a channel.
+                        tile.channel == null -> viewModel.openPicker(tile.slot)
+                        // A swap is armed elsewhere: complete it.
+                        state.swapFrom != null && state.swapFrom != tile.slot ->
+                            viewModel.onTileClick(tile.slot)
+                        // Otherwise focus the Tile, and (TV) open its action bar.
+                        else -> {
+                            viewModel.onTileClick(tile.slot)
+                            onSelectTile(tile.slot)
+                        }
                     }
                 },
         ) {
@@ -320,20 +421,18 @@ private fun TileCell(
                 if (isAudio) AudioBadge(Modifier.align(Alignment.BottomStart))
             }
 
-            AnimatedVisibility(
-                visible = controlsVisible && tile.channel != null,
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier.align(Alignment.BottomEnd),
-            ) {
-                TileChrome(
-                    armed = armed,
-                    isAudio = isAudio,
-                    onPick = { viewModel.openPicker(tile.slot) },
-                    onSwap = { viewModel.swap(tile.slot) },
-                    onAudio = { viewModel.setAudio(tile.slot) },
-                    onRemove = { viewModel.remove(tile.slot) },
-                )
+            // Phone only: the per-Tile chrome (touch). TV uses the screen-level action bar.
+            if (!isTv && (controlsVisible || focused) && tile.channel != null) {
+                Box(modifier = Modifier.align(Alignment.BottomEnd)) {
+                    TileChrome(
+                        armed = armed,
+                        isAudio = isAudio,
+                        onPick = { viewModel.openPicker(tile.slot) },
+                        onSwap = { viewModel.swap(tile.slot) },
+                        onAudio = { viewModel.setAudio(tile.slot) },
+                        onRemove = { viewModel.remove(tile.slot) },
+                    )
+                }
             }
 
             if (armed) {
@@ -511,12 +610,13 @@ private fun TileChrome(
     onSwap: () -> Unit,
     onAudio: () -> Unit,
     onRemove: () -> Unit,
+    focusRequester: FocusRequester? = null,
 ) {
     Row(
-        modifier = Modifier.padding(8.dp),
+        modifier = Modifier.padding(8.dp).focusGroup(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        ChromeButton("Pick", onClick = onPick)
+        ChromeButton("Pick", onClick = onPick, focusRequester = focusRequester)
         ChromeButton(if (armed) "Swap ✓" else "Swap", active = armed, onClick = onSwap)
         ChromeButton("🔊", active = isAudio, onClick = onAudio)
         ChromeButton("✕", onClick = onRemove)
@@ -528,6 +628,7 @@ private fun ChromeButton(
     label: String,
     onClick: () -> Unit,
     active: Boolean = false,
+    focusRequester: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
     val accent = MaterialTheme.colorScheme.primary
@@ -536,10 +637,11 @@ private fun ChromeButton(
             .clip(RoundedCornerShape(9.dp))
             .background(if (active) accent else Color(0xB8000000))
             .border(
-                width = 1.dp,
-                color = if (focused) Color(0xFFFFD34D) else Color(0x22FFFFFF),
+                width = if (focused) 3.dp else 1.dp,
+                color = if (focused) TvFocusColor else Color(0x22FFFFFF),
                 shape = RoundedCornerShape(9.dp),
             )
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
             .padding(horizontal = 9.dp, vertical = 5.dp),
@@ -549,6 +651,78 @@ private fun ChromeButton(
             if (active) Color(0xFF04121F) else Color.White,
             11.sp,
             font = if (active) FontWeight.Bold else null,
+        )
+    }
+}
+
+/**
+ * TV: the controls for the selected Tile, as a screen-level bar (a remote can't D-pad
+ * into the per-Tile chrome). Focus lands on it when it opens; Back closes it.
+ */
+@Composable
+private fun MultiviewActionBar(
+    slot: Int,
+    selected: Int,
+    isAudio: Boolean,
+    onPick: () -> Unit,
+    onSwap: () -> Unit,
+    onAudio: () -> Unit,
+    onRemove: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val actions = listOf("Pick", "Swap", if (isAudio) "🔊 Audio" else "Audio", "Remove", "Close")
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 6.dp,
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Label("Tile ${slot + 1}", MaterialTheme.colorScheme.onSurface, 14.sp, maxLines = 1)
+            Spacer(Modifier.weight(1f))
+            actions.forEachIndexed { i, label ->
+                BarButton(
+                    label,
+                    selected = i == selected,
+                    onClick = {
+                        when (i) {
+                            0 -> onPick()
+                            1 -> onSwap()
+                            2 -> onAudio()
+                            3 -> onRemove()
+                            else -> onClose()
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BarButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) accent else MaterialTheme.colorScheme.surfaceVariant)
+            // The bar's Row owns the keys; the buttons are visual only on TV.
+            .focusProperties { canFocus = false }
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = label,
+            color = if (selected) MaterialTheme.colorScheme.onPrimary
+            else MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            softWrap = false,
         )
     }
 }
@@ -569,11 +743,11 @@ private fun MultiviewTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        TextButton(onClick = onBack) {
+        TextButton(onClick = onBack, modifier = Modifier.focusRing()) {
             Text(stringResource(R.string.back), maxLines = 1, softWrap = false)
         }
         if (showLayout) {
-            TextButton(onClick = onCycleLayout) {
+            TextButton(onClick = onCycleLayout, modifier = Modifier.focusRing()) {
                 Text(
                     text = "Grid ${state.layout.label}",
                     maxLines = 1,
@@ -590,9 +764,11 @@ private fun MultiviewTopBar(
             11.sp,
             maxLines = 1,
         )
-        TextButton(onClick = onRetry) { Text("Refresh", maxLines = 1, softWrap = false) }
+        TextButton(onClick = onRetry, modifier = Modifier.focusRing()) {
+            Text("Refresh", maxLines = 1, softWrap = false)
+        }
         if (showFullscreen) {
-            TextButton(onClick = onToggleFullscreen) {
+            TextButton(onClick = onToggleFullscreen, modifier = Modifier.focusRing()) {
                 Text(
                     if (immersive) "Exit full" else "Full screen",
                     maxLines = 1,

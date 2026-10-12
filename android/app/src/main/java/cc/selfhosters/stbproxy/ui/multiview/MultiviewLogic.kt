@@ -22,6 +22,16 @@ fun visibleTiles(tiles: List<MultiviewTile>, layout: MultiviewLayout): List<Mult
     tiles.take(layout.columns * layout.rows)
 
 /**
+ * The Tile the D-pad moves to from [slot] on a [columns] x [rows] grid, clamped to the
+ * grid. Used to drive TV navigation without relying on Compose focus.
+ */
+fun moveFocusSlot(slot: Int, columns: Int, rows: Int, dx: Int, dy: Int): Int {
+    val col = (slot % columns + dx).coerceIn(0, columns - 1)
+    val row = (slot / columns + dy).coerceIn(0, rows - 1)
+    return row * columns + col
+}
+
+/**
  * Tuner budget used when `GET /discover.json` can't be read (spec 2.7). The
  * proxy's own `tunerCount()` floors at 1, but a budget of 1 would render a 2x2
  * grid almost entirely busy on first launch, so the app assumes the common

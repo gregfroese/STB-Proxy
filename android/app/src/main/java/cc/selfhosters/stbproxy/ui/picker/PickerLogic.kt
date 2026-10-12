@@ -5,6 +5,25 @@ import cc.selfhosters.stbproxy.data.model.Channel
 /** Rail entry for public channels that sit in no visible Block (`blocks: []`). */
 const val OTHER_BLOCK = "Other"
 
+/** The picker's favourites filter (spec follow-up). */
+enum class ChannelFilter(val label: String) {
+    ALL("All"),
+    FAVOURITES("★ Favourites"),
+    BLOCK_FAVOURITES("★ Block faves"),
+}
+
+/** Keep only the channels the [filter] selects. */
+fun applyChannelFilter(channels: List<Channel>, filter: ChannelFilter): List<Channel> = when (filter) {
+    ChannelFilter.ALL -> channels
+    ChannelFilter.FAVOURITES -> channels.filter { it.favourite }
+    ChannelFilter.BLOCK_FAVOURITES -> channels.filter { it.blockFavourites.isNotEmpty() }
+}
+
+/** Favourites first (overall, then block favourites), then by number and name. */
+fun sortChannels(channels: List<Channel>): List<Channel> = channels.sortedWith(
+    compareBy({ !it.favourite }, { it.blockFavourites.isEmpty() }, { it.number ?: "" }, { it.name }),
+)
+
 /** One entry of the Block rail: a name plus its current channel count. */
 data class BlockEntry(val name: String, val count: Int)
 
