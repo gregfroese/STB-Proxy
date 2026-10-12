@@ -3205,6 +3205,116 @@ def buildLineup():
     return entries, failedPortals
 
 
+def visibleBlockNames(blocks):
+    """The blocks that may appear in /api/lineup: globally on and not hidden.
+
+    blocks is the dict viewerBlocks() returns: an account's assigned blocks with their
+    global state, or None for the full lineup (operator / anonymous).
+    """
+    hidden = set(getHiddenBlocks())
+    states = getBlocks() if blocks is None else blocks
+    return {name for name, state in states.items() if state == "true" and name not in hidden}
+
+
+# The one /api/ route that is not token-guarded: the Android app authenticates with the same
+# HTTP Basic the feeds use (operator -> matching Account -> 401), so it uses @feedAuthorise.
+@app.route("/api/lineup", methods=["GET"])
+@feedAuthorise
+def apiLineup():
+    """The account-scoped, enveloped channel list the Android app consumes (see spec 1.4)."""
+    portals = getPortals()
+    blocks = viewerBlocks()
+    visible = visibleBlockNames(blocks)
+    account = getattr(g, "account", None)
+
+    channels = []
+    failedPortals = []
+    for portal in portals:
+        if portals[portal]["enabled"] != "true":
+            continue
+        enabledChannels = plexLineup(portals[portal], blocks)
+        if len(enabledChannels) == 0:
+            continue
+
+        name = portals[portal]["name"]
+        url = portals[portal]["url"]
+        macs = list(portals[portal]["macs"].keys())
+        proxy = portals[portal]["proxy"]
+        customChannelNames = portals[portal].get("custom channel names", {})
+        customGenres = portals[portal].get("custom genres", {})
+        customChannelNumbers = portals[portal].get("custom channel numbers", {})
+        customEpgIds = portals[portal].get("custom epg ids", {})
+        channelBlocks = portals[portal].get("channel blocks", {})
+
+        allChannels = genres = None
+        for mac in macs:
+            try:
+                token = stb.getToken(url, mac, proxy)
+                stb.getProfile(url, mac, token, proxy)
+                allChannels = stb.getAllChannels(url, mac, token, proxy)
+                genres = stb.getGenreNames(url, mac, token, proxy)
+                break
+            except:
+                allChannels = None
+                genres = None
+
+        if not allChannels or not genres:
+            logger.error("Error making lineup for {}, skipping".format(name))
+            failedPortals.append(name)
+            continue
+
+        matched = matchedLogos(portal, allChannels, genres)
+        for channel in allChannels:
+            channelId = str(channel.get("id"))
+            if channelId not in enabledChannels:
+                continue
+
+            channelName = customChannelNames.get(channelId)
+            if channelName == None:
+                channelName = str(channel.get("name"))
+            genre = customGenres.get(channelId)
+            if genre == None:
+                genre = str(genres.get(str(channel.get("tv_genre_id"))))
+            channelNumber = customChannelNumbers.get(channelId)
+            if channelNumber == None:
+                channelNumber = str(channel.get("number"))
+            epgId = customEpgIds.get(channelId)
+            if epgId == None:
+                epgId = defaultEpgId(portal, channelId)
+            logo = channelLogo(portals[portal], channelId, channel.get("logo"), matched)
+
+            # Every visible block the channel is in: a visible channel in a visible block
+            # guarantees that block has >=1 visible channel, so empty blocks never appear.
+            memberBlocks = sorted(
+                block
+                for block in availability.channelBlockNames(channelBlocks.get(channelId, []))
+                if block in visible
+            )
+
+            channels.append({
+                "portal": portal,
+                "portalName": name,
+                "channelId": channelId,
+                "name": channelName,
+                "number": channelNumber,
+                "logo": logo,
+                "genre": genre,
+                "epgId": epgId,
+                "blocks": memberBlocks,
+                "url": "/play/{}/{}".format(portal, channelId),
+            })
+
+    channels.sort(key=lambda c: (c["number"], c["name"]))
+    blocksOut = sorted({block for channel in channels for block in channel["blocks"]})
+
+    return flask.jsonify({
+        "account": account["username"] if account else None,
+        "blocks": blocksOut,
+        "channels": channels,
+        "failedPortals": failedPortals,
+    })
+
+
 lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}
 lastJellyfinSync = {"time": None, "message": "Not refreshed since STB-Proxy started", "ok": None}
 syncRetry = {"at": None}
