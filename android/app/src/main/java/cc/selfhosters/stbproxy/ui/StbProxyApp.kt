@@ -1,5 +1,6 @@
 package cc.selfhosters.stbproxy.ui
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.CircularProgressIndicator
@@ -9,9 +10,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import cc.selfhosters.stbproxy.data.SessionState
 import cc.selfhosters.stbproxy.di.LocalAppContainer
 import cc.selfhosters.stbproxy.ui.login.LoginScreen
@@ -25,6 +28,16 @@ object Routes {
     const val PLAYER = "player"
     const val MULTIVIEW = "multiview"
     const val SETTINGS = "settings"
+
+    const val ARG_PORTAL = "portal"
+    const val ARG_CHANNEL_ID = "channelId"
+    const val ARG_BLOCK = "block"
+
+    /** Player route carrying the channel identity and its launch Block (zap list). */
+    fun player(portal: String, channelId: String, block: String): String =
+        "$PLAYER?$ARG_PORTAL=${Uri.encode(portal)}" +
+            "&$ARG_CHANNEL_ID=${Uri.encode(channelId)}" +
+            "&$ARG_BLOCK=${Uri.encode(block)}"
 }
 
 /**
@@ -57,12 +70,29 @@ private fun MainNavHost() {
     NavHost(navController = navController, startDestination = Routes.PICKER) {
         composable(Routes.PICKER) {
             PickerScreen(
-                onChannelClick = { navController.navigate(Routes.PLAYER) },
+                onChannelClick = { channel, launchBlock ->
+                    navController.navigate(
+                        Routes.player(channel.portal, channel.channelId, launchBlock),
+                    )
+                },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
         }
-        composable(Routes.PLAYER) {
-            PlayerScreen()
+        composable(
+            route = "${Routes.PLAYER}?${Routes.ARG_PORTAL}={${Routes.ARG_PORTAL}}" +
+                "&${Routes.ARG_CHANNEL_ID}={${Routes.ARG_CHANNEL_ID}}" +
+                "&${Routes.ARG_BLOCK}={${Routes.ARG_BLOCK}}",
+            arguments = listOf(
+                navArgument(Routes.ARG_PORTAL) { type = NavType.StringType; defaultValue = "" },
+                navArgument(Routes.ARG_CHANNEL_ID) { type = NavType.StringType; defaultValue = "" },
+                navArgument(Routes.ARG_BLOCK) { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { entry ->
+            PlayerScreen(
+                portal = entry.arguments?.getString(Routes.ARG_PORTAL).orEmpty(),
+                channelId = entry.arguments?.getString(Routes.ARG_CHANNEL_ID).orEmpty(),
+                launchBlock = entry.arguments?.getString(Routes.ARG_BLOCK).orEmpty(),
+            )
         }
         composable(Routes.MULTIVIEW) {
             MultiviewScreen()

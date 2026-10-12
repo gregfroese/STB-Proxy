@@ -16,9 +16,16 @@ import cc.selfhosters.stbproxy.R
 /**
  * Placeholder for the split player + now/next screen (spec 2.6). Media3
  * (`PlayerSurface`, ExoPlayer) lands in the playback ticket.
+ *
+ * [portal]/[channelId] identify the channel to play and [launchBlock] is the
+ * Block it was launched from — the zap list for channel up/down (spec 2.6).
  */
 @Composable
-fun PlayerScreen() {
+fun PlayerScreen(
+    portal: String,
+    channelId: String,
+    launchBlock: String,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -34,5 +41,11 @@ fun PlayerScreen() {
             text = "Player placeholder.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (channelId.isNotBlank()) {
+            Text(
+                text = "Channel $portal/$channelId · Block: $launchBlock",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
