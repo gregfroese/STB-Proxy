@@ -94,6 +94,7 @@ private fun MainNavHost() {
                 channelId = entry.arguments?.getString(Routes.ARG_CHANNEL_ID).orEmpty(),
                 launchBlock = entry.arguments?.getString(Routes.ARG_BLOCK).orEmpty(),
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                onOpenMultiview = { navController.navigate(Routes.MULTIVIEW) },
             )
         }
         composable(Routes.MULTIVIEW) {

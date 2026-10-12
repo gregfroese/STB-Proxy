@@ -137,3 +137,10 @@ fun zapTarget(
     }
     return list.getOrNull(zapIndex(list.size, if (index < 0) 0 else index, delta))
 }
+
+/**
+ * Whether the player should start in full-screen (immersive) mode. TV is always
+ * full-screen already, so only phones matter, and there a phone in landscape
+ * fills the screen while portrait keeps the video above the now/next sheet.
+ */
+fun shouldAutoFullscreen(isTv: Boolean, isLandscape: Boolean): Boolean = !isTv && isLandscape

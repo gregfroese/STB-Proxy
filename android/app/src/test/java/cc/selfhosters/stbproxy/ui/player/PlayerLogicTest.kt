@@ -219,4 +219,22 @@ class PlayerLogicTest {
         assertEquals(2, zapIndex(3, 0, -1))
         assertEquals(1, zapIndex(3, 0, 1))
     }
+
+    // ---- full-screen decision ----
+
+    @Test
+    fun `phone landscape starts full-screen`() {
+        assertTrue(shouldAutoFullscreen(isTv = false, isLandscape = true))
+    }
+
+    @Test
+    fun `phone portrait keeps the now-next sheet`() {
+        assertTrue(!shouldAutoFullscreen(isTv = false, isLandscape = false))
+    }
+
+    @Test
+    fun `TV is never auto-toggled`() {
+        assertTrue(!shouldAutoFullscreen(isTv = true, isLandscape = true))
+        assertTrue(!shouldAutoFullscreen(isTv = true, isLandscape = false))
+    }
 }

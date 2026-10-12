@@ -1,11 +1,16 @@
 package cc.selfhosters.stbproxy.ui.player
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -37,8 +42,12 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -51,8 +60,8 @@ import cc.selfhosters.stbproxy.di.LocalAppContainer
 /**
  * The split player screen (spec 2.6): video plus a persistent now/next sidebar.
  * TV = video pane + right-hand sidebar; phone = video with the sidebar as a
- * bottom sheet. Channel up/down walks the launch Block; error states replace the
- * video but leave the sidebar live.
+ * bottom sheet, or full-screen in landscape. Channel up/down walks the launch
+ * Block; error states replace the video but leave the sidebar live.
  */
 @Composable
 fun PlayerScreen(
@@ -60,6 +69,7 @@ fun PlayerScreen(
     channelId: String,
     launchBlock: String,
     onOpenSettings: () -> Unit,
+    onOpenMultiview: () -> Unit,
     viewModel: PlayerViewModel = viewModel(
         factory = PlayerViewModel.factory(
             apiClient = LocalAppContainer.current.apiClient,
@@ -74,8 +84,10 @@ fun PlayerScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val container = LocalAppContainer.current
     val context = LocalContext.current
-    val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK ==
+    val configuration = LocalConfiguration.current
+    val isTv = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK ==
         Configuration.UI_MODE_TYPE_TELEVISION
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
     val player = remember { buildStreamPlayer(context, container.playerDataSourceFactory) }
     DisposableEffect(player) {
@@ -113,6 +125,14 @@ fun PlayerScreen(
 
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onForeground() }
 
+    // Full-screen playback: automatic on a phone in landscape, toggleable anywhere.
+    var immersive by remember { mutableStateOf(shouldAutoFullscreen(isTv, isLandscape)) }
+    var guideVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(isTv, isLandscape) {
+        if (!isTv) immersive = shouldAutoFullscreen(isTv, isLandscape)
+    }
+    ImmersiveEffect(enabled = immersive)
+
     val keyHandler = Modifier.onPreviewKeyEvent { event ->
         if (event.type != KeyEventType.KeyDown) {
             false
@@ -140,6 +160,11 @@ fun PlayerScreen(
                 onRetry = viewModel::retry,
                 onWaitForTuner = viewModel::waitForTuner,
                 onTryNext = { viewModel.zap(1) },
+                onOpenMultiview = onOpenMultiview,
+                onToggleFullscreen = null,
+                immersive = false,
+                onToggleGuide = null,
+                guideVisible = false,
                 modifier = Modifier.weight(1f).fillMaxSize(),
             )
             PlayerSidebar(
@@ -148,6 +173,36 @@ fun PlayerScreen(
                 onSelectChannel = viewModel::selectChannel,
                 modifier = Modifier.width(SidebarWidth).fillMaxSize(),
             )
+        }
+    } else if (immersive) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black).then(keyHandler)) {
+            VideoPane(
+                state = state,
+                player = player,
+                playing = playing,
+                buffering = buffering,
+                onOpenSettings = onOpenSettings,
+                onRetry = viewModel::retry,
+                onWaitForTuner = viewModel::waitForTuner,
+                onTryNext = { viewModel.zap(1) },
+                onOpenMultiview = onOpenMultiview,
+                onToggleFullscreen = { immersive = false },
+                immersive = true,
+                onToggleGuide = { guideVisible = !guideVisible },
+                guideVisible = guideVisible,
+                modifier = Modifier.fillMaxSize(),
+            )
+            if (guideVisible) {
+                PlayerSidebar(
+                    state = state,
+                    isTv = false,
+                    onSelectChannel = viewModel::selectChannel,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .width(320.dp),
+                )
+            }
         }
     } else {
         PhonePlayerLayout(
@@ -160,9 +215,49 @@ fun PlayerScreen(
             onWaitForTuner = viewModel::waitForTuner,
             onTryNext = { viewModel.zap(1) },
             onSelectChannel = viewModel::selectChannel,
+            onOpenMultiview = onOpenMultiview,
+            onToggleFullscreen = { immersive = true },
             modifier = keyHandler,
         )
     }
+}
+
+/**
+ * Hides the system bars while full-screen, and restores them (and normal window
+ * fitting) on exit or when the screen leaves composition.
+ */
+@Composable
+private fun ImmersiveEffect(enabled: Boolean) {
+    val view = LocalView.current
+    DisposableEffect(enabled, view) {
+        val window = view.context.findActivity()?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        if (window != null) {
+            WindowCompat.setDecorFitsSystemWindows(window, !enabled)
+        }
+        if (enabled) {
+            controller?.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller?.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+        onDispose {
+            if (window != null) {
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+            }
+            controller?.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+}
+
+private fun Context.findActivity(): Activity? {
+    var context: Context = this
+    while (context is ContextWrapper) {
+        if (context is Activity) return context
+        context = context.baseContext
+    }
+    return null
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -177,6 +272,8 @@ private fun PhonePlayerLayout(
     onWaitForTuner: () -> Unit,
     onTryNext: () -> Unit,
     onSelectChannel: (Int) -> Unit,
+    onOpenMultiview: () -> Unit,
+    onToggleFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sheetPeek = 300.dp
@@ -204,6 +301,11 @@ private fun PhonePlayerLayout(
             onRetry = onRetry,
             onWaitForTuner = onWaitForTuner,
             onTryNext = onTryNext,
+            onOpenMultiview = onOpenMultiview,
+            onToggleFullscreen = onToggleFullscreen,
+            immersive = false,
+            onToggleGuide = null,
+            guideVisible = false,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -222,6 +324,11 @@ private fun VideoPane(
     onRetry: () -> Unit,
     onWaitForTuner: () -> Unit,
     onTryNext: () -> Unit,
+    onOpenMultiview: () -> Unit,
+    onToggleFullscreen: (() -> Unit)?,
+    immersive: Boolean,
+    onToggleGuide: (() -> Unit)?,
+    guideVisible: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(modifier = modifier.background(Color.Black)) {
@@ -262,6 +369,31 @@ private fun VideoPane(
         } else {
             LiveBadge(playing = playing, buffering = buffering, block = state.launchBlock)
         }
+
+        // Kept on top of every state, so the sidebar/player actions stay reachable
+        // even when the video shows an error.
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OverlayButton("Multiview", onOpenMultiview)
+            onToggleGuide?.let { OverlayButton(if (guideVisible) "Hide guide" else "Guide", it) }
+            onToggleFullscreen?.let {
+                OverlayButton(if (immersive) "Exit full screen" else "Full screen", it)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverlayButton(text: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+    ) {
+        Text(text = text, fontSize = 12.sp)
     }
 }
 

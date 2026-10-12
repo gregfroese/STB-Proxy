@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -26,7 +27,9 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text as M3Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -121,7 +124,8 @@ fun PickerScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(palette.background),
+            .background(palette.background)
+            .safeDrawingPadding(),
     ) {
         PickerTopBar(
             state = state,
@@ -428,7 +432,7 @@ private fun PickerTopBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f)) {
             M3Text(
                 text = stringResource(R.string.picker_title),
                 style = MaterialTheme.typography.headlineSmall,
@@ -438,14 +442,19 @@ private fun PickerTopBar(
                     text = label,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onOpenMultiview) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            FilledTonalButton(onClick = onOpenMultiview) {
                 M3Text(stringResource(R.string.nav_multiview))
             }
-            TextButton(onClick = onOpenSettings) {
+            OutlinedButton(onClick = onOpenSettings) {
                 M3Text(stringResource(R.string.nav_settings))
             }
         }
