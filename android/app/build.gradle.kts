@@ -1,5 +1,12 @@
 import java.util.Properties
 
+fun quoted(value: String): String =
+    "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val stbProxyBaseUrl: String = (project.findProperty("stbProxyBaseUrl") as? String).orEmpty()
+val stbProxyUsername: String = (project.findProperty("stbProxyUsername") as? String).orEmpty()
+val stbProxyPassword: String = (project.findProperty("stbProxyPassword") as? String).orEmpty()
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -28,6 +35,12 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // Temporary walking-skeleton config (ticket 06); real login/config lands in ticket 07.
+        // Supply with -PstbProxyBaseUrl=… -PstbProxyUsername=… -PstbProxyPassword=….
+        buildConfigField("String", "STB_PROXY_BASE_URL", quoted(stbProxyBaseUrl))
+        buildConfigField("String", "STB_PROXY_USERNAME", quoted(stbProxyUsername))
+        buildConfigField("String", "STB_PROXY_PASSWORD", quoted(stbProxyPassword))
     }
 
     signingConfigs {
@@ -65,6 +78,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -103,4 +117,7 @@ dependencies {
     implementation(libs.androidx.security.crypto)
 
     debugImplementation(libs.androidx.compose.ui.tooling)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.okhttp.mockwebserver)
 }
