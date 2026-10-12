@@ -5,8 +5,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import cc.selfhosters.stbproxy.data.SessionController
 import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.data.network.ApiClient
+import cc.selfhosters.stbproxy.data.network.ApiException
 import cc.selfhosters.stbproxy.ui.player.PlaybackError
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,7 @@ import kotlinx.coroutines.launch
 data class MultiviewUiState(
     val loading: Boolean = true,
     val lineupError: String? = null,
+    val blocks: List<String> = emptyList(),
     val channels: List<Channel> = emptyList(),
     val tiles: List<MultiviewTile> = emptyTiles(),
     val tunerCount: Int = DEFAULT_TUNER_COUNT,
@@ -35,7 +38,7 @@ data class MultiviewUiState(
     val prepareNonces: Map<Int, Int> = emptyMap(),
 ) {
     /** The slots that may open a stream with the current budget (spec 2.7). */
-    val playableSlots: Set<Int> get() = withinTunerBudget(tiles, tunerCount)
+    val playableSlots: Set<Int> get() = playableSlots(tiles, tunerCount)
 
     /** Slots with a channel but no tuner for it. */
     val overBudget: Set<Int> get() = overBudgetSlots(tiles, tunerCount)
@@ -54,6 +57,7 @@ data class MultiviewUiState(
  */
 class MultiviewViewModel(
     private val apiClient: ApiClient,
+    private val session: SessionController,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MultiviewUiState())
@@ -70,15 +74,19 @@ class MultiviewViewModel(
                 val lineup = apiClient.fetchLineup()
                 val discovered = runCatching { apiClient.fetchTunerCount() }.getOrNull()
                 _state.update { state ->
-                    val tiles = seedTiles(state.tiles, lineup.channels)
                     state.copy(
                         loading = false,
                         lineupError = null,
+                        blocks = lineup.blocks,
                         channels = lineup.channels,
-                        tiles = tiles,
                         tunerCount = discovered ?: DEFAULT_TUNER_COUNT,
                         tunerCountKnown = discovered != null,
                     )
+                }
+            } catch (e: ApiException) {
+                if (e.code == 401) session.reportUnauthorized()
+                _state.update {
+                    it.copy(loading = false, lineupError = "Failed to load channels (HTTP ${e.code})")
                 }
             } catch (e: Exception) {
                 _state.update {
@@ -180,20 +188,10 @@ class MultiviewViewModel(
         _state.update { it.copy(errors = it.errors + (slot to error)) }
     }
 
-    /**
-     * Fills empty Tiles with the first lineup channels so the grid isn't blank on
-     * entry. Once the user has touched the grid (any Tile filled) it's left alone.
-     */
-    private fun seedTiles(tiles: List<MultiviewTile>, channels: List<Channel>): List<MultiviewTile> {
-        if (tiles.any { it.channel != null }) return tiles
-        return tiles.mapIndexed { index, tile ->
-            channels.getOrNull(index)?.let { tile.copy(channel = it) } ?: tile
-        }
-    }
-
     companion object {
-        fun factory(apiClient: ApiClient): ViewModelProvider.Factory = viewModelFactory {
-            initializer { MultiviewViewModel(apiClient) }
-        }
+        fun factory(apiClient: ApiClient, session: SessionController): ViewModelProvider.Factory =
+            viewModelFactory {
+                initializer { MultiviewViewModel(apiClient, session) }
+            }
     }
 }

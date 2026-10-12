@@ -64,6 +64,7 @@ fun PlayerScreen(
         factory = PlayerViewModel.factory(
             apiClient = LocalAppContainer.current.apiClient,
             epgRepository = LocalAppContainer.current.epgRepository,
+            session = LocalAppContainer.current.sessionController,
             portal = portal,
             channelId = channelId,
             launchBlock = launchBlock,

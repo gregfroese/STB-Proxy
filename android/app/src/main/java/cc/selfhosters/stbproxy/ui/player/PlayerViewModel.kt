@@ -5,10 +5,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import cc.selfhosters.stbproxy.data.SessionController
 import cc.selfhosters.stbproxy.data.epg.EpgRepository
 import cc.selfhosters.stbproxy.data.epg.NowNext
 import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.data.network.ApiClient
+import cc.selfhosters.stbproxy.data.network.ApiException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -48,6 +50,7 @@ data class PlayerUiState(
 class PlayerViewModel(
     private val apiClient: ApiClient,
     private val epgRepository: EpgRepository,
+    private val session: SessionController,
     private val portal: String,
     private val channelId: String,
     launchBlock: String,
@@ -90,6 +93,14 @@ class PlayerViewModel(
                 if (channel != null) {
                     refreshEpg()
                     startTicker()
+                }
+            } catch (e: ApiException) {
+                if (e.code == 401) session.reportUnauthorized()
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        lineupError = "Failed to load channels (HTTP ${e.code})",
+                    )
                 }
             } catch (e: Exception) {
                 _state.update {
@@ -217,12 +228,13 @@ class PlayerViewModel(
         fun factory(
             apiClient: ApiClient,
             epgRepository: EpgRepository,
+            session: SessionController,
             portal: String,
             channelId: String,
             launchBlock: String,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
-                PlayerViewModel(apiClient, epgRepository, portal, channelId, launchBlock)
+                PlayerViewModel(apiClient, epgRepository, session, portal, channelId, launchBlock)
             }
         }
     }

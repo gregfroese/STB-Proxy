@@ -26,7 +26,7 @@ sealed interface ProbeResult {
     /** Network / timeout / DNS failure. */
     data class Unreachable(val host: String) : ProbeResult
 
-    /** 404, a non-JSON body, or JSON without a `channels` key. */
+    /** 404, an unexpected non-2xx (e.g. 403), a non-JSON body, or JSON without a `channels` key. */
     data class NotStbProxy(val host: String) : ProbeResult
 
     /** 5xx. */
@@ -91,7 +91,7 @@ class ConnectionProbe(
                     response.code == 401 -> ProbeResult.WrongCredentials
                     response.code == 404 -> ProbeResult.NotStbProxy(host)
                     response.code in 500..599 -> ProbeResult.ServerError(response.code)
-                    !response.isSuccessful -> ProbeResult.ServerError(response.code)
+                    !response.isSuccessful -> ProbeResult.NotStbProxy(host)
                     else -> classifyOk(host, response.body?.string())
                 }
             }

@@ -15,13 +15,13 @@ ITERATIONS = 600000
 SALT_BYTES = 16
 
 
-def hashPassword(password, iterations=ITERATIONS):
+def hashPassword(password):
     """A self-describing hash: pbkdf2_sha256$<iters>$<salt_b64>$<hash_b64>."""
     salt = secrets.token_bytes(SALT_BYTES)
-    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, ITERATIONS)
     return "{}${}${}${}".format(
         ALGORITHM,
-        iterations,
+        ITERATIONS,
         base64.b64encode(salt).decode("ascii"),
         base64.b64encode(digest).decode("ascii"),
     )

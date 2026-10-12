@@ -238,7 +238,7 @@ private fun PickerBody(
 }
 
 @Composable
-private fun PickerGrid(
+internal fun PickerGrid(
     channels: List<Channel>,
     nowNext: Map<String, NowNext>,
     activeBlock: String?,
@@ -505,19 +505,32 @@ private fun initials(name: String): String =
 
 /**
  * The 2.5 picker re-presented as an overlay, so Multiview can choose one Tile's
- * channel without leaving the grid (spec 2.7 Pick). Reuses the picker's tiles and
- * search; selecting a channel hands it back and closes.
+ * channel without leaving the grid (spec 2.7 Pick). Reuses the picker's Block
+ * rail (TV vertical rail / phone chip strip) and "Other" grouping, its search
+ * and its tiles; selecting a channel hands it back and closes.
  */
 @Composable
 fun ChannelPickerOverlay(
     title: String,
+    blocks: List<String>,
     channels: List<Channel>,
     onSelect: (Channel) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val palette = pickerPalette()
+    val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK ==
+        Configuration.UI_MODE_TYPE_TELEVISION
     var query by remember { mutableStateOf("") }
-    val visible = remember(channels, query) { searchChannels(channels, query) }
+    val rail = remember(blocks, channels) { blockRail(blocks, channels) }
+    var activeBlock by remember(rail) { mutableStateOf(rail.firstOrNull()?.name) }
+    val searching = query.isNotBlank()
+    val visible = remember(channels, activeBlock, query, searching) {
+        if (searching) searchChannels(channels, query)
+        else activeBlock?.let { channelsInBlock(channels, it) }.orEmpty()
+    }
+    val blockCounts = remember(channels, rail, query, searching) {
+        if (searching) blockMatchCounts(channels, rail.map { it.name }, query) else emptyMap()
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -533,27 +546,53 @@ fun ChannelPickerOverlay(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             )
             SearchField(query = query, onQueryChange = { query = it }, palette = palette)
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 150.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(420.dp),
-                contentPadding = PaddingValues(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                itemsIndexed(
-                    visible,
-                    key = { _, channel -> "${channel.portal}/${channel.channelId}" },
-                ) { _, channel ->
-                    ChannelTile(
-                        channel = channel,
-                        nowNext = null,
-                        activeBlock = null,
-                        searching = false,
-                        palette = palette,
-                        onClick = { onSelect(channel) },
-                    )
+            Box(modifier = Modifier.fillMaxWidth().height(420.dp)) {
+                if (isTv) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        TvBlockRail(
+                            rail = rail,
+                            activeBlock = activeBlock,
+                            searching = searching,
+                            resultCount = visible.size,
+                            blockCounts = blockCounts,
+                            palette = palette,
+                            onSelect = { activeBlock = it },
+                        )
+                        PickerGrid(
+                            channels = visible,
+                            nowNext = emptyMap(),
+                            activeBlock = activeBlock,
+                            searching = searching,
+                            isTv = true,
+                            query = query,
+                            palette = palette,
+                            onChannelClick = onSelect,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                } else {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        PhoneBlockChips(
+                            rail = rail,
+                            activeBlock = activeBlock,
+                            searching = searching,
+                            resultCount = visible.size,
+                            blockCounts = blockCounts,
+                            palette = palette,
+                            onSelect = { activeBlock = it },
+                        )
+                        PickerGrid(
+                            channels = visible,
+                            nowNext = emptyMap(),
+                            activeBlock = activeBlock,
+                            searching = searching,
+                            isTv = false,
+                            query = query,
+                            palette = palette,
+                            onChannelClick = onSelect,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
             Row(

@@ -109,6 +109,25 @@ class DefaultBlocksHiddenTest(unittest.TestCase):
         self.assertNotIn("/play/{}/3".format(PORTAL), body)
 
 
+class DefaultBlocksSyncTest(unittest.TestCase):
+    def setUp(self):
+        cfg = feedConfig(**{"settings": {"plex url": "http://plex.test:32400", "plex token": "tok"}})
+        self.app = loadApp(self, cfg)
+        self.client = self.app.app.test_client()
+        patcher = mock.patch.object(self.app.plex, "sync", return_value="Plex updated")
+        self.sync = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_server_side_sync_ignores_default_blocks(self):
+        # /api/sync runs in a request context but is a server-side sync, not an anonymous
+        # client: the default blocks must not scope what Plex is told about.
+        token = self.app.getSettings()["api token"]
+        response = self.client.post("/api/sync", headers={"Authorization": "Bearer " + token})
+        self.assertEqual(response.status_code, 200)
+        entries = self.sync.call_args.args[3]
+        self.assertEqual(sorted(e["GuideNumber"] for e in entries), ["101", "102", "103"])
+
+
 class DefaultBlocksAdminTest(unittest.TestCase):
     def setUp(self):
         self.app = loadApp(self, feedConfig(**{"hidden blocks": ["Sports"]}))
