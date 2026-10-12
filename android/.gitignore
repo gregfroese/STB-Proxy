@@ -1,0 +1,13 @@
+# Android / Gradle
+.gradle/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.iml
+.idea/
+
+# Release signing material — never committed.
+keystore.properties
+keystore/
