@@ -6,6 +6,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -50,6 +53,28 @@ class ApiClient(
             }
         }
         throw lastError ?: IOException("Request failed")
+    }
+
+    /**
+     * Best-effort reads of the proxy's Tuner budget from `GET /discover.json`
+     * (spec 2.7). This drives the app's proactive "all tuners busy" marking; a
+     * missing key, non-2xx, or unreachable proxy returns null and the caller
+     * falls back to a default. A single attempt only — it is a hint, not a
+     * correctness requirement.
+     */
+    suspend fun fetchTunerCount(): Int? = withContext(Dispatchers.IO) {
+        val base = baseUrl ?: return@withContext null
+        try {
+            val request = Request.Builder().url("$base/discover.json").build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val body = response.body?.string() ?: return@withContext null
+                val obj = json.parseToJsonElement(body) as? JsonObject
+                obj?.get("TunerCount")?.jsonPrimitive?.intOrNull?.takeIf { it > 0 }
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun execute(request: Request): Lineup {

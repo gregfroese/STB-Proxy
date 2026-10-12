@@ -12,4 +12,5 @@
     <string name="player_title">Player</string>
     <string name="multiview_title">Multiview</string>
     <string name="settings_title">Settings</string>
+    <string name="cancel">Cancel</string>
 </resources>
