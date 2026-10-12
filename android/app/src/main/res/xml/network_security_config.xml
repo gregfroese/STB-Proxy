@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  STB-Proxy is reached at a user-entered LAN address over plain HTTP (the base URL
+  defaults to http://), so cleartext must be permitted or Android blocks every request.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
