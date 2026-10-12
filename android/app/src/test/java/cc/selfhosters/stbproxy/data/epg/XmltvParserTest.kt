@@ -26,6 +26,7 @@ class XmltvParserTest {
           </programme>
           <programme start="20240101120000 +0000" stop="20240101130000 +0000" channel="bbc1.uk">
             <title lang="en">News at Noon</title>
+            <desc lang="en">The latest stories.</desc>
           </programme>
           <programme start="20240101130000 +0000" stop="20240101140000 +0000" channel="bbc1.uk">
             <title lang="en">Afternoon</title>
@@ -71,6 +72,13 @@ class XmltvParserTest {
         // "Earlier Next" (13:10) must win over "Later" (13:30) even though it
         // appears later in the document.
         assertEquals("Earlier Next", guide.getValue("itv1.uk").next?.title)
+    }
+
+    @Test
+    fun `keeps the description when present and null otherwise`() {
+        val guide = parse()
+        assertEquals("The latest stories.", guide.getValue("bbc1.uk").now?.description)
+        assertNull(guide.getValue("bbc1.uk").next?.description)
     }
 
     @Test

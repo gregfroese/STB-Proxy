@@ -47,9 +47,14 @@ class XmltvParser(
                     val isNext = start.isAfter(now)
 
                     if (isNow || isNext) {
-                        val title = readProgrammeTitle(parser)
-                        if (!title.isNullOrBlank()) {
-                            val programme = Programme(title = title, start = start, stop = stop)
+                        val info = readProgrammeInfo(parser)
+                        if (!info.title.isNullOrBlank()) {
+                            val programme = Programme(
+                                title = info.title,
+                                start = start,
+                                stop = stop,
+                                description = info.description,
+                            )
                             if (isNow) {
                                 val existing = nowByChannel[channel]
                                 if (existing == null || start.isAfter(existing.start)) {
@@ -63,7 +68,7 @@ class XmltvParser(
                                 }
                             }
                         }
-                        // readProgrammeTitle left the parser on </programme>.
+                        // readProgrammeInfo left the parser on </programme>.
                         event = parser.eventType
                         continue
                     }
@@ -78,25 +83,26 @@ class XmltvParser(
 
     /**
      * Consumes the current `<programme>` element up to (and including) its end
-     * tag, returning the first `<title>` text or null. Leaves the parser on the
-     * programme's END_TAG.
+     * tag, returning its `<title>` and (optional) `<desc>` text. Leaves the
+     * parser on the programme's END_TAG.
      */
-    private fun readProgrammeTitle(parser: XmlPullParser): String? {
+    private fun readProgrammeInfo(parser: XmlPullParser): ProgrammeInfo {
         var title: String? = null
+        var description: String? = null
         var depth = 1
         while (depth > 0) {
             when (parser.next()) {
                 XmlPullParser.START_TAG -> {
-                    if (depth == 1 && parser.name == TAG_TITLE) {
-                        title = readElementText(parser)
-                    } else {
-                        depth++
+                    when {
+                        depth == 1 && parser.name == TAG_TITLE -> title = readElementText(parser)
+                        depth == 1 && parser.name == TAG_DESC -> description = readElementText(parser)
+                        else -> depth++
                     }
                 }
                 XmlPullParser.END_TAG -> depth--
             }
         }
-        return title
+        return ProgrammeInfo(title = title, description = description)
     }
 
     /** Reads text of the element the parser is currently on, consuming its end tag. */
@@ -116,11 +122,18 @@ class XmltvParser(
     private companion object {
         const val TAG_PROGRAMME = "programme"
         const val TAG_TITLE = "title"
+        const val TAG_DESC = "desc"
         const val ATTR_START = "start"
         const val ATTR_STOP = "stop"
         const val ATTR_CHANNEL = "channel"
     }
 }
+
+/** The bits of a kept `<programme>` read from its body: title and description. */
+private data class ProgrammeInfo(
+    val title: String?,
+    val description: String?,
+)
 
 private val XMLTV_TIME_FORMATTER: DateTimeFormatter =
     DateTimeFormatter.ofPattern("uuuuMMddHHmmss[ Z]")

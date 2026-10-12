@@ -2,6 +2,9 @@ package cc.selfhosters.stbproxy.di
 
 import android.content.Context
 import android.util.Xml
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import cc.selfhosters.stbproxy.BuildConfig
 import cc.selfhosters.stbproxy.data.AccountStore
 import cc.selfhosters.stbproxy.data.AndroidAccountStorage
 import cc.selfhosters.stbproxy.data.SessionController
@@ -61,4 +64,17 @@ class AppContainer(
         baseUrlProvider = { accountStore.state.value.baseUrl },
         parser = XmltvParser { Xml.newPullParser() },
     )
+
+    /**
+     * ExoPlayer's data source (spec 2.9): the shared OkHttp client so the account
+     * Basic rides along, with cross-protocol redirects left disabled (spec 2.6).
+     * Streaming reads get a longer timeout than the API reads.
+     */
+    val playerDataSourceFactory: DataSource.Factory = OkHttpDataSource.Factory(
+        okHttpClient.newBuilder()
+            .connectTimeout(15, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .followSslRedirects(false)
+            .build(),
+    ).setUserAgent("STBProxy/${BuildConfig.VERSION_NAME}")
 }
