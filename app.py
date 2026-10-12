@@ -1,5 +1,6 @@
 import flask
 import stb
+import accounts
 import availability
 import plex
 import jellyfin
@@ -23,6 +24,7 @@ from urllib.parse import urlparse
 import xml.etree.cElementTree as ET
 from flask import (
     Flask,
+    g,
     render_template,
     redirect,
     request,
@@ -167,6 +169,11 @@ def loadConfig():
         data["block favourites"] = {}
     if not isinstance(data.get("hidden blocks"), list):
         data["hidden blocks"] = []
+    if not isinstance(data.get("default blocks"), list):
+        data["default blocks"] = []
+    else:
+        data["default blocks"] = [name for name in data["default blocks"] if isinstance(name, str)]
+    data["accounts"] = accounts.normaliseAccounts(data.get("accounts"))
 
     settings = data["settings"]
     settingsOut = {}
@@ -242,7 +249,29 @@ def saveBlocks(blocks):
     config["blocks"] = blocks
     names = availability.blockNames(getPortals())
     config["hidden blocks"] = [name for name in getHiddenBlocks() if name in names]
+    config["default blocks"] = [name for name in getDefaultBlocks() if name in names]
     config["block favourites"] = pruneBlockFavourites(getPortals(), getBlockFavourites())
+    accounts.pruneBlocks(getAccounts(), names)
+    writeConfig(config)
+
+
+def getDefaultBlocks():
+    """Block names scoping requests that resolve to neither Operator nor Account (off when empty)."""
+    return config.setdefault("default blocks", [])
+
+
+def saveDefaultBlocks(names):
+    config["default blocks"] = names
+    writeConfig(config)
+
+
+def getAccounts():
+    """Viewer accounts: {"username", "hash", "blocks", "enabled"} records (see accounts.py)."""
+    return config["accounts"]
+
+
+def saveAccounts(records):
+    config["accounts"] = records
     writeConfig(config)
 
 
@@ -299,20 +328,75 @@ def getHiddenBlocks():
     return config.setdefault("hidden blocks", [])
 
 
+def resolveViewer():
+    """Who the request's Basic credentials are, parked on flask.g.
+
+    ("operator", None) for the operator login, ("account", record) for a matching,
+    enabled Account whose password verifies, else (None, None). Security does not gate
+    this: it gates rejection, not scoping (see ADR 0001 and the feed decorators).
+    """
+    auth = request.authorization
+    settings = getSettings()
+    viewer, account = None, None
+    if auth and auth.username == settings["username"] and auth.password == settings["password"]:
+        viewer = "operator"
+    elif auth:
+        candidate = accounts.findAccount(getAccounts(), auth.username)
+        if candidate and candidate["enabled"] and accounts.verifyPassword(auth.password, candidate["hash"]):
+            viewer, account = "account", candidate
+    g.viewer = viewer
+    g.account = account
+    return viewer, account
+
+
+def viewerBlocks():
+    """The block dict to scope a request with: the account's assigned blocks with their
+    global on/off state, the configured default blocks for an anonymous request, or None
+    for the full lineup (operator / no request context).
+
+    None reproduces today's full lineup exactly; offering only the account's assigned,
+    globally-on blocks makes plexLineup yield public channels union those blocks. An
+    anonymous request takes the same shape using the configured default blocks.
+    """
+    if not flask.has_request_context():
+        return None
+    account = getattr(g, "account", None)
+    if account is not None:
+        return {name: getBlocks().get(name, "false") for name in account["blocks"]}
+    if getattr(g, "viewer", None) is None:
+        defaultBlocks = getDefaultBlocks()
+        if defaultBlocks:
+            return {name: getBlocks().get(name, "false") for name in defaultBlocks}
+    return None
+
+
 def authorise(f):
+    """The operator/admin gate: security off, or the operator login. Accounts are viewers
+    only, so presenting account credentials here is rejected with the usual challenge."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.authorization
+        viewer, _ = resolveViewer()
         settings = getSettings()
-        security = settings["enable security"]
-        username = settings["username"]
-        password = settings["password"]
-        if (
-            security == "false"
-            or auth
-            and auth.username == username
-            and auth.password == password
-        ):
+        if settings["enable security"] == "false" or viewer == "operator":
+            return f(*args, **kwargs)
+
+        return make_response(
+            "Could not verify your login!",
+            401,
+            {"WWW-Authenticate": 'Basic realm="Login Required"'},
+        )
+
+    return decorated
+
+
+def feedAuthorise(f):
+    """The feed gate: the operator, a resolved Account, or anonymous when security is off.
+    A resolved Account is parked on flask.g by resolveViewer so the route can scope to it."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        viewer, _ = resolveViewer()
+        settings = getSettings()
+        if viewer or settings["enable security"] == "false":
             return f(*args, **kwargs)
 
         return make_response(
@@ -1060,6 +1144,8 @@ def blocksPage():
         "blocks.html",
         blocks=availability.blockSummaries(getPortals(), getBlocks(), getHiddenBlocks()),
         allBlocks=sorted(availability.blockNames(getPortals())),
+        assignableBlocks=assignableBlocks(),
+        defaultBlocks=getDefaultBlocks(),
         favourites=sum(
             len(p.get("favourite channels", [])) for p in getPortals().values() if p["enabled"] == "true"
         ),
@@ -1119,6 +1205,7 @@ def blocksRename():
     if name in blocks:
         blocks[newName] = blocks.pop(name)
     config["hidden blocks"] = [newName if n == name else n for n in getHiddenBlocks()]
+    config["default blocks"] = [newName if n == name else n for n in getDefaultBlocks()]
     favourites = getBlockFavourites()
     if name in favourites:
         favourites[newName] = favourites.pop(name)
@@ -1126,6 +1213,7 @@ def blocksRename():
         for filters in pageFilters.values():
             if filters.get("block") == name:
                 filters["block"] = newName
+    accounts.renameBlock(getAccounts(), name, newName)
     saveBlocks(blocks)
     logger.info("Block({}) renamed to {}".format(name, newName))
     flash("{} renamed to {}".format(name, newName), "success")
@@ -1161,6 +1249,136 @@ def blocksSync():
     category, message = syncPlex()
     flash(message, category)
     return redirect("/blocks", code=302)
+
+
+@app.route("/blocks/defaults", methods=["POST"])
+@authorise
+def blocksDefaults():
+    assignable = set(assignableBlocks())
+    names = [name for name in request.form.getlist("default blocks") if name in assignable]
+    saveDefaultBlocks(names)
+    logger.info("Default blocks set to {}".format(names))
+    flash("Default blocks updated", "success")
+    return redirect("/blocks", code=302)
+
+
+def assignableBlocks():
+    """Block names an account can be assigned: every block except STB-Proxy-only ones."""
+    hidden = set(getHiddenBlocks())
+    return sorted(name for name in availability.blockNames(getPortals()) if name not in hidden)
+
+
+def accountBlocksFromForm():
+    """The blocks ticked on an account form, ignoring unknown and STB-Proxy-only ones."""
+    assignable = set(assignableBlocks())
+    return [name for name in request.form.getlist("blocks") if name in assignable]
+
+
+@app.route("/accounts", methods=["GET"])
+@authorise
+def accountsPage():
+    # STB-Proxy-only blocks are never offered to an account, so don't even show the ones
+    # a record may still carry: they must not leak.
+    assignable = assignableBlocks()
+    visible = set(assignable)
+    shown = [dict(record, blocks=[n for n in record["blocks"] if n in visible]) for record in getAccounts()]
+    return render_template("accounts.html", accounts=shown, allBlocks=assignable)
+
+
+@app.route("/accounts/create", methods=["POST"])
+@authorise
+def accountsCreate():
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    if not username:
+        flash("Give the account a username", "danger")
+        return redirect("/accounts", code=302)
+    if not password:
+        flash("Give the account a password", "danger")
+        return redirect("/accounts", code=302)
+    if accounts.findAccount(getAccounts(), username):
+        flash("There's already an account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+
+    records = getAccounts()
+    records.append({
+        "username": username,
+        "hash": accounts.hashPassword(password),
+        "blocks": accountBlocksFromForm(),
+        "enabled": request.form.get("enabled") == "true",
+    })
+    saveAccounts(records)
+    logger.info("Account({}) created".format(username))
+    flash("Account {} created".format(username), "success")
+    return redirect("/accounts", code=302)
+
+
+@app.route("/accounts/update", methods=["POST"])
+@authorise
+def accountsUpdate():
+    username = request.form.get("username", "").strip()
+    account = accounts.findAccount(getAccounts(), username)
+    if not account:
+        flash("No account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+
+    account["blocks"] = accountBlocksFromForm()
+    saveAccounts(getAccounts())
+    logger.info("Account({}) blocks changed".format(username))
+    flash("Account {} updated".format(username), "success")
+    return redirect("/accounts", code=302)
+
+
+@app.route("/accounts/password", methods=["POST"])
+@authorise
+def accountsPassword():
+    username = request.form.get("username", "").strip()
+    password = request.form.get("password", "")
+    account = accounts.findAccount(getAccounts(), username)
+    if not account:
+        flash("No account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+    if not password:
+        flash("Give the account a password", "danger")
+        return redirect("/accounts", code=302)
+
+    account["hash"] = accounts.hashPassword(password)
+    saveAccounts(getAccounts())
+    logger.info("Account({}) password reset".format(username))
+    flash("Password for {} reset".format(username), "success")
+    return redirect("/accounts", code=302)
+
+
+@app.route("/accounts/toggle", methods=["POST"])
+@authorise
+def accountsToggle():
+    username = request.form.get("username", "").strip()
+    enabled = request.form.get("enabled") == "true"
+    account = accounts.findAccount(getAccounts(), username)
+    if not account:
+        flash("No account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+
+    account["enabled"] = enabled
+    saveAccounts(getAccounts())
+    logger.info("Account({}) {}".format(username, "enabled" if enabled else "disabled"))
+    flash("{} {}".format(username, "enabled" if enabled else "disabled"), "success")
+    return redirect("/accounts", code=302)
+
+
+@app.route("/accounts/delete", methods=["POST"])
+@authorise
+def accountsDelete():
+    username = request.form.get("username", "").strip()
+    records = [record for record in getAccounts() if record["username"] != username]
+    if len(records) == len(getAccounts()):
+        flash("No account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+
+    saveAccounts(records)
+    logger.info("Account({}) deleted".format(username))
+    flash("Account {} deleted".format(username), "success")
+    return redirect("/accounts", code=302)
 
 
 @app.route("/channel/dead", methods=["POST"])
@@ -1753,13 +1971,13 @@ def newApiToken():
 
 
 @app.route("/playlist", methods=["GET"])
-@authorise
+@feedAuthorise
 def playlist():
     channels = []
     portals = getPortals()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = plexLineup(portals[portal])
+            enabledChannels = plexLineup(portals[portal], viewerBlocks())
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -1847,7 +2065,7 @@ def playlist():
 
 
 @app.route("/xmltv", methods=["GET"])
-@authorise
+@feedAuthorise
 def xmltv():
     # The bulk EPG takes a few hundred MB to parse: never build this and the guide at once.
     with guideLock:
@@ -1860,7 +2078,7 @@ def buildXmltv():
     portals = getPortals()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = plexLineup(portals[portal])
+            enabledChannels = plexLineup(portals[portal], viewerBlocks())
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -2314,6 +2532,13 @@ def makeRoom(portalId, kind, starting):
 
 @app.route("/play/<portalId>/<channelId>", methods=["GET"])
 def channel(portalId, channelId):
+    viewer, _ = resolveViewer()
+    if viewer == "account" and request.args.get("web") != "true":
+        # Credentials-optional: only an Account's request is enforced, and only for streams
+        # (a web preview is the operator's own UI). The operator and no credentials are allowed.
+        portal = getPortals().get(portalId)
+        if portal is not None and channelId not in plexLineup(portal, viewerBlocks()):
+            return make_response("Not found", 404)
     try:
         return playChannel(portalId, channelId)
     finally:
@@ -2905,22 +3130,15 @@ def log():
 
 
 def hdhr(f):
+    """The HDHomeRun gate: security off, the operator, or a resolved Account; else 404.
+    An Account is parked on flask.g so /lineup.json and /lineup.post can scope to it."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.authorization
+        viewer, _ = resolveViewer()
         settings = getSettings()
-        security = settings["enable security"]
-        username = settings["username"]
-        password = settings["password"]
         hdhrenabled = settings["enable hdhr"]
-        if (
-            security == "false"
-            or auth
-            and auth.username == username
-            and auth.password == password
-        ):
-            if hdhrenabled:
-                return f(*args, **kwargs)
+        if hdhrenabled and (viewer or settings["enable security"] == "false"):
+            return f(*args, **kwargs)
         return make_response("Error", 404)
 
     return decorated
@@ -2960,68 +3178,174 @@ def status():
     return flask.jsonify(data)
 
 
-def buildLineup():
+def portalLineup(portalId, blocks):
+    """One portal's channels for a scoped lineup, with their display values resolved.
+
+    Walks the portal's MACs to a channel list and resolves custom names, numbers, genres,
+    epg ids and logos. Returns (name, channels, genres, status): status is "empty" when the
+    portal is disabled or has nothing in these blocks, "failed" when its channel list
+    couldn't be read, else "ok". channels is empty unless the status is "ok". The walk is
+    shared by the HDHomeRun feed and /api/lineup so both resolve channels the same way.
+    """
+    portal = getPortals()[portalId]
+    name = portal["name"]
+    if portal["enabled"] != "true":
+        return name, [], None, "empty"
+    enabledChannels = plexLineup(portal, blocks)
+    if len(enabledChannels) == 0:
+        return name, [], None, "empty"
+
+    url = portal["url"]
+    macs = list(portal["macs"].keys())
+    proxy = portal["proxy"]
+    customChannelNames = portal.get("custom channel names", {})
+    customGenres = portal.get("custom genres", {})
+    customChannelNumbers = portal.get("custom channel numbers", {})
+    customEpgIds = portal.get("custom epg ids", {})
+
+    allChannels = genres = None
+    for mac in macs:
+        try:
+            token = stb.getToken(url, mac, proxy)
+            stb.getProfile(url, mac, token, proxy)
+            allChannels = stb.getAllChannels(url, mac, token, proxy)
+        except:
+            allChannels = None
+            continue
+        try:
+            genres = stb.getGenreNames(url, mac, token, proxy)
+        except:
+            genres = None
+        break
+
+    if not allChannels:
+        logger.error("Error making lineup for {}, skipping".format(name))
+        return name, [], None, "failed"
+
+    matched = matchedLogos(portalId, allChannels, genres)
+    channels = []
+    for channel in allChannels:
+        channelId = str(channel.get("id"))
+        if channelId not in enabledChannels:
+            continue
+        channelName = customChannelNames.get(channelId)
+        if channelName == None:
+            channelName = str(channel.get("name"))
+        genre = customGenres.get(channelId)
+        if genre == None:
+            genre = str((genres or {}).get(str(channel.get("tv_genre_id"))))
+        channelNumber = customChannelNumbers.get(channelId)
+        if channelNumber == None:
+            channelNumber = str(channel.get("number"))
+        epgId = customEpgIds.get(channelId)
+        if epgId == None:
+            epgId = defaultEpgId(portalId, channelId)
+
+        channels.append(
+            {
+                "channelId": channelId,
+                "name": channelName,
+                "number": channelNumber,
+                "genre": genre,
+                "epgId": epgId,
+                "logo": channelLogo(portal, channelId, channel.get("logo"), matched),
+            }
+        )
+    return name, channels, genres, "ok"
+
+
+def buildLineup(blocks=None):
     """Every available channel as an HDHomeRun lineup entry plus its XMLTV id.
 
-    Returns (entries, failedPortals). failedPortals names the portals whose
-    channel list couldn't be fetched, so callers can tell an empty lineup from
-    a failed one.
+    blocks scopes the lineup to a viewer (see viewerBlocks); None is the full lineup, which
+    is what server-side syncs want so the default blocks never leak into Plex or Jellyfin.
+    Returns (entries, failedPortals). failedPortals names the portals whose channel list
+    couldn't be fetched, so callers can tell an empty lineup from a failed one.
     """
     entries = []
     failedPortals = []
-    portals = getPortals()
-    blocks = getBlocks()
-    for portal in portals:
-        if portals[portal]["enabled"] == "true":
-            enabledChannels = plexLineup(portals[portal], blocks)
-            if len(enabledChannels) != 0:
-                name = portals[portal]["name"]
-                url = portals[portal]["url"]
-                macs = list(portals[portal]["macs"].keys())
-                proxy = portals[portal]["proxy"]
-                customChannelNames = portals[portal].get("custom channel names", {})
-                customChannelNumbers = portals[portal].get("custom channel numbers", {})
-                customEpgIds = portals[portal].get("custom epg ids", {})
-
-                for mac in macs:
-                    try:
-                        token = stb.getToken(url, mac, proxy)
-                        stb.getProfile(url, mac, token, proxy)
-                        allChannels = stb.getAllChannels(url, mac, token, proxy)
-                        break
-                    except:
-                        allChannels = None
-
-                if allChannels:
-                    for channel in allChannels:
-                        channelId = str(channel.get("id"))
-                        if channelId in enabledChannels:
-                            channelName = customChannelNames.get(channelId)
-                            if channelName == None:
-                                channelName = str(channel.get("name"))
-                            channelNumber = customChannelNumbers.get(channelId)
-                            if channelNumber == None:
-                                channelNumber = str(channel.get("number"))
-
-                            entries.append(
-                                {
-                                    "GuideNumber": channelNumber,
-                                    "GuideName": channelName,
-                                    "URL": "http://"
-                                    + host
-                                    + "/play/"
-                                    + portal
-                                    + "/"
-                                    + channelId,
-                                    "epgId": customEpgIds.get(channelId)
-                                    or defaultEpgId(portal, channelId),
-                                }
-                            )
-                else:
-                    logger.error("Error making lineup for {}, skipping".format(name))
-                    failedPortals.append(name)
+    for portal in getPortals():
+        name, channels, _, status = portalLineup(portal, blocks)
+        if status == "failed":
+            failedPortals.append(name)
+            continue
+        for channel in channels:
+            entries.append(
+                {
+                    "GuideNumber": channel["number"],
+                    "GuideName": channel["name"],
+                    "URL": "http://" + host + "/play/" + portal + "/" + channel["channelId"],
+                    "epgId": channel["epgId"],
+                }
+            )
 
     return entries, failedPortals
+
+
+def visibleBlockNames(blocks):
+    """The blocks that may appear in /api/lineup: globally on and not hidden.
+
+    blocks is the dict viewerBlocks() returns: an account's assigned blocks with their
+    global state, or None for the full lineup (operator / anonymous).
+    """
+    hidden = set(getHiddenBlocks())
+    states = getBlocks() if blocks is None else blocks
+    return {name for name, state in states.items() if state == "true" and name not in hidden}
+
+
+# The one /api/ route that is not token-guarded: the Android app authenticates with the same
+# HTTP Basic the feeds use (operator -> matching Account -> 401), so it uses @feedAuthorise.
+@app.route("/api/lineup", methods=["GET"])
+@feedAuthorise
+def apiLineup():
+    """The account-scoped, enveloped channel list the Android app consumes (see spec 1.4)."""
+    portals = getPortals()
+    blocks = viewerBlocks()
+    visible = visibleBlockNames(blocks)
+    account = getattr(g, "account", None)
+
+    channels = []
+    failedPortals = []
+    for portal in portals:
+        name, portalChannels, genres, status = portalLineup(portal, blocks)
+        if status == "empty":
+            continue
+        if status == "failed" or not genres:
+            failedPortals.append(name)
+            continue
+
+        channelBlocks = portals[portal].get("channel blocks", {})
+        for channel in portalChannels:
+            # Every visible block the channel is in: a visible channel in a visible block
+            # guarantees that block has >=1 visible channel, so empty blocks never appear.
+            memberBlocks = sorted(
+                block
+                for block in availability.channelBlockNames(channelBlocks.get(channel["channelId"], []))
+                if block in visible
+            )
+
+            channels.append({
+                "portal": portal,
+                "portalName": name,
+                "channelId": channel["channelId"],
+                "name": channel["name"],
+                "number": channel["number"],
+                "logo": channel["logo"],
+                "genre": channel["genre"],
+                "epgId": channel["epgId"],
+                "blocks": memberBlocks,
+                "url": "/play/{}/{}".format(portal, channel["channelId"]),
+            })
+
+    channels.sort(key=lambda c: (c["number"], c["name"]))
+    blocksOut = sorted({block for channel in channels for block in channel["blocks"]})
+
+    return flask.jsonify({
+        "account": account["username"] if account else None,
+        "blocks": blocksOut,
+        "channels": channels,
+        "failedPortals": failedPortals,
+    })
 
 
 lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}
@@ -3135,7 +3459,7 @@ def runPlexSync():
 @app.route("/lineup.post", methods=["POST"])
 @hdhr
 def lineup():
-    entries, _ = buildLineup()
+    entries, _ = buildLineup(viewerBlocks())
     return flask.jsonify(
         [{k: v for k, v in entry.items() if k != "epgId"} for entry in entries]
     )

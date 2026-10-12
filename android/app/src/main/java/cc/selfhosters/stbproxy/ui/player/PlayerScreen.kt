@@ -1,0 +1,379 @@
+package cc.selfhosters.stbproxy.ui.player
+
+import android.content.res.Configuration
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.rememberBottomSheetScaffoldState
+import androidx.compose.material3.BottomSheetScaffold
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.ui.compose.PlayerSurface
+import cc.selfhosters.stbproxy.di.LocalAppContainer
+
+/**
+ * The split player screen (spec 2.6): video plus a persistent now/next sidebar.
+ * TV = video pane + right-hand sidebar; phone = video with the sidebar as a
+ * bottom sheet. Channel up/down walks the launch Block; error states replace the
+ * video but leave the sidebar live.
+ */
+@Composable
+fun PlayerScreen(
+    portal: String,
+    channelId: String,
+    launchBlock: String,
+    onOpenSettings: () -> Unit,
+    viewModel: PlayerViewModel = viewModel(
+        factory = PlayerViewModel.factory(
+            apiClient = LocalAppContainer.current.apiClient,
+            epgRepository = LocalAppContainer.current.epgRepository,
+            session = LocalAppContainer.current.sessionController,
+            portal = portal,
+            channelId = channelId,
+            launchBlock = launchBlock,
+        ),
+    ),
+) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    val container = LocalAppContainer.current
+    val context = LocalContext.current
+    val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK ==
+        Configuration.UI_MODE_TYPE_TELEVISION
+
+    val player = remember { buildStreamPlayer(context, container.playerDataSourceFactory) }
+    DisposableEffect(player) {
+        onDispose { player.release() }
+    }
+
+    var playing by remember { mutableStateOf(false) }
+    var buffering by remember { mutableStateOf(false) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                buffering = playbackState == Player.STATE_BUFFERING
+                playing = playbackState == Player.STATE_READY
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                playing = isPlaying
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                viewModel.onPlayerError(classifyPlaybackException(error))
+            }
+        }
+        player.addListener(listener)
+        onDispose { player.removeListener(listener) }
+    }
+
+    // Re-prepare from scratch whenever the URL changes or a retry is requested.
+    LaunchedEffect(state.streamUrl, state.prepareNonce) {
+        val url = state.streamUrl ?: return@LaunchedEffect
+        player.setMediaItem(mediaItemFor(url))
+        player.prepare()
+        player.playWhenReady = true
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onForeground() }
+
+    val keyHandler = Modifier.onPreviewKeyEvent { event ->
+        if (event.type != KeyEventType.KeyDown) {
+            false
+        } else {
+            when (event.key) {
+                Key.DirectionUp, Key.ChannelUp -> {
+                    viewModel.zap(1); true
+                }
+                Key.DirectionDown, Key.ChannelDown -> {
+                    viewModel.zap(-1); true
+                }
+                else -> false
+            }
+        }
+    }
+
+    if (isTv) {
+        Row(modifier = Modifier.fillMaxSize().background(Color.Black).then(keyHandler)) {
+            VideoPane(
+                state = state,
+                player = player,
+                playing = playing,
+                buffering = buffering,
+                onOpenSettings = onOpenSettings,
+                onRetry = viewModel::retry,
+                onWaitForTuner = viewModel::waitForTuner,
+                onTryNext = { viewModel.zap(1) },
+                modifier = Modifier.weight(1f).fillMaxSize(),
+            )
+            PlayerSidebar(
+                state = state,
+                isTv = true,
+                onSelectChannel = viewModel::selectChannel,
+                modifier = Modifier.width(SidebarWidth).fillMaxSize(),
+            )
+        }
+    } else {
+        PhonePlayerLayout(
+            state = state,
+            player = player,
+            playing = playing,
+            buffering = buffering,
+            onOpenSettings = onOpenSettings,
+            onRetry = viewModel::retry,
+            onWaitForTuner = viewModel::waitForTuner,
+            onTryNext = { viewModel.zap(1) },
+            onSelectChannel = viewModel::selectChannel,
+            modifier = keyHandler,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PhonePlayerLayout(
+    state: PlayerUiState,
+    player: Player,
+    playing: Boolean,
+    buffering: Boolean,
+    onOpenSettings: () -> Unit,
+    onRetry: () -> Unit,
+    onWaitForTuner: () -> Unit,
+    onTryNext: () -> Unit,
+    onSelectChannel: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val sheetPeek = 300.dp
+    val sheetState = rememberBottomSheetScaffoldState()
+    BottomSheetScaffold(
+        scaffoldState = sheetState,
+        sheetPeekHeight = sheetPeek,
+        sheetContainerColor = MaterialTheme.colorScheme.surface,
+        sheetContent = {
+            PlayerSidebar(
+                state = state,
+                isTv = false,
+                onSelectChannel = onSelectChannel,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        modifier = modifier,
+    ) { padding ->
+        VideoPane(
+            state = state,
+            player = player,
+            playing = playing,
+            buffering = buffering,
+            onOpenSettings = onOpenSettings,
+            onRetry = onRetry,
+            onWaitForTuner = onWaitForTuner,
+            onTryNext = onTryNext,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(bottom = sheetPeek),
+        )
+    }
+}
+
+@Composable
+private fun VideoPane(
+    state: PlayerUiState,
+    player: Player,
+    playing: Boolean,
+    buffering: Boolean,
+    onOpenSettings: () -> Unit,
+    onRetry: () -> Unit,
+    onWaitForTuner: () -> Unit,
+    onTryNext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier.background(Color.Black)) {
+        if (state.streamUrl != null) {
+            PlayerSurface(player = player, modifier = Modifier.fillMaxSize())
+        }
+
+        if (state.loading || state.lineupError != null) {
+            Overlay {
+                if (state.loading) {
+                    CircularProgressIndicator()
+                } else {
+                    ErrorCopy(
+                        title = "Channel unavailable",
+                        body = state.lineupError.orEmpty(),
+                    )
+                    Button(onClick = onRetry) { Text("Retry") }
+                }
+            }
+        } else if (state.waitingForTuner) {
+            Overlay {
+                ErrorCopy(
+                    title = "Waiting for a free tuner",
+                    body = "Every tuner is in use. This will retry automatically.",
+                )
+                Button(onClick = onRetry) { Text("Retry now") }
+            }
+        } else if (state.playbackError != null) {
+            Overlay {
+                ErrorBody(
+                    error = state.playbackError!!,
+                    onRetry = onRetry,
+                    onOpenSettings = onOpenSettings,
+                    onWaitForTuner = onWaitForTuner,
+                    onTryNext = onTryNext,
+                )
+            }
+        } else {
+            LiveBadge(playing = playing, buffering = buffering, block = state.launchBlock)
+        }
+    }
+}
+
+@Composable
+private fun ErrorBody(
+    error: PlaybackError,
+    onRetry: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onWaitForTuner: () -> Unit,
+    onTryNext: () -> Unit,
+) {
+    when (error) {
+        PlaybackError.AllTunersBusy -> {
+            ErrorCopy(
+                title = "All tuners are busy",
+                body = "STB-Proxy has no free tuner right now. Every tuner is in use by another viewer.",
+            )
+            ActionRow {
+                Button(onClick = onRetry) { Text("Retry") }
+                OutlinedButton(onClick = onWaitForTuner) { Text("Wait for a free tuner") }
+                OutlinedButton(onClick = onTryNext) { Text("Try next channel") }
+            }
+        }
+        PlaybackError.Unreachable -> {
+            ErrorCopy(
+                title = "Stream unreachable",
+                body = "Couldn't connect to the proxy. Check the base URL and that you're on the LAN.",
+            )
+            ActionRow {
+                Button(onClick = onRetry) { Text("Retry") }
+                OutlinedButton(onClick = onOpenSettings) { Text("Open Settings") }
+                OutlinedButton(onClick = onTryNext) { Text("Try next channel") }
+            }
+        }
+        is PlaybackError.RedirectingToPortal -> {
+            ErrorCopy(
+                title = "Redirecting to portal",
+                body = "This proxy answered a redirect the player can't follow. The target is shown for diagnostics.",
+            )
+            error.target?.let { target ->
+                Text(
+                    text = target,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0x66000000))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+            }
+            ActionRow {
+                Button(onClick = onRetry) { Text("Retry") }
+                OutlinedButton(onClick = onTryNext) { Text("Try next channel") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActionRow(content: @Composable () -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+}
+
+@Composable
+private fun ErrorCopy(title: String, body: String) {
+    Text(
+        text = title,
+        color = MaterialTheme.colorScheme.onSurface,
+        style = MaterialTheme.typography.titleMedium,
+    )
+    Text(
+        text = body,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = MaterialTheme.typography.bodySmall,
+    )
+}
+
+@Composable
+private fun Overlay(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xF20A0E14)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun LiveBadge(playing: Boolean, buffering: Boolean, block: String) {
+    Row(
+        modifier = Modifier
+            .padding(14.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(Color(0x88000000))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        val label = when {
+            buffering -> "BUFFERING"
+            playing -> "LIVE"
+            else -> "CONNECTING"
+        }
+        Text(text = label, color = Color.White, fontSize = 11.sp)
+        Text(text = "· $block", color = Color(0xFF9AA7B4), fontSize = 11.sp)
+    }
+}

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container text-light p-lg-5">
+
+    <div class="d-flex align-items-center mb-2">
+        <h4 class="mb-0">Accounts</h4>
+    </div>
+
+    <p class="text-muted">
+        Viewer logins for the feeds. An account sees public channels plus the channels of the
+        blocks you assign it. The operator login and the API token are unchanged; accounts are
+        for players only.
+    </p>
+
+    <div class="card bg-secondary mb-4">
+        <div class="card-body">
+            <h6 class="card-title">Add an account</h6>
+            <form action="/accounts/create" method="post" class="row g-2 align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Username</label>
+                    <input type="text" class="form-control" name="username" required>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-control" name="password" autocomplete="new-password" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Blocks</label>
+                    <select class="form-select" name="blocks" multiple size="1">
+                        {% for name in allBlocks %}
+                        <option value="{{ name }}">{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="enabled" value="true" checked>
+                        <label class="form-check-label">On</label>
+                    </div>
+                </div>
+                <div class="col-md-1">
+                    <button class="btn btn-success w-100" title="Add account"><i class="fa fa-plus"></i> Add</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if accounts %}
+    <table class="table table-dark table-striped align-middle">
+        <thead>
+            <tr>
+                <th style="width: 0%;">On</th>
+                <th>Username</th>
+                <th>Blocks</th>
+                <th style="width: 0%;"></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for account in accounts %}
+            <tr>
+                <td>
+                    <form action="/accounts/toggle" method="post">
+                        <input type="hidden" name="username" value="{{ account.username }}">
+                        <input type="hidden" name="enabled" value="{{ 'false' if account.enabled else 'true' }}">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" onchange="this.form.submit()"
+                                {{ "checked" if account.enabled }}>
+                        </div>
+                    </form>
+                </td>
+                <td>{{ account.username }}</td>
+                <td>
+                    <form action="/accounts/update" method="post" class="d-flex align-items-center gap-2">
+                        <input type="hidden" name="username" value="{{ account.username }}">
+                        <select class="form-select form-select-sm" name="blocks" multiple size="1" style="max-width: 20rem;">
+                            {% for name in allBlocks %}
+                            <option value="{{ name }}" {{ "selected" if name in account.blocks }}>{{ name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button class="btn btn-sm btn-outline-light" title="Save blocks"><i class="fa fa-save"></i></button>
+                    </form>
+                </td>
+                <td class="text-nowrap">
+                    <form action="/accounts/password" method="post" class="d-inline-flex align-items-center gap-1">
+                        <input type="hidden" name="username" value="{{ account.username }}">
+                        <input type="password" class="form-control form-control-sm" name="password"
+                            autocomplete="new-password" placeholder="New password" required style="width: 10rem;">
+                        <button class="btn btn-sm btn-outline-light" title="Reset password"><i class="fa fa-key"></i></button>
+                    </form>
+                    <form action="/accounts/delete" method="post" class="d-inline">
+                        <input type="hidden" name="username" value="{{ account.username }}">
+                        <button class="btn btn-sm btn-outline-danger" title="Delete {{ account.username }}"
+                            onclick="return confirm('Delete the account {{ account.username }}?')">
+                            <i class="fa fa-trash"></i></button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No accounts yet. Add one above to scope a player to a set of blocks.</p>
+    {% endif %}
+
+</div>
+
+{% endblock %}
