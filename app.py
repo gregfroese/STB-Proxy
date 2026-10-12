@@ -24,6 +24,7 @@ from urllib.parse import urlparse
 import xml.etree.cElementTree as ET
 from flask import (
     Flask,
+    g,
     render_template,
     redirect,
     request,
@@ -312,20 +313,67 @@ def getHiddenBlocks():
     return config.setdefault("hidden blocks", [])
 
 
+def resolveViewer():
+    """Who the request's Basic credentials are, parked on flask.g.
+
+    ("operator", None) for the operator login, ("account", record) for a matching,
+    enabled Account whose password verifies, else (None, None). Security does not gate
+    this: it gates rejection, not scoping (see ADR 0001 and the feed decorators).
+    """
+    auth = request.authorization
+    settings = getSettings()
+    viewer, account = None, None
+    if auth and auth.username == settings["username"] and auth.password == settings["password"]:
+        viewer = "operator"
+    elif auth:
+        candidate = accounts.findAccount(getAccounts(), auth.username)
+        if candidate and candidate["enabled"] and accounts.verifyPassword(auth.password, candidate["hash"]):
+            viewer, account = "account", candidate
+    g.viewer = viewer
+    g.account = account
+    return viewer, account
+
+
+def viewerBlocks():
+    """The block dict to scope a request with: the account's assigned blocks with their
+    global on/off state, or None for the full lineup (operator / anonymous).
+
+    None reproduces today's full lineup exactly; offering only the account's assigned,
+    globally-on blocks makes plexLineup yield public channels union those blocks.
+    """
+    account = getattr(g, "account", None) if flask.has_request_context() else None
+    if account is None:
+        return None
+    return {name: getBlocks().get(name, "false") for name in account["blocks"]}
+
+
 def authorise(f):
+    """The operator/admin gate: security off, or the operator login. Accounts are viewers
+    only, so presenting account credentials here is rejected with the usual challenge."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.authorization
+        viewer, _ = resolveViewer()
         settings = getSettings()
-        security = settings["enable security"]
-        username = settings["username"]
-        password = settings["password"]
-        if (
-            security == "false"
-            or auth
-            and auth.username == username
-            and auth.password == password
-        ):
+        if settings["enable security"] == "false" or viewer == "operator":
+            return f(*args, **kwargs)
+
+        return make_response(
+            "Could not verify your login!",
+            401,
+            {"WWW-Authenticate": 'Basic realm="Login Required"'},
+        )
+
+    return decorated
+
+
+def feedAuthorise(f):
+    """The feed gate: the operator, a resolved Account, or anonymous when security is off.
+    A resolved Account is parked on flask.g by resolveViewer so the route can scope to it."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        viewer, _ = resolveViewer()
+        settings = getSettings()
+        if viewer or settings["enable security"] == "false":
             return f(*args, **kwargs)
 
         return make_response(
@@ -1886,13 +1934,13 @@ def newApiToken():
 
 
 @app.route("/playlist", methods=["GET"])
-@authorise
+@feedAuthorise
 def playlist():
     channels = []
     portals = getPortals()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = plexLineup(portals[portal])
+            enabledChannels = plexLineup(portals[portal], viewerBlocks())
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -1980,7 +2028,7 @@ def playlist():
 
 
 @app.route("/xmltv", methods=["GET"])
-@authorise
+@feedAuthorise
 def xmltv():
     # The bulk EPG takes a few hundred MB to parse: never build this and the guide at once.
     with guideLock:
@@ -1993,7 +2041,7 @@ def buildXmltv():
     portals = getPortals()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
-            enabledChannels = plexLineup(portals[portal])
+            enabledChannels = plexLineup(portals[portal], viewerBlocks())
             if len(enabledChannels) != 0:
                 name = portals[portal]["name"]
                 url = portals[portal]["url"]
@@ -2447,6 +2495,13 @@ def makeRoom(portalId, kind, starting):
 
 @app.route("/play/<portalId>/<channelId>", methods=["GET"])
 def channel(portalId, channelId):
+    viewer, _ = resolveViewer()
+    if viewer == "account" and request.args.get("web") != "true":
+        # Credentials-optional: only an Account's request is enforced, and only for streams
+        # (a web preview is the operator's own UI). The operator and no credentials are allowed.
+        portal = getPortals().get(portalId)
+        if portal is not None and channelId not in plexLineup(portal, viewerBlocks()):
+            return make_response("Not found", 404)
     try:
         return playChannel(portalId, channelId)
     finally:
@@ -3038,22 +3093,15 @@ def log():
 
 
 def hdhr(f):
+    """The HDHomeRun gate: security off, the operator, or a resolved Account; else 404.
+    An Account is parked on flask.g so /lineup.json and /lineup.post can scope to it."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth = request.authorization
+        viewer, _ = resolveViewer()
         settings = getSettings()
-        security = settings["enable security"]
-        username = settings["username"]
-        password = settings["password"]
         hdhrenabled = settings["enable hdhr"]
-        if (
-            security == "false"
-            or auth
-            and auth.username == username
-            and auth.password == password
-        ):
-            if hdhrenabled:
-                return f(*args, **kwargs)
+        if hdhrenabled and (viewer or settings["enable security"] == "false"):
+            return f(*args, **kwargs)
         return make_response("Error", 404)
 
     return decorated
@@ -3103,7 +3151,7 @@ def buildLineup():
     entries = []
     failedPortals = []
     portals = getPortals()
-    blocks = getBlocks()
+    blocks = viewerBlocks()
     for portal in portals:
         if portals[portal]["enabled"] == "true":
             enabledChannels = plexLineup(portals[portal], blocks)
