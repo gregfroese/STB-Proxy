@@ -17,7 +17,7 @@
 - Order your blocks, and hide them from the API/Plex/Jellyfin ("STB-Proxy only")
 - Keeps a Plex DVR's channel list in step automatically
 - Works with portals that lock a MAC to a specific device
-- An **Android app** for phone and Android TV: picker, player and Multiview
+- A **companion Android app** for phone and Android TV: picker, player and Multiview
 
 
 # Setup
@@ -118,7 +118,7 @@ Give each player its own set of channels, without changing the operator login.
 
 # Android app
 
-**STB Proxy** is one app for phone and Android TV: sign in as an account, browse your channels grouped by **Block**, play one channel or a **Multiview** grid, with now/next from your XMLTV guide. It's a sideloaded APK (no Play Store) — the same APK for both.
+**STB Proxy** is the **companion app** for STB-Proxy: one app for phone and Android TV, it signs in to your proxy as an account, browses your channels grouped by **Block**, plays one channel or a **Multiview** grid, with now/next from your XMLTV guide. It's a sideloaded APK (no Play Store) — the same APK for both.
 
 | Phone | | |
 | --- | --- | --- |
@@ -135,7 +135,7 @@ Give each player its own set of channels, without changing the operator login.
 - **Player**: video plus a now/next sidebar (TV) or bottom sheet (phone). Channel up/down walks the Block the channel was launched from. **Full screen** hides the chrome, and landscape goes full-screen on its own.
 - **Multiview**: watch several channels at once — **2 × 2** on TV (a **Grid** button switches to 1×1 / 2×1 / 1×2), 1×2 on phone landscape, stacked on phone portrait. One tile is the audio source (🔊 AUDIO); tiles beyond the proxy's tuner count show **All tuners busy**. On TV, press **Enter** on a tile for its controls (Pick / Swap / Audio / Remove).
 - **Android TV**: the same APK appears in the TV launcher (with a banner) and is driven by the remote; **Back** closes the guide, then leaves the player.
-- **Build it**: `cd android && ./gradlew assembleRelease` (signed with a local keystore, `android/keystore.properties`). Sideload the APK on the phone, or fetch it on the TV with an app like Downloader.
+- **Build it**: `cd android && ./gradlew assembleCompanion` (signed with a local keystore, `android/keystore.properties`) — it writes **`STB-Proxy-Companion-<version>.apk`** to `android/app/build/outputs/apk/companion/`. Sideload the APK on the phone, or fetch it on the TV with an app like Downloader.
 
 # Recording
 

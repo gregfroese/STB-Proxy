@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon silhouette: a screen with the play triangle cut out. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillType="evenOdd"
+        android:pathData="M36,30h36a10,10 0 0 1 10,10v24a10,10 0 0 1 -10,10h-36a10,10 0 0 1 -10,-10v-24a10,10 0 0 1 10,-10zM48,42l18,10l-18,10z" />
+</vector>

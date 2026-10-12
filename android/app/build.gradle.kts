@@ -22,8 +22,8 @@ android {
         applicationId = "cc.selfhosters.stbproxy"
         minSdk = 26
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.7.1"
+        versionCode = 11
+        versionName = "1.8.0"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -73,6 +73,17 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+}
+
+// A clearer APK filename than "app-release.apk".
+val companionApkName = "STB-Proxy-Companion-${android.defaultConfig.versionName}.apk"
+tasks.register<Copy>("assembleCompanion") {
+    group = "build"
+    description = "Assemble the release APK and copy it to $companionApkName."
+    dependsOn("assembleRelease")
+    from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
+    into(layout.buildDirectory.dir("outputs/apk/companion"))
+    rename { companionApkName }
 }
 
 dependencies {

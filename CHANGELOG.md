@@ -2,6 +2,14 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.8.0] - 2026-10-12
+
+### Android app
+
+- A custom **launcher icon** and **TV banner** (a screen with a play triangle), replacing the placeholder.
+- The APK is now named **`STB-Proxy-Companion-<version>.apk`** (`./gradlew assembleCompanion`).
+- Docs: the README describes the app as the **companion app** for STB-Proxy.
+
 ## [1.7.1] - 2026-10-12
 
 ### Android app
