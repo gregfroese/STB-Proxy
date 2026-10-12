@@ -13,8 +13,11 @@
 - Support for multiple MACs/Streams per Portal
 - Channel blocks: group channels and switch the whole group on or off
 - Mark channels dead from the preview so they're hidden everywhere
+- Viewer accounts: give each player its own channels, over HTTP Basic
+- Order your blocks, and hide them from the API/Plex/Jellyfin ("STB-Proxy only")
 - Keeps a Plex DVR's channel list in step automatically
 - Works with portals that lock a MAC to a specific device
+- An **Android app** for phone and Android TV: picker, player and Multiview
 
 
 # Setup
@@ -74,6 +77,17 @@ Make sets of channels available only when you want them.
 - Click **View** next to a block to list its channels, and play any of them right there.
 - Click ✎ next to a block to rename it. Its channels, on/off state and saved filters move to the new name.
 - Click the eye next to a block to make it **STB-Proxy only**. Home Assistant and other API users don't see it, and when it's on, its channels don't go to Plex or Jellyfin (the HDHomeRun lineup, playlist and XMLTV). They still play everywhere in STB-Proxy: previews, Multiview, the guide and recordings. A channel that's also enabled on its own, or in another block that's on, still goes to Plex.
+- The ▲ / ▼ buttons next to a block set the order blocks are listed in, everywhere: the **Blocks** page, the account and default-block pickers, and the Android app's block rail.
+
+# Viewer accounts
+
+Give each player its own set of channels, without changing the operator login.
+
+- The operator still signs in to the web UI and `/api/*` with the single `username`/`password` from Settings. **Accounts** are extra, viewer-only logins for the feeds.
+- Add one on the **Accounts** page: a username, a password, and the **Blocks** it may see. A player authenticates with HTTP Basic — Plex, Jellyfin and any M3U/HDHomeRun player do this natively — and gets that account's lineup: the public channels (enabled on their own) plus the channels of its assigned blocks that are switched on. Dead channels are always left out, and a block must be **on** to count.
+- Passwords are stored only as salted PBKDF2-SHA256 hashes. An account with no blocks sees only the public channels. Hidden ("STB-Proxy only") blocks can be assigned to an account, and that account sees them — they stay out of the API, Plex and Jellyfin.
+- The feeds are account-scoped: `/playlist`, `/xmltv`, `/lineup.json`, `/lineup.post` and `GET /api/lineup`. The last is the JSON endpoint the Android app uses (the one `/api/` route that takes Basic rather than the API token).
+- **Default blocks**, on the **Blocks** page, scope clients that present no credentials (Plex or Jellyfin that don't forward Basic): they see the public channels plus the channels of those blocks. Leave it empty to serve the full lineup.
 
 # Favourites
 
@@ -101,6 +115,27 @@ Make sets of channels available only when you want them.
 - ⤢ makes a tile the big one; on the big tile it turns into ⤡, which goes back to the layout you had before. ⇄ changes a tile's channel, and ✕ closes it, which frees its tuner. **F** fills the window.
 - Each different channel needs a tuner (see Streams and portal connections). Tiles on the same channel, or on a channel Plex is watching, share one. With more tiles than tuners, the extra tiles say **No free tuner**. If Plex needs a tuner a tile is using, the tile stops and says so. **Try again** once a tuner is free.
 - Your browser remembers the tiles and layout, and opens them again next time.
+
+# Android app
+
+**STB Proxy** is one app for phone and Android TV: sign in as an account, browse your channels grouped by **Block**, play one channel or a **Multiview** grid, with now/next from your XMLTV guide. It's a sideloaded APK (no Play Store) — the same APK for both.
+
+| Phone | | |
+| --- | --- | --- |
+| ![Channels](docs/screenshots/phone-picker.png) | ![Player](docs/screenshots/phone-player.png) | ![Multiview](docs/screenshots/phone-multiview.png) |
+| Channels, grouped by Block | Player with now/next | Multiview |
+
+| Android TV | | |
+| --- | --- | --- |
+| ![TV channels](docs/screenshots/tv-picker.png) | ![TV Multiview](docs/screenshots/tv-multiview.png) | ![TV Multiview controls](docs/screenshots/tv-multiview-controls.png) |
+| Block rail + channel list | Multiview (2 × 2) | Per-tile controls |
+
+- **Login**: enter the proxy address (e.g. `192.168.5.71:8001`) and an account's username/password. Several accounts can share one address, with a switcher in Settings; passwords are kept in EncryptedSharedPreferences.
+- **Picker**: channels grouped by Block — a rail on TV, chips on phone — with search, **All / ★ Favourites / ★ Block faves** filters, and a now/next teaser. Each channel is one row, so long names fit.
+- **Player**: video plus a now/next sidebar (TV) or bottom sheet (phone). Channel up/down walks the Block the channel was launched from. **Full screen** hides the chrome, and landscape goes full-screen on its own.
+- **Multiview**: watch several channels at once — **2 × 2** on TV (a **Grid** button switches to 1×1 / 2×1 / 1×2), 1×2 on phone landscape, stacked on phone portrait. One tile is the audio source (🔊 AUDIO); tiles beyond the proxy's tuner count show **All tuners busy**. On TV, press **Enter** on a tile for its controls (Pick / Swap / Audio / Remove).
+- **Android TV**: the same APK appears in the TV launcher (with a banner) and is driven by the remote; **Back** closes the guide, then leaves the player.
+- **Build it**: `cd android && ./gradlew assembleRelease` (signed with a local keystore, `android/keystore.properties`). Sideload the APK on the phone, or fetch it on the TV with an app like Downloader.
 
 # Recording
 
