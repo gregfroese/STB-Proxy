@@ -2,6 +2,13 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.6.1] - 2026-10-12
+
+### Android app
+
+- **Refresh the lineup**: a **Refresh** button on the picker (phone and TV). The lineup also reloads on launch and when you switch accounts.
+- **Fix**: on TV, the Multiview top bar (Back / **Grid** layout / Refresh) is reachable again — press **Up** from the top row of Tiles, then Left/Right to pick an item and Enter to activate it.
+
 ## [1.6.0] - 2026-10-12
 
 ### Favourites in the app

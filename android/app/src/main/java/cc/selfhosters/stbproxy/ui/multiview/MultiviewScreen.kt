@@ -115,7 +115,17 @@ fun MultiviewScreen(
     // here rather than by Compose focus (which is unreliable across nested Tiles).
     var actionSlot by remember { mutableStateOf<Int?>(null) }
     var barIndex by remember { mutableIntStateOf(0) }
+    // TV top bar (Back / Grid / Refresh) focus, reached by pressing Up on the top row.
+    var topBarIndex by remember { mutableStateOf<Int?>(null) }
     BackHandler(enabled = actionSlot != null) { actionSlot = null }
+
+    fun activateTopBar(index: Int) {
+        when (index) {
+            0 -> onBack()
+            1 -> viewModel.cycleLayout()
+            2 -> viewModel.load()
+        }
+    }
 
     fun selectTile(slot: Int) {
         val tile = state.tiles.firstOrNull { it.slot == slot } ?: return
@@ -166,11 +176,24 @@ fun MultiviewScreen(
                         }
                         else -> false
                     }
+                } else if (topBarIndex != null) {
+                    val i = topBarIndex!!
+                    when (event.key) {
+                        Key.DirectionLeft -> { topBarIndex = (i - 1).coerceAtLeast(0); true }
+                        Key.DirectionRight -> { topBarIndex = (i + 1).coerceAtMost(2); true }
+                        Key.Enter, Key.DirectionCenter -> { activateTopBar(i); true }
+                        Key.DirectionDown -> { topBarIndex = null; true }
+                        else -> false
+                    }
                 } else {
                     when (event.key) {
                         Key.DirectionLeft -> { moveTile(-1, 0); true }
                         Key.DirectionRight -> { moveTile(1, 0); true }
-                        Key.DirectionUp -> { moveTile(0, -1); true }
+                        Key.DirectionUp -> {
+                            // From the top row, Up reaches the top bar (Back / Grid / Refresh).
+                            if (state.focusSlot < state.layout.columns) topBarIndex = 0 else moveTile(0, -1)
+                            true
+                        }
                         Key.DirectionDown -> { moveTile(0, 1); true }
                         Key.Enter, Key.DirectionCenter -> { selectTile(state.focusSlot); true }
                         else -> false
@@ -200,6 +223,7 @@ fun MultiviewScreen(
                     showFullscreen = !isTv,
                     showLayout = isTv,
                     immersive = immersive,
+                    highlighted = topBarIndex,
                     onToggleFullscreen = { immersive = !immersive },
                     onCycleLayout = viewModel::cycleLayout,
                     onBack = onBack,
@@ -733,6 +757,7 @@ private fun MultiviewTopBar(
     showFullscreen: Boolean,
     showLayout: Boolean,
     immersive: Boolean,
+    highlighted: Int?,
     onToggleFullscreen: () -> Unit,
     onCycleLayout: () -> Unit,
     onBack: () -> Unit,
@@ -743,18 +768,9 @@ private fun MultiviewTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        TextButton(onClick = onBack, modifier = Modifier.focusRing()) {
-            Text(stringResource(R.string.back), maxLines = 1, softWrap = false)
-        }
+        TopBarButton(stringResource(R.string.back), highlighted == 0, onBack)
         if (showLayout) {
-            TextButton(onClick = onCycleLayout, modifier = Modifier.focusRing()) {
-                Text(
-                    text = "Grid ${state.layout.label}",
-                    maxLines = 1,
-                    softWrap = false,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
+            TopBarButton("Grid ${state.layout.label}", highlighted == 1, onCycleLayout)
         }
         Spacer(Modifier.weight(1f))
         Label(
@@ -764,18 +780,34 @@ private fun MultiviewTopBar(
             11.sp,
             maxLines = 1,
         )
-        TextButton(onClick = onRetry, modifier = Modifier.focusRing()) {
-            Text("Refresh", maxLines = 1, softWrap = false)
-        }
+        TopBarButton("Refresh", highlighted == 2, onRetry)
         if (showFullscreen) {
-            TextButton(onClick = onToggleFullscreen, modifier = Modifier.focusRing()) {
-                Text(
-                    if (immersive) "Exit full" else "Full screen",
-                    maxLines = 1,
-                    softWrap = false,
-                )
-            }
+            TopBarButton(
+                if (immersive) "Exit full" else "Full screen",
+                highlighted == 3,
+                onToggleFullscreen,
+            )
         }
+    }
+}
+
+/** A top-bar button; [highlighted] is the manual TV focus (Compose focus is bypassed). */
+@Composable
+private fun TopBarButton(label: String, highlighted: Boolean, onClick: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (highlighted) accent.copy(alpha = 0.25f) else Color.Transparent)
+            .border(
+                width = if (highlighted) 3.dp else 0.dp,
+                color = if (highlighted) TvFocusColor else Color.Transparent,
+                shape = RoundedCornerShape(50),
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(text = label, color = accent, maxLines = 1, softWrap = false)
     }
 }
 

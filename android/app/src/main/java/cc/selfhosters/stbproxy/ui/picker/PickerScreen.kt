@@ -141,6 +141,7 @@ fun PickerScreen(
             state = state,
             onOpenSettings = onOpenSettings,
             onOpenMultiview = onOpenMultiview,
+            onRefresh = viewModel::refresh,
         )
         SearchField(
             query = state.query,
@@ -480,6 +481,7 @@ private fun PickerTopBar(
     state: PickerUiState,
     onOpenSettings: () -> Unit,
     onOpenMultiview: () -> Unit,
+    onRefresh: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -507,6 +509,9 @@ private fun PickerTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            OutlinedButton(onClick = onRefresh, modifier = Modifier.focusRing()) {
+                M3Text("Refresh")
+            }
             FilledTonalButton(onClick = onOpenMultiview, modifier = Modifier.focusRing()) {
                 M3Text(stringResource(R.string.nav_multiview))
             }
