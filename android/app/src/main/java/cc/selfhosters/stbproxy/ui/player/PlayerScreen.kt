@@ -415,7 +415,7 @@ private fun VideoPane(
                 OverlayButton("Multiview", onOpenMultiview)
                 onToggleGuide?.let { OverlayButton(if (guideVisible) "Hide guide" else "Guide", it) }
                 onToggleFullscreen?.let {
-                    OverlayButton(if (immersive) "Exit full screen" else "Full screen", it)
+                    OverlayButton(if (immersive) "Exit full" else "Full screen", it)
                 }
             }
         }
@@ -428,7 +428,7 @@ private fun OverlayButton(text: String, onClick: () -> Unit) {
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
     ) {
-        Text(text = text, fontSize = 12.sp)
+        Text(text = text, fontSize = 12.sp, maxLines = 1, softWrap = false)
     }
 }
 

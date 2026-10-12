@@ -538,22 +538,25 @@ private fun MultiviewTopBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        TextButton(onClick = onBack) { Text(stringResource(R.string.back)) }
-        Text(
-            text = stringResource(R.string.multiview_title),
-            style = MaterialTheme.typography.titleMedium,
-        )
+        TextButton(onClick = onBack) {
+            Text(stringResource(R.string.back), maxLines = 1, softWrap = false)
+        }
         Spacer(Modifier.weight(1f))
         Label(
             "Tuners ${state.tunersUsed}/${state.tunerCount}" +
-                if (state.tunerCountKnown) "" else " (assumed)",
+                if (state.tunerCountKnown) "" else "?",
             MaterialTheme.colorScheme.onSurfaceVariant,
             11.sp,
+            maxLines = 1,
         )
-        TextButton(onClick = onRetry) { Text("Refresh") }
+        TextButton(onClick = onRetry) { Text("Refresh", maxLines = 1, softWrap = false) }
         if (showFullscreen) {
             TextButton(onClick = onToggleFullscreen) {
-                Text(if (immersive) "Exit full screen" else "Full screen")
+                Text(
+                    if (immersive) "Exit full" else "Full screen",
+                    maxLines = 1,
+                    softWrap = false,
+                )
             }
         }
     }

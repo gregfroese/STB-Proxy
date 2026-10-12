@@ -2,6 +2,13 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.4.0] - 2026-10-12
+
+### Android app
+
+- **Channel pickers are a list now**: each channel is one row — logo, full-width name (so long names show), channel number, a now/next teaser and its Block tags — in the picker and in the Multiview **Pick channel** overlay, instead of grid boxes.
+- **Fixes**: the Multiview full-screen button no longer wraps vertically in portrait, and the player/Multiview buttons are kept to a single line.
+
 ## [1.3.0] - 2026-10-12
 
 ### Android app

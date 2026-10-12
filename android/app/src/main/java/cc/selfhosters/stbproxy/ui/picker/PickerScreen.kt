@@ -19,9 +19,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
@@ -203,7 +203,7 @@ private fun PickerBody(
                 palette = palette,
                 onSelect = onBlockSelected,
             )
-            PickerGrid(
+            PickerList(
                 channels = visibleChannels,
                 nowNext = nowNext,
                 activeBlock = activeBlock,
@@ -226,7 +226,7 @@ private fun PickerBody(
                 palette = palette,
                 onSelect = onBlockSelected,
             )
-            PickerGrid(
+            PickerList(
                 channels = visibleChannels,
                 nowNext = nowNext,
                 activeBlock = activeBlock,
@@ -242,7 +242,7 @@ private fun PickerBody(
 }
 
 @Composable
-internal fun PickerGrid(
+internal fun PickerList(
     channels: List<Channel>,
     nowNext: Map<String, NowNext>,
     activeBlock: String?,
@@ -258,20 +258,18 @@ internal fun PickerGrid(
         Centered(modifier) { BasicLabel(message, palette.muted, 14.sp) }
         return
     }
-    // Compose for TV does not auto-focus; seed focus on the first tile (spec 2.10).
+    // Compose for TV does not auto-focus; seed focus on the first row (spec 2.10).
     val firstItemFocus = remember { FocusRequester() }
     if (isTv) {
         LaunchedEffect(Unit) { runCatching { firstItemFocus.requestFocus() } }
     }
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = if (isTv) 150.dp else 104.dp),
+    LazyColumn(
         modifier = modifier.focusGroup(),
-        contentPadding = PaddingValues(14.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         itemsIndexed(channels, key = { _, channel -> "${channel.portal}/${channel.channelId}" }) { index, channel ->
-            ChannelTile(
+            ChannelRow(
                 channel = channel,
                 nowNext = channel.epgId?.let { nowNext[it] },
                 activeBlock = activeBlock,
@@ -284,9 +282,12 @@ internal fun PickerGrid(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * One channel as a single row — logo, name (full width, so long names show),
+ * number, a now/next teaser and its Block tags — rather than a grid box.
+ */
 @Composable
-internal fun ChannelTile(
+internal fun ChannelRow(
     channel: Channel,
     nowNext: NowNext?,
     activeBlock: String?,
@@ -299,9 +300,10 @@ internal fun ChannelTile(
     val extra = extraBlockCount(channel, activeBlock, searching)
     val shape = RoundedCornerShape(12.dp)
 
-    Column(
+    Row(
         modifier = Modifier
             .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .fillMaxWidth()
             .clip(shape)
             .background(palette.surface)
             .border(
@@ -311,45 +313,45 @@ internal fun ChannelTile(
             )
             .onFocusChanged { focused = it.isFocused }
             .clickable(onClick = onClick)
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            ChannelLogo(channel = channel, palette = palette)
-            Spacer(modifier = Modifier.weight(1f))
-            channel.number?.let { BasicLabel(it, palette.muted, 12.sp) }
-        }
-        BasicLabel(channel.name, palette.onSurface, 14.sp, maxLines = 2)
-        if (channel.blocks.isNotEmpty()) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                channel.blocks.forEach { block ->
-                    val isExtra = !searching && activeBlock != null &&
-                        activeBlock != OTHER_BLOCK && block != activeBlock
-                    BlockTag(block, if (isExtra) palette.accent else palette.muted, palette)
+        ChannelLogo(channel = channel, palette = palette)
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                BasicLabel(
+                    channel.name,
+                    palette.onSurface,
+                    15.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                channel.number?.let {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    BasicLabel("CH $it", palette.muted, 12.sp, maxLines = 1)
                 }
             }
-        }
-        if (nowNext?.now != null) {
-            BasicLabel("Now: ${nowNext.now.title}", palette.onSurface, 11.sp, maxLines = 1)
-        } else {
-            BasicLabel("No guide data", palette.muted, 11.sp, maxLines = 1)
-        }
-        nowNext?.next?.let {
-            BasicLabel("Next: ${it.title}", palette.muted, 11.sp, maxLines = 1)
+            val tags = channel.blocks.joinToString(" · ")
+            val teaser = nowNext?.now?.title?.let { "Now: $it" } ?: "No guide data"
+            BasicLabel(
+                listOfNotNull(teaser, tags.ifBlank { null }).joinToString("   •   "),
+                palette.muted,
+                11.sp,
+                maxLines = 1,
+                modifier = Modifier.padding(top = 2.dp),
+            )
         }
         if (extra > 0) {
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(palette.accent)
-                        .padding(horizontal = 7.dp, vertical = 1.dp),
-                ) {
-                    BasicLabel("+$extra", palette.background, 10.sp, fontWeight = FontWeight.Bold)
-                }
+            Spacer(modifier = Modifier.width(8.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(palette.accent)
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+            ) {
+                BasicLabel("+$extra", palette.background, 11.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -567,7 +569,7 @@ fun ChannelPickerOverlay(
                             palette = palette,
                             onSelect = { activeBlock = it },
                         )
-                        PickerGrid(
+                        PickerList(
                             channels = visible,
                             nowNext = emptyMap(),
                             activeBlock = activeBlock,
@@ -590,7 +592,7 @@ fun ChannelPickerOverlay(
                             palette = palette,
                             onSelect = { activeBlock = it },
                         )
-                        PickerGrid(
+                        PickerList(
                             channels = visible,
                             nowNext = emptyMap(),
                             activeBlock = activeBlock,
