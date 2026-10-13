@@ -23,8 +23,19 @@ export function hlsUrlFor(
   portal: string,
   channelId: string,
   variant: "copy" | "transcode" = "copy",
+  session = "default",
 ): string {
-  return `/hls/${encodeURIComponent(portal)}/${encodeURIComponent(channelId)}/${variant}/index.m3u8`;
+  return `/hls/${encodeURIComponent(portal)}/${encodeURIComponent(channelId)}/${variant}/${encodeURIComponent(
+    session,
+  )}/index.m3u8`;
+}
+
+function newSession(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
 }
 
 interface AttachOptions {
@@ -38,13 +49,20 @@ interface AttachOptions {
 }
 
 export function attachStream(options: AttachOptions): StreamHandle | null {
+  const session = newSession();
   let stage: StreamMode = "ts";
   let ts: PlayerHandle | null = null;
   let hls: HlsHandle | null = null;
   let destroyed = false;
+  let played = false;
   let startedAt = Date.now();
   let lastFrames = 0;
   let lastDropped = 0;
+
+  const onPlaying = () => {
+    played = true;
+    options.onPlaying?.();
+  };
 
   const resetBaseline = () => {
     const quality = options.media.getVideoPlaybackQuality?.();
@@ -65,6 +83,7 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
 
   const startHls = (variant: "copy" | "transcode") => {
     stage = variant === "copy" ? "hls-copy" : "hls-transcode";
+    played = false;
     ts?.destroy();
     ts = null;
     hls?.destroy();
@@ -76,11 +95,11 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
     }
     resetBaseline();
     hls = attachHls({
-      url: hlsUrlFor(options.portal, options.channelId, variant),
+      url: hlsUrlFor(options.portal, options.channelId, variant, session),
       media: options.media,
       muted: options.muted,
       onError: onHlsError,
-      onPlaying: options.onPlaying,
+      onPlaying,
     });
     if (hls == null) options.onError({ kind: "unreachable" });
   };
@@ -91,7 +110,10 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
   };
 
   const onTsError = (error: PlaybackError) => {
-    if (error.kind === "all_tuners_busy") {
+    // A busy tuner is not a remux problem: surface it rather than fall back. And once
+    // playback has started, an error means the stream ended (e.g. the operator stopped
+    // it) — surface it, don't silently reconnect via the next rung.
+    if (error.kind === "all_tuners_busy" || played) {
       options.onError(error);
       return;
     }
@@ -99,7 +121,7 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
   };
 
   const onHlsError = (error: PlaybackError) => {
-    if (error.kind === "all_tuners_busy") {
+    if (error.kind === "all_tuners_busy" || played) {
       options.onError(error);
       return;
     }
@@ -113,7 +135,7 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
       media: options.media,
       muted: options.muted,
       onError: onTsError,
-      onPlaying: options.onPlaying,
+      onPlaying,
     });
   }
   if (ts == null) startHls("copy");

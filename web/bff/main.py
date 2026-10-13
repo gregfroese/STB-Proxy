@@ -307,14 +307,15 @@ _HLS_NAME = re.compile(r"^(index\.m3u8|init\.mp4|seg\d+\.m4s)$")
 _HLS_VARIANTS = {"copy": False, "transcode": True}
 
 
-@app.get("/hls/{portal}/{channel_id}/{variant}/{name}")
-async def hls(portal: str, channel_id: str, variant: str, name: str, request: Request):
+@app.get("/hls/{portal}/{channel_id}/{variant}/{session}/{name}")
+async def hls(portal: str, channel_id: str, variant: str, session: str, name: str, request: Request):
     """The HLS fallback: ffmpeg remuxes the channel; hls.js plays the playlist.
 
     ``copy`` repackages the TS; ``transcode`` re-encodes the video for streams
-    whose bitstream the browser's hardware decoder rejects.
+    whose bitstream the browser's hardware decoder rejects. ``session`` scopes one
+    playback, so a stopped stream is not silently restarted when the player retries.
     """
-    session = _get_session(request)
+    auth = _get_session(request)
     manager: HlsManager | None = request.app.state.hls
     if manager is None or variant not in _HLS_VARIANTS or not _HLS_NAME.match(name):
         raise not_found("Not found.")
@@ -323,11 +324,14 @@ async def hls(portal: str, channel_id: str, variant: str, name: str, request: Re
         directory = manager.playlist_dir(
             portal,
             channel_id,
-            *_basic(request, session),
+            *_basic(request, auth),
             transcode=_HLS_VARIANTS[variant],
+            session=session,
         )
     except FileNotFoundError:
         raise proxy_error()
+    if directory is None:
+        raise not_found("Stream ended.")
 
     path = directory / name
     if name == "index.m3u8":

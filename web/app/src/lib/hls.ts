@@ -35,6 +35,11 @@ export function attachHls(options: AttachOptions): HlsHandle | null {
     backBufferLength: 30,
     maxBufferLength: 30,
     liveSyncDurationCount: 3,
+    // Give up quickly if the stream ends (e.g. the operator stopped it) rather
+    // than retrying a dead playlist for a long time.
+    manifestLoadPolicy: { default: { maxNumRetry: 1, retryDelayMs: 500, maxRetryDelayMs: 1000 } },
+    playlistLoadPolicy: { default: { maxNumRetry: 2, retryDelayMs: 500, maxRetryDelayMs: 2000 } },
+    fragLoadPolicy: { default: { maxNumRetry: 2, retryDelayMs: 500, maxRetryDelayMs: 2000 } },
   });
 
   const playMedia = () => {

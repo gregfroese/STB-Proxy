@@ -29,22 +29,33 @@ class HlsManager:
         self._lock = threading.Lock()
 
     def playlist_dir(
-        self, portal: str, channel_id: str, user: str, password: str, transcode: bool = False
-    ) -> Path:
+        self,
+        portal: str,
+        channel_id: str,
+        user: str,
+        password: str,
+        transcode: bool = False,
+        session: str = "default",
+    ) -> Path | None:
         """Return the directory holding this channel's live playlist, starting ffmpeg if needed.
 
         ``transcode`` re-encodes the video (for streams whose H.264 bitstream the
         browser's hardware decoder rejects); otherwise the stream is copied.
+
+        ``session`` identifies one playback attempt. If that session's ffmpeg has
+        exited (e.g. the operator stopped the stream), return None instead of
+        restarting it, so a live player that retries gives up rather than
+        silently reconnecting. A new playback uses a new session.
         """
-        key = f"{portal}__{channel_id}__{'t' if transcode else 'c'}"
+        key = f"{portal}__{channel_id}__{'t' if transcode else 'c'}__{session}"
         now = time.time()
         with self._lock:
-            session = self._sessions.get(key)
-            if session is not None:
-                if session["proc"].poll() is None:
-                    session["last"] = now
-                    return Path(session["dir"])
-                self._cleanup_locked(key)
+            session_state = self._sessions.get(key)
+            if session_state is not None:
+                if session_state["proc"].poll() is None:
+                    session_state["last"] = now
+                    return Path(session_state["dir"])
+                return None  # it ended: don't reconnect this playback
 
             directory = self.base / key
             shutil.rmtree(directory, ignore_errors=True)
@@ -114,11 +125,12 @@ class HlsManager:
             return directory
 
     def reap(self) -> None:
+        """Drop sessions nobody has asked for within the TTL (including ones whose ffmpeg
+        has exited, so a stopped stream stays stopped until the viewer moves on)."""
         now = time.time()
         with self._lock:
             for key in list(self._sessions):
-                session = self._sessions[key]
-                if session["proc"].poll() is not None or now - session["last"] > self.ttl:
+                if now - self._sessions[key]["last"] > self.ttl:
                     self._cleanup_locked(key)
 
     def shutdown(self) -> None:
