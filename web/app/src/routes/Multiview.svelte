@@ -13,14 +13,24 @@
     visibleTiles,
   } from "../lib/multiviewLogic";
   import { audioSlot, layout, tileErrors, tiles } from "../lib/multiview";
-  import { channelKey, searchChannels } from "../lib/pickerLogic";
+  import {
+    CHANNEL_FILTERS,
+    applyChannelFilter,
+    blockRail,
+    channelKey,
+    channelsInBlock,
+    searchChannels,
+    type ChannelFilter,
+  } from "../lib/pickerLogic";
   import type { PlaybackError } from "../lib/playerLogic";
   import { navigate } from "../lib/router";
   import type { Channel } from "../lib/types";
 
   let pickSlot = $state<number | null>(null);
-  let armed = $state<number | null>(null);
   let pickQuery = $state("");
+  let pickFilter = $state<ChannelFilter>("ALL");
+  let pickBlock = $state<string | null>(null);
+  let armed = $state<number | null>(null);
   let retryKeys = $state<Record<number, number>>({});
   let unmuted = $state(false);
   let phone = $state(false);
@@ -77,7 +87,21 @@
 
   const audio = $derived(effectiveAudioSlot($tiles, $audioSlot));
 
-  const pickMatches = $derived(searchChannels(channels, pickQuery));
+  const pickSearching = $derived(pickQuery.trim() !== "");
+  const pickRail = $derived(blockRail($lineup?.blocks ?? [], channels));
+  const pickVisible = $derived.by(() => {
+    const base = pickSearching
+      ? searchChannels(channels, pickQuery)
+      : channelsInBlock(channels, pickBlock ?? "");
+    return applyChannelFilter(base, pickFilter);
+  });
+
+  $effect(() => {
+    if (pickSlot == null) return;
+    if (pickBlock == null || !pickRail.some((entry) => entry.name === pickBlock)) {
+      pickBlock = pickRail[0]?.name ?? null;
+    }
+  });
 
   function setError(slot: number, error: PlaybackError | null) {
     tileErrors.update((map) => ({ ...map, [slot]: error }));
@@ -86,6 +110,8 @@
   function openPick(slot: number) {
     pickSlot = slot;
     pickQuery = "";
+    pickFilter = "ALL";
+    pickBlock = pickRail[0]?.name ?? null;
   }
 
   function choose(channel: Channel) {
@@ -174,27 +200,56 @@
   >
     <div class="box">
       <div class="bh">Pick channel for tile #{pickSlot + 1}</div>
-      <div style="padding: 8px 10px">
+      <div style="padding: 8px 10px 0">
         <div class="search" style="margin: 0">
           <span>⌕</span>
-          <input placeholder="Search channels…" bind:value={pickQuery} />
+          <input placeholder="Search all Blocks…" bind:value={pickQuery} />
         </div>
       </div>
+      <div class="chips" style="padding: 8px 10px">
+        {#each CHANNEL_FILTERS as chip (chip.key)}
+          <button
+            class="chip {chip.key !== 'ALL' ? 'fav' : ''} {pickFilter === chip.key ? 'on' : ''}"
+            onclick={() => (pickFilter = chip.key)}
+          >
+            {chip.label}
+          </button>
+        {/each}
+      </div>
+      {#if !pickSearching}
+        <div class="pickrail">
+          {#each pickRail as entry (entry.name)}
+            <button
+              class="railchip {pickBlock === entry.name ? 'on' : ''}"
+              onclick={() => (pickBlock = entry.name)}
+            >
+              {entry.name} <span>{entry.count}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
       <div class="bl">
-        {#each pickMatches as channel (channelKey(channel))}
+        {#each pickVisible as channel (channelKey(channel))}
           <button class="r" onclick={() => choose(channel)}>
             <Logo name={channel.name} logo={channel.logo} size={40} />
-            <div>
-              <div>{channel.name}</div>
+            <div style="flex: 1">
+              <div>
+                {channel.name}{#if channel.favourite}<span style="color: var(--star)"> ★</span>{/if}
+              </div>
               <div style="font-size: 11px; color: var(--dim)">
                 CH {channel.number ?? "—"}{channel.blocks.length
                   ? ` · ${channel.blocks.join(", ")}`
                   : ""}
+                {#each channel.blockFavourites as block (block)}
+                  <span style="color: var(--star)"> ★ {block}</span>
+                {/each}
               </div>
             </div>
           </button>
         {:else}
-          <div class="notice" style="margin: 8px">No channels.</div>
+          <div class="notice" style="margin: 8px">
+            {pickSearching ? `No channels match “${pickQuery.trim()}”` : "No channels here."}
+          </div>
         {/each}
       </div>
       <div class="bf"><button class="btn" onclick={() => (pickSlot = null)}>Cancel</button></div>

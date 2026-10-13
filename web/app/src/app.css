@@ -264,6 +264,36 @@ a {
   border-color: #ffd34d66;
 }
 
+.pickrail {
+  display: flex;
+  gap: 6px;
+  padding: 0 10px 8px;
+  overflow-x: auto;
+}
+
+.pickrail .railchip {
+  flex: none;
+  background: var(--panel2);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.pickrail .railchip.on {
+  background: #3ba6ff1a;
+  border-color: #3ba6ff55;
+  color: var(--ink);
+}
+
+.pickrail .railchip span {
+  color: var(--dim);
+  font-size: 11px;
+  margin-left: 4px;
+}
+
 .bwrap {
   display: flex;
   flex: 1;
