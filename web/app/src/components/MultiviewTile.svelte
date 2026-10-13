@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { attachPlayer, liveTsSupported, type PlayerHandle } from "../lib/mpegts";
+  import { attachStream, hlsUrlFor, type StreamHandle } from "../lib/stream";
   import { tileStatus, type MultiviewTile } from "../lib/multiviewLogic";
   import type { PlaybackError } from "../lib/playerLogic";
   import Logo from "./Logo.svelte";
@@ -36,7 +36,7 @@
   } = $props();
 
   let videoEl: HTMLVideoElement | undefined = $state();
-  let handle: PlayerHandle | null = null;
+  let handle: StreamHandle | null = null;
 
   const status = $derived(tileStatus(tile, error));
 
@@ -48,20 +48,18 @@
     handle?.destroy();
     handle = null;
     onError(tile.slot, null);
-    if (!liveTsSupported()) {
-      onError(tile.slot, { kind: "unreachable" });
-      return;
-    }
     const media = videoEl;
     const startMuted = untrack(() => !audio);
     media.muted = startMuted;
-    handle = attachPlayer({
-      url: channel.url,
+    handle = attachStream({
+      tsUrl: channel.url,
+      hlsUrl: hlsUrlFor(channel.portal, channel.channelId),
       media,
       muted: startMuted,
       onError: (playbackError) => onError(tile.slot, playbackError),
       onPlaying: () => onError(tile.slot, null),
     });
+    if (handle == null) onError(tile.slot, { kind: "unreachable" });
     return () => {
       handle?.destroy();
       handle = null;

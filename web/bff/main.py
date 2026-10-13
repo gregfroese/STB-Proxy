@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -31,6 +32,7 @@ from .errors import (
     session_invalid,
     unauthorized,
 )
+from .hls import HlsManager
 from .security import apply_security_headers, check_origin, login_limiter, valid_csrf
 from .sessions import Session, SessionStore
 
@@ -48,16 +50,26 @@ async def lifespan(app: FastAPI):
     app.state.store = SessionStore(config.session_db)
     app.state.lineup_cache = TTLCache()
     app.state.epg_cache = TTLCache()
+    app.state.hls = (
+        HlsManager(config.hls_dir, config.proxy_url, config.hls_ttl, config.ffmpeg_bin)
+        if config.hls_enabled
+        else None
+    )
     revalidate_task = asyncio.create_task(_revalidate_loop(app))
+    reap_task = asyncio.create_task(_hls_reap_loop(app))
     logger.info("BFF ready; upstream=%s static=%s", config.proxy_url, config.static_dir)
     try:
         yield
     finally:
         revalidate_task.cancel()
-        try:
-            await revalidate_task
-        except asyncio.CancelledError:
-            pass
+        reap_task.cancel()
+        for task in (revalidate_task, reap_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        if app.state.hls is not None:
+            app.state.hls.shutdown()
         await app.state.client.aclose()
 
 
@@ -291,6 +303,47 @@ async def stream(portal: str, channel_id: str, request: Request):
     )
 
 
+_HLS_NAME = re.compile(r"^(index\.m3u8|init\.mp4|seg\d+\.m4s)$")
+
+
+@app.get("/hls/{portal}/{channel_id}/{name}")
+async def hls(portal: str, channel_id: str, name: str, request: Request):
+    """The HLS fallback: ffmpeg remuxes the channel; hls.js plays the playlist."""
+    session = _get_session(request)
+    manager: HlsManager | None = request.app.state.hls
+    if manager is None or not _HLS_NAME.match(name):
+        raise not_found("Not found.")
+
+    try:
+        directory = manager.playlist_dir(portal, channel_id, *_basic(request, session))
+    except FileNotFoundError:
+        raise proxy_error()
+
+    path = directory / name
+    if name == "index.m3u8":
+        for _ in range(50):  # wait up to ~10s for ffmpeg to write the first playlist
+            if path.is_file():
+                break
+            await asyncio.sleep(0.2)
+    if not path.is_file():
+        raise not_found("Stream not ready.")
+
+    media_type = "application/vnd.apple.mpegurl" if name.endswith(".m3u8") else "video/mp4"
+    return FileResponse(
+        path,
+        media_type=media_type,
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+async def _hls_reap_loop(app: FastAPI) -> None:
+    while True:
+        await asyncio.sleep(10)
+        manager: HlsManager | None = getattr(app.state, "hls", None)
+        if manager is not None:
+            manager.reap()
+
+
 async def _revalidate_loop(app: FastAPI) -> None:
     store: SessionStore = app.state.store
     client: httpx.AsyncClient = app.state.client
@@ -323,7 +376,7 @@ def _mount_spa() -> None:
 
     @app.get("/{path:path}")
     async def spa(path: str):
-        if path.startswith(("api/", "stream/")):
+        if path.startswith(("api/", "stream/", "hls/")):
             raise not_found("Not found.")
         if path:
             candidate = (dist / path).resolve()

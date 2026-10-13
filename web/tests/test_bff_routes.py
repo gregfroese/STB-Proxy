@@ -72,6 +72,7 @@ def _upstream(request: httpx.Request) -> httpx.Response:
 def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config_module.config, "session_db", str(tmp_path / "sessions.db"))
     monkeypatch.setattr(config_module.config, "cookie_secure", False)
+    monkeypatch.setattr(config_module.config, "hls_dir", str(tmp_path / "hls-real"))
     login_limiter._state.clear()  # noqa: SLF001 - isolate the shared limiter between tests
     from bff.main import app
 
@@ -80,7 +81,27 @@ def client(tmp_path, monkeypatch):
         app.state.client = httpx.AsyncClient(
             transport=httpx.MockTransport(_upstream), base_url="http://proxy"
         )
+        hls_dir = tmp_path / "hls"
+        hls_dir.mkdir()
+        (hls_dir / "index.m3u8").write_text("#EXTM3U\n#EXT-X-VERSION:7\n")
+        (hls_dir / "init.mp4").write_bytes(b"\x00\x00\x00\x18ftyp")
+        (hls_dir / "seg00000.m4s").write_bytes(b"\x00\x00\x00\x08moof")
+        app.state.hls = FakeHls(hls_dir)
         yield test_client
+
+
+class FakeHls:
+    def __init__(self, directory):
+        self.directory = directory
+
+    def playlist_dir(self, portal, channel_id, user, password):  # noqa: ARG002
+        return self.directory
+
+    def reap(self):
+        pass
+
+    def shutdown(self):
+        pass
 
 
 def test_login_requires_bad_credentials_401(client):
@@ -144,6 +165,26 @@ def test_stream_404_is_not_found(client):
 
 def test_stream_requires_a_session(client):
     assert client.get("/stream/1/ok").status_code == 401
+
+
+def test_hls_playlist_and_segments_are_served(client):
+    client.post("/api/login", json={"username": "katie", "password": "pw"})
+    playlist = client.get("/hls/1/9/index.m3u8")
+    assert playlist.status_code == 200
+    assert playlist.headers["content-type"].startswith("application/vnd.apple.mpegurl")
+    assert playlist.text.startswith("#EXTM3U")
+
+    segment = client.get("/hls/1/9/seg00000.m4s")
+    assert segment.status_code == 200
+    assert segment.content == b"\x00\x00\x00\x08moof"
+
+
+def test_hls_rejects_unknown_names_and_requires_a_session(client):
+    assert client.get("/hls/1/9/index.m3u8").status_code == 401
+    client.post("/api/login", json={"username": "katie", "password": "pw"})
+    assert client.get("/hls/1/9/evil.txt").status_code == 404
+    assert client.get("/hls/1/9/seg99999.m4s").status_code == 404
+    assert client.get("/hls/1/9/nope").status_code == 404
 
 
 def test_logout_requires_csrf_and_clears_session(client):

@@ -49,6 +49,12 @@ class Config:
         self.request_timeout: int = _int("REQUEST_TIMEOUT", 15)
         self.stream_timeout: int = _int("STREAM_TIMEOUT", 30)
 
+        # HLS fallback (ffmpeg remux) for streams mpegts.js can't play cleanly.
+        self.hls_enabled: bool = _bool("HLS_ENABLED", True)
+        self.hls_dir: str = os.environ.get("HLS_DIR", "/var/lib/stb-proxy-web/hls")
+        self.hls_ttl: int = _int("HLS_TTL", 30)
+        self.ffmpeg_bin: str = os.environ.get("FFMPEG_BIN", "ffmpeg")
+
     @property
     def cookie_name(self) -> str:
         # The __Host- prefix demands Secure + Path=/ + no Domain, so only in prod.

@@ -22,6 +22,12 @@ npm run build
 echo "==> Installing BFF requirements"
 "$VENV_DIR/bin/pip" install --upgrade -r "$REPO_DIR/web/requirements.txt"
 
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "==> Installing ffmpeg (HLS fallback)"
+  apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+fi
+
 echo "==> Restarting $SERVICE"
 $SUDO systemctl restart "$SERVICE"
 

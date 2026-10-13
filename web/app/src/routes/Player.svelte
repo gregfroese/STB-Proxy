@@ -4,7 +4,7 @@
   import { epg, loadEpg } from "../lib/epg";
   import { timeRange } from "../lib/format";
   import { lineup, loadLineup } from "../lib/lineup";
-  import { attachPlayer, liveTsSupported, type PlayerHandle } from "../lib/mpegts";
+  import { attachStream, hlsUrlFor, type StreamHandle } from "../lib/stream";
   import { channelsInBlock, channelKey, launchBlockFor } from "../lib/pickerLogic";
   import {
     epgRefreshAction,
@@ -18,7 +18,7 @@
 
   let videoEl: HTMLVideoElement | undefined = $state();
   let stageEl: HTMLDivElement | undefined = $state();
-  let handle: PlayerHandle | null = null;
+  let handle: StreamHandle | null = null;
   let error = $state<PlaybackError | null>(null);
   let muted = $state(true);
   let retryKey = $state(0);
@@ -49,15 +49,12 @@
     error = null;
     handle?.destroy();
     handle = null;
-    if (!liveTsSupported()) {
-      error = { kind: "unreachable" };
-      return;
-    }
     const media = videoEl;
     const startMuted = untrack(() => muted);
     media.muted = startMuted;
-    handle = attachPlayer({
-      url: current.url,
+    handle = attachStream({
+      tsUrl: current.url,
+      hlsUrl: hlsUrlFor(current.portal, current.channelId),
       media,
       muted: startMuted,
       onError: (playbackError) => {
@@ -182,12 +179,10 @@
       const video = videoEl;
       if (!video) return;
       const buffered = video.buffered;
-      const ahead = buffered.length
-        ? buffered.end(buffered.length - 1) - video.currentTime
-        : 0;
+      const ahead = buffered.length ? buffered.end(buffered.length - 1) - video.currentTime : 0;
       const quality = video.getVideoPlaybackQuality?.();
       const speed = handle?.stats().speedKBps ?? 0;
-      debugText = `${video.videoWidth}×${video.videoHeight} · speed ${speed.toFixed(
+      debugText = `${handle?.mode() ?? "?"} · ${video.videoWidth}×${video.videoHeight} · speed ${speed.toFixed(
         0,
       )} KB/s · buffer ${ahead.toFixed(1)}s · dropped ${quality?.droppedVideoFrames ?? "?"}/${
         quality?.totalVideoFrames ?? "?"

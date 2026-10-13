@@ -77,6 +77,15 @@ the commands in the example file. Rotate the Fernet key via `FERNET_KEYS_FALLBAC
 Key settings: `PROXY_URL`, `PUBLIC_ORIGIN`, `LINEUP_TTL=30`, `EPG_TTL=300`, `IDLE=3600`,
 `ABS=43200`, `REVALIDATE=900`, `SESSION_DB=/var/lib/stb-proxy-web/sessions.db`.
 
+### Playback and the HLS fallback
+
+Playback is `mpegts.js` over the proxied TS (client-side TS→fMP4→MSE). Some streams — notably
+B-frame-heavy 1080p60 — produce fMP4 samples the browser's hardware decoder rejects, which stutters.
+When the player sees a high dropped-frame rate it transparently switches to the **HLS fallback**:
+the BFF runs `ffmpeg -c copy` to remux the channel to HLS (`/hls/<portal>/<channelId>/index.m3u8`)
+and `hls.js` plays it. This needs **ffmpeg on the host** (installed by `deploy.sh`); tune with
+`HLS_ENABLED`, `HLS_DIR`, `HLS_TTL` (idle seconds before an idle remux is reaped), `FFMPEG_BIN`.
+
 ## Production (LXC 119 `stb-proxy-web`, 192.168.5.72)
 
 ```bash
