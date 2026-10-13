@@ -14,6 +14,8 @@ from .config import config
 CSP = (
     "default-src 'self'; "
     "script-src 'self'; "
+    "worker-src 'self' blob:; "
+    "child-src 'self' blob:; "
     "style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data: https:; "
     "media-src 'self' blob:; "
