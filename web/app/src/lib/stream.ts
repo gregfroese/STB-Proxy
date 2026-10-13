@@ -53,6 +53,7 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
   let stage: StreamMode = "ts";
   let ts: PlayerHandle | null = null;
   let hls: HlsHandle | null = null;
+  let hlsVariant: "copy" | "transcode" | null = null;
   let destroyed = false;
   let played = false;
   let finished = false;
@@ -86,6 +87,10 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
   };
 
   const startHls = (variant: "copy" | "transcode") => {
+    if (hlsVariant) {
+      stopHlsSession(hlsVariant);
+      hlsVariant = null;
+    }
     stage = variant === "copy" ? "hls-copy" : "hls-transcode";
     played = false;
     ts?.destroy();
@@ -98,6 +103,7 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
       return;
     }
     resetBaseline();
+    hlsVariant = variant;
     hls = attachHls({
       url: hlsUrlFor(options.portal, options.channelId, variant, session),
       media: options.media,
@@ -106,6 +112,20 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
       onPlaying,
     });
     if (hls == null) options.onError({ kind: "unreachable" });
+  };
+
+  // Tell the BFF to end this HLS session (kill its ffmpeg) so the tuner frees at once.
+  const stopHlsSession = (variant: "copy" | "transcode") => {
+    try {
+      void fetch(
+        `/hls/${encodeURIComponent(options.portal)}/${encodeURIComponent(
+          options.channelId,
+        )}/${variant}/${encodeURIComponent(session)}`,
+        { method: "DELETE", keepalive: true },
+      );
+    } catch {
+      /* best effort */
+    }
   };
 
   const escalate = (target: "hls-copy" | "hls-transcode") => {
@@ -179,6 +199,10 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
       window.clearInterval(watchdog);
       ts?.destroy();
       hls?.destroy();
+      if (hlsVariant) {
+        stopHlsSession(hlsVariant);
+        hlsVariant = null;
+      }
     },
     stats() {
       return ts ? ts.stats() : { speedKBps: 0 };

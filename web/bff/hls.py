@@ -124,6 +124,12 @@ class HlsManager:
             logger.info("started HLS remux for %s (transcode=%s, pid %s)", key, transcode, proc.pid)
             return directory
 
+    def stop(self, portal: str, channel_id: str, transcode: bool, session: str) -> None:
+        """End a session at once (the player left), freeing its ffmpeg and tuner."""
+        key = f"{portal}__{channel_id}__{'t' if transcode else 'c'}__{session}"
+        with self._lock:
+            self._cleanup_locked(key)
+
     def reap(self) -> None:
         """Drop sessions nobody has asked for within the TTL (including ones whose ffmpeg
         has exited, so a stopped stream stays stopped until the viewer moves on)."""

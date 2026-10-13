@@ -350,9 +350,19 @@ async def hls(portal: str, channel_id: str, variant: str, session: str, name: st
     )
 
 
+@app.delete("/hls/{portal}/{channel_id}/{variant}/{session}")
+async def hls_stop(portal: str, channel_id: str, variant: str, session: str, request: Request):
+    """The player left: end this HLS session now so its ffmpeg and tuner are freed."""
+    _get_session(request)
+    manager: HlsManager | None = request.app.state.hls
+    if manager is not None and variant in _HLS_VARIANTS:
+        manager.stop(portal, channel_id, _HLS_VARIANTS[variant], session)
+    return {"ok": True}
+
+
 async def _hls_reap_loop(app: FastAPI) -> None:
     while True:
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
         manager: HlsManager | None = getattr(app.state, "hls", None)
         if manager is not None:
             manager.reap()

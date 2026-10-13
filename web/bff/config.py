@@ -52,7 +52,7 @@ class Config:
         # HLS fallback (ffmpeg remux) for streams mpegts.js can't play cleanly.
         self.hls_enabled: bool = _bool("HLS_ENABLED", True)
         self.hls_dir: str = os.environ.get("HLS_DIR", "/var/lib/stb-proxy-web/hls")
-        self.hls_ttl: int = _int("HLS_TTL", 30)
+        self.hls_ttl: int = _int("HLS_TTL", 8)
         self.ffmpeg_bin: str = os.environ.get("FFMPEG_BIN", "ffmpeg")
 
     @property

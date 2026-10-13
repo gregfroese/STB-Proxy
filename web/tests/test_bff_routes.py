@@ -98,6 +98,9 @@ class FakeHls:
     def playlist_dir(self, portal, channel_id, user, password, transcode=False, session="default"):  # noqa: ARG002
         return None if self.ended else self.directory
 
+    def stop(self, portal, channel_id, transcode, session):  # noqa: ARG002
+        self.ended = True
+
     def reap(self):
         pass
 
@@ -187,6 +190,13 @@ def test_hls_ended_session_is_404(client):
 
     app.state.hls = FakeHls(None, ended=True)
     client.post("/api/login", json={"username": "katie", "password": "pw"})
+    assert client.get("/hls/1/9/copy/s1/index.m3u8").status_code == 404
+
+
+def test_hls_session_can_be_stopped(client):
+    client.post("/api/login", json={"username": "katie", "password": "pw"})
+    assert client.delete("/hls/1/9/copy/s1").status_code == 200
+    # Once stopped, the session is ended, so the playlist is gone.
     assert client.get("/hls/1/9/copy/s1/index.m3u8").status_code == 404
 
 
