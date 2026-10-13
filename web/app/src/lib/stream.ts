@@ -55,12 +55,15 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
   let hls: HlsHandle | null = null;
   let destroyed = false;
   let played = false;
+  let finished = false;
   let startedAt = Date.now();
   let lastFrames = 0;
   let lastDropped = 0;
+  let lastProgressAt = Date.now();
 
   const onPlaying = () => {
     played = true;
+    lastProgressAt = Date.now();
     options.onPlaying?.();
   };
 
@@ -69,6 +72,7 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
     startedAt = Date.now();
     lastFrames = quality?.totalVideoFrames ?? 0;
     lastDropped = quality?.droppedVideoFrames ?? 0;
+    lastProgressAt = Date.now();
   };
 
   const resetMedia = () => {
@@ -141,13 +145,25 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
   if (ts == null) startHls("copy");
 
   const watchdog = window.setInterval(() => {
-    if (destroyed) return;
+    if (destroyed || finished) return;
     const quality = options.media.getVideoPlaybackQuality?.();
     if (!quality) return;
-    const deltaFrames = quality.totalVideoFrames - lastFrames;
+    const frames = quality.totalVideoFrames;
+    const deltaFrames = frames - lastFrames;
     const deltaDropped = quality.droppedVideoFrames - lastDropped;
-    lastFrames = quality.totalVideoFrames;
+    if (frames > lastFrames) lastProgressAt = Date.now();
+    lastFrames = frames;
     lastDropped = quality.droppedVideoFrames;
+
+    // The stream ended (e.g. the operator stopped it): it had been playing, isn't
+    // paused, and no frames have arrived for a while. Surface it rather than sit on
+    // a frozen frame.
+    if (played && !options.media.paused && Date.now() - lastProgressAt > 6000) {
+      finished = true;
+      options.onError({ kind: "unreachable" });
+      return;
+    }
+
     const stuttering =
       Date.now() - startedAt > 6000 &&
       quality.totalVideoFrames > 300 &&
