@@ -4,7 +4,7 @@
   import { epg, loadEpg } from "../lib/epg";
   import { timeRange } from "../lib/format";
   import { lineup, loadLineup } from "../lib/lineup";
-  import { attachStream, hlsUrlFor, type StreamHandle } from "../lib/stream";
+  import { attachStream, type StreamHandle } from "../lib/stream";
   import { channelsInBlock, channelKey, launchBlockFor } from "../lib/pickerLogic";
   import {
     epgRefreshAction,
@@ -54,7 +54,8 @@
     media.muted = startMuted;
     handle = attachStream({
       tsUrl: current.url,
-      hlsUrl: hlsUrlFor(current.portal, current.channelId),
+      portal: current.portal,
+      channelId: current.channelId,
       media,
       muted: startMuted,
       onError: (playbackError) => {

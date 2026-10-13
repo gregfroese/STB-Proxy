@@ -1,6 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
-  import { attachStream, hlsUrlFor, type StreamHandle } from "../lib/stream";
+  import { attachStream, type StreamHandle } from "../lib/stream";
   import { tileStatus, type MultiviewTile } from "../lib/multiviewLogic";
   import type { PlaybackError } from "../lib/playerLogic";
   import Logo from "./Logo.svelte";
@@ -53,7 +53,8 @@
     media.muted = startMuted;
     handle = attachStream({
       tsUrl: channel.url,
-      hlsUrl: hlsUrlFor(channel.portal, channel.channelId),
+      portal: channel.portal,
+      channelId: channel.channelId,
       media,
       muted: startMuted,
       onError: (playbackError) => onError(tile.slot, playbackError),

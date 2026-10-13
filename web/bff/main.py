@@ -304,18 +304,28 @@ async def stream(portal: str, channel_id: str, request: Request):
 
 
 _HLS_NAME = re.compile(r"^(index\.m3u8|init\.mp4|seg\d+\.m4s)$")
+_HLS_VARIANTS = {"copy": False, "transcode": True}
 
 
-@app.get("/hls/{portal}/{channel_id}/{name}")
-async def hls(portal: str, channel_id: str, name: str, request: Request):
-    """The HLS fallback: ffmpeg remuxes the channel; hls.js plays the playlist."""
+@app.get("/hls/{portal}/{channel_id}/{variant}/{name}")
+async def hls(portal: str, channel_id: str, variant: str, name: str, request: Request):
+    """The HLS fallback: ffmpeg remuxes the channel; hls.js plays the playlist.
+
+    ``copy`` repackages the TS; ``transcode`` re-encodes the video for streams
+    whose bitstream the browser's hardware decoder rejects.
+    """
     session = _get_session(request)
     manager: HlsManager | None = request.app.state.hls
-    if manager is None or not _HLS_NAME.match(name):
+    if manager is None or variant not in _HLS_VARIANTS or not _HLS_NAME.match(name):
         raise not_found("Not found.")
 
     try:
-        directory = manager.playlist_dir(portal, channel_id, *_basic(request, session))
+        directory = manager.playlist_dir(
+            portal,
+            channel_id,
+            *_basic(request, session),
+            transcode=_HLS_VARIANTS[variant],
+        )
     except FileNotFoundError:
         raise proxy_error()
 

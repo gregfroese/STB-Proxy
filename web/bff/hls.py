@@ -28,9 +28,15 @@ class HlsManager:
         self._sessions: dict[str, dict] = {}
         self._lock = threading.Lock()
 
-    def playlist_dir(self, portal: str, channel_id: str, user: str, password: str) -> Path:
-        """Return the directory holding this channel's live playlist, starting ffmpeg if needed."""
-        key = f"{portal}__{channel_id}"
+    def playlist_dir(
+        self, portal: str, channel_id: str, user: str, password: str, transcode: bool = False
+    ) -> Path:
+        """Return the directory holding this channel's live playlist, starting ffmpeg if needed.
+
+        ``transcode`` re-encodes the video (for streams whose H.264 bitstream the
+        browser's hardware decoder rejects); otherwise the stream is copied.
+        """
+        key = f"{portal}__{channel_id}__{'t' if transcode else 'c'}"
         now = time.time()
         with self._lock:
             session = self._sessions.get(key)
@@ -53,10 +59,27 @@ class HlsManager:
                 f"Authorization: Basic {token}\r\n",
                 "-i",
                 f"{self.proxy_url}/play/{portal}/{channel_id}",
-                "-c",
-                "copy",
-                "-bsf:a",
-                "aac_adtstoasc",
+            ]
+            if transcode:
+                # Re-encode video (conformant bitstream, monotonic timestamps) and
+                # audio (codec-agnostic), so the browser hardware decoder is happy.
+                command += [
+                    "-c:v",
+                    "libx264",
+                    "-preset",
+                    "ultrafast",
+                    "-tune",
+                    "zerolatency",
+                    "-g",
+                    "50",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "128k",
+                ]
+            else:
+                command += ["-c", "copy", "-bsf:a", "aac_adtstoasc"]
+            command += [
                 "-f",
                 "hls",
                 "-hls_time",
@@ -87,7 +110,7 @@ class HlsManager:
                 "dir": str(directory),
                 "last": now,
             }
-            logger.info("started HLS remux for %s (pid %s)", key, proc.pid)
+            logger.info("started HLS remux for %s (transcode=%s, pid %s)", key, transcode, proc.pid)
             return directory
 
     def reap(self) -> None:

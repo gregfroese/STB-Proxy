@@ -94,7 +94,7 @@ class FakeHls:
     def __init__(self, directory):
         self.directory = directory
 
-    def playlist_dir(self, portal, channel_id, user, password):  # noqa: ARG002
+    def playlist_dir(self, portal, channel_id, user, password, transcode=False):  # noqa: ARG002
         return self.directory
 
     def reap(self):
@@ -169,22 +169,24 @@ def test_stream_requires_a_session(client):
 
 def test_hls_playlist_and_segments_are_served(client):
     client.post("/api/login", json={"username": "katie", "password": "pw"})
-    playlist = client.get("/hls/1/9/index.m3u8")
+    playlist = client.get("/hls/1/9/copy/index.m3u8")
     assert playlist.status_code == 200
     assert playlist.headers["content-type"].startswith("application/vnd.apple.mpegurl")
     assert playlist.text.startswith("#EXTM3U")
 
-    segment = client.get("/hls/1/9/seg00000.m4s")
+    segment = client.get("/hls/1/9/copy/seg00000.m4s")
     assert segment.status_code == 200
     assert segment.content == b"\x00\x00\x00\x08moof"
 
+    assert client.get("/hls/1/9/transcode/index.m3u8").status_code == 200
+
 
 def test_hls_rejects_unknown_names_and_requires_a_session(client):
-    assert client.get("/hls/1/9/index.m3u8").status_code == 401
+    assert client.get("/hls/1/9/copy/index.m3u8").status_code == 401
     client.post("/api/login", json={"username": "katie", "password": "pw"})
-    assert client.get("/hls/1/9/evil.txt").status_code == 404
-    assert client.get("/hls/1/9/seg99999.m4s").status_code == 404
-    assert client.get("/hls/1/9/nope").status_code == 404
+    assert client.get("/hls/1/9/copy/evil.txt").status_code == 404
+    assert client.get("/hls/1/9/copy/seg99999.m4s").status_code == 404
+    assert client.get("/hls/1/9/nope/index.m3u8").status_code == 404
 
 
 def test_logout_requires_csrf_and_clears_session(client):
