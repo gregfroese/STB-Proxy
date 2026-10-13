@@ -7,6 +7,7 @@ import { classifySourceError, type PlaybackError } from "./playerLogic";
 
 export interface PlayerHandle {
   destroy(): void;
+  stats(): { speedKBps: number };
 }
 
 export function liveTsSupported(): boolean {
@@ -33,12 +34,15 @@ export function attachPlayer(options: AttachOptions): PlayerHandle | null {
       { type: "mpegts", isLive: true, url: options.url },
       {
         // Main-thread demux (no blob Worker), a generous stash, and no latency
-        // chasing (which drops frames and stutters a live feed).
+        // chasing (which drops frames and stutters a live feed). Bound the MSE
+        // buffer so long live playback doesn't stall on the SourceBuffer quota.
         enableWorker: false,
         enableStashBuffer: true,
         stashInitialSize: 1024,
         liveBufferLatencyChasing: false,
         autoCleanupSourceBuffer: true,
+        autoCleanupMaxBackwardDuration: 30,
+        autoCleanupMinBackwardDuration: 10,
         lazyLoad: false,
       },
     );
@@ -75,6 +79,16 @@ export function attachPlayer(options: AttachOptions): PlayerHandle | null {
           player.destroy();
         } catch {
           /* already torn down */
+        }
+      },
+      stats() {
+        try {
+          const info = (
+            player as unknown as { statisticsInfo?: { speed?: number } }
+          ).statisticsInfo;
+          return { speedKBps: info?.speed ?? 0 };
+        } catch {
+          return { speedKBps: 0 };
         }
       },
     };

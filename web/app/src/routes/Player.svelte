@@ -171,6 +171,28 @@
         ? "The portal answered 302; the BFF follows it server-side, so the portal URL never reaches the browser. Shown for diagnostics."
         : "Couldn't reach STB-Proxy right now. Check it's running and on the same network.",
   );
+
+  // Playback telemetry, shown when the URL carries ?debug=1.
+  const debug = $derived($route.query.get("debug") === "1");
+  let debugText = $state("");
+
+  $effect(() => {
+    if (!debug) return;
+    const timer = window.setInterval(() => {
+      const video = videoEl;
+      if (!video) return;
+      const buffered = video.buffered;
+      const ahead = buffered.length
+        ? buffered.end(buffered.length - 1) - video.currentTime
+        : 0;
+      const quality = video.getVideoPlaybackQuality?.();
+      const speed = handle?.stats().speedKBps ?? 0;
+      debugText = `speed ${speed.toFixed(0)} KB/s · buffer ${ahead.toFixed(1)}s · dropped ${
+        quality?.droppedVideoFrames ?? "?"
+      }/${quality?.totalVideoFrames ?? "?"} · readyState ${video.readyState}`;
+    }, 1000);
+    return () => window.clearInterval(timer);
+  });
 </script>
 
 <div class="player">
@@ -215,6 +237,9 @@
         <button class="iconbtn" title="Full screen" onclick={toggleFullscreen}>⛶</button>
         <button class="iconbtn" title="Multiview" onclick={() => navigate("/multiview")}>▦</button>
       </div>
+      {#if debug}
+        <div class="debug">{debugText}</div>
+      {/if}
     </div>
 
     <aside class="side">

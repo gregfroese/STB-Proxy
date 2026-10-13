@@ -508,6 +508,21 @@ a {
   right: 12px;
 }
 
+.debug {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  background: #000000cc;
+  border: 1px solid #ffffff22;
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--ok);
+  z-index: 5;
+  pointer-events: none;
+}
+
 .errbox {
   position: absolute;
   inset: 0;
