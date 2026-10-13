@@ -7,11 +7,13 @@
         display: grid;
         gap: 4px;
         height: calc(100vh - 190px);
+        height: calc(100dvh - 190px);
         min-height: 320px;
         background-color: #000;
     }
     #multiviewGrid:fullscreen {
         height: 100vh;
+        height: 100dvh;
     }
     #multiviewGrid[data-layout="1"] { grid-template-columns: 1fr; }
     #multiviewGrid[data-layout="2"] { grid-template-columns: 1fr 1fr; }
@@ -55,7 +57,7 @@
         right: 0;
         bottom: 0;
         height: 3px;
-        background-color: rgba(255, 255, 255, 0.15);
+        background-color: color-mix(in srgb, var(--ink) 15%, transparent);
     }
     .tile-progress div {
         height: 100%;
@@ -71,7 +73,7 @@
         justify-content: center;
         padding: 1rem;
         text-align: center;
-        background-color: rgba(0, 0, 0, 0.6);
+        background-color: var(--scrim);
     }
     .tile.empty .tile-message {
         background-color: transparent;
@@ -123,13 +125,13 @@
 
 <div class="modal fade" id="channelPicker" tabindex="-1" aria-labelledby="pickerTitle" aria-hidden="true">
     <div class="modal-dialog modal-dialog-scrollable">
-        <div class="modal-content bg-dark text-light">
+        <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="pickerTitle">Choose a channel</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <ul class="nav nav-pills nav-fill mb-2" id="pickerTabs">
+                <ul class="nav nav-tabs nav-fill mb-2" id="pickerTabs">
                     <li class="nav-item"><button type="button" class="nav-link" data-tab="search" onclick="pickerTab('search')"><i class="bi bi-search"></i> Search</button></li>
                     <li class="nav-item"><button type="button" class="nav-link" data-tab="favourites" onclick="pickerTab('favourites')"><i class="bi bi-star-fill text-warning"></i> Favourites</button></li>
                     <li class="nav-item"><button type="button" class="nav-link" data-tab="blocks" onclick="pickerTab('blocks')"><i class="bi bi-grid"></i> Blocks</button></li>
@@ -720,7 +722,7 @@
         if (pickerView.tab == "blocks" && !inBlock) {
             pickerBlocks = multiview.blockChoices(channels, enabledBlocks, parseChannelQuery(text, "prefix"));
             results.innerHTML = pickerBlocks.length ? pickerBlocks.map(function (block, k) {
-                return '<button type="button" class="list-group-item list-group-item-action bg-dark text-light d-flex align-items-center" onclick="openBlock(' + k + ')">' +
+                return '<button type="button" class="list-group-item list-group-item-action d-flex align-items-center" onclick="openBlock(' + k + ')">' +
                     '<i class="bi bi-grid me-2"></i><span class="me-auto">' + escapeAttr(block.name) + '</span>' +
                     '<span class="badge bg-secondary">' + block.channels + '</span><i class="bi bi-chevron-right ms-2"></i></button>';
             }).join("") : '<p class="text-body-secondary mb-0">' +
@@ -748,7 +750,7 @@
         results.innerHTML = pickerRows.map(function (row, k) {
             // A div, not a button, so a block's bookmark button can sit inside it.
             var mark = block ? multiview.isBlockFavouriteIn(block)(row) : false;
-            return '<div role="button" class="list-group-item list-group-item-action bg-dark text-light d-flex align-items-center" onclick="pick(' + k + ')">' +
+            return '<div role="button" class="list-group-item list-group-item-action d-flex align-items-center" onclick="pick(' + k + ')">' +
                 (block ? '<button type="button" class="btn btn-link text-info p-0 me-2" title="' + (mark ? "Favourite in this block" : "Make it a favourite in this block") + '" ' +
                     'onclick="event.stopPropagation(); toggleBlockFav(' + k + ')"><i class="bi ' + (mark ? 'bi-bookmark-fill' : 'bi-bookmark') + '"></i></button>' : '') +
                 (row.logo ? '<img class="channel-logo" loading="lazy" alt="" src="' + escapeAttr(row.logo) + '" onerror="this.style.visibility=\'hidden\'">'

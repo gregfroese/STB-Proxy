@@ -259,5 +259,34 @@ class PreviewPromptTest(unittest.TestCase):
         self.assertRegex(self.script, r"var row = rowFor\(currentChannel\);\s*if \(!row \|\| row\.dead\)")
 
 
+class MultiviewCompositionTest(unittest.TestCase):
+    """Ticket 08: Multiview's page-local CSS is token-driven and dvh-aware."""
+
+    def setUp(self):
+        with open(os.path.join(ROOT, "templates", "multiview.html")) as f:
+            self.html = f.read()
+        self.style = self.html.split("<style>")[1].split("</style>")[0]
+
+    def test_grid_height_uses_dvh_with_a_vh_fallback(self):
+        self.assertIn("height: calc(100vh - 190px);", self.style)
+        self.assertIn("height: calc(100dvh - 190px);", self.style)
+
+    def test_only_the_literal_video_backgrounds_remain_as_hexes(self):
+        # #000/#111 are the video and tile backgrounds; overlays are rgba gradients.
+        self.assertEqual(sorted(set(re.findall(r"#[0-9a-fA-F]{3,8}\b", self.style))), ["#000", "#111"])
+
+    def test_the_playing_ring_uses_a_token(self):
+        self.assertIn(".tile.has-audio {", self.style)
+        self.assertIn("border-color: var(--star);", self.style)
+
+    def test_picker_and_record_modals_use_token_surfaces(self):
+        self.assertNotIn("bg-dark", self.html)
+        self.assertNotIn("text-light", self.html)
+        with open(os.path.join(ROOT, "templates", "_record_modal.html")) as f:
+            record = f.read()
+        self.assertNotIn("bg-dark", record)
+        self.assertNotIn("text-light", record)
+
+
 if __name__ == "__main__":
     unittest.main()

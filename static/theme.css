@@ -823,10 +823,24 @@ i.bi {
 }
 
 .nav-tabs .nav-link.active,
-.nav-tabs .nav-item.show .nav-link {
+.nav-item.show .nav-link {
     color: var(--ink);
     background-color: var(--tint-accent);
     border-color: var(--line) var(--line) var(--line);
+}
+
+/* --- lists: the picker and record option lists --------------------------- */
+
+.list-group {
+    --bs-list-group-bg: var(--panel2);
+    --bs-list-group-color: var(--ink);
+    --bs-list-group-border-color: var(--line);
+    --bs-list-group-border-radius: var(--r-md);
+    --bs-list-group-action-color: var(--ink);
+    --bs-list-group-action-hover-color: var(--ink);
+    --bs-list-group-action-hover-bg: color-mix(in srgb, var(--accent) 8%, var(--panel2));
+    --bs-list-group-action-active-color: var(--ink);
+    --bs-list-group-action-active-bg: var(--tint-accent);
 }
 
 /* --- modals -------------------------------------------------------------- */
