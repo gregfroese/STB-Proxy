@@ -440,11 +440,21 @@
 
     $(document).ready(function () {
         table = $('#table').DataTable({
-            dom: "<'row m-1'<'col-auto'B><'col-auto d-flex align-items-center dead-filter'><'col-auto ms-auto'f><'col-auto'l>>" +
-                "<'row m-1'<'col-12 filter-bar'>>" +
-                "<'row m-1'<'col-12 bulk-bar'>>" +
-                "<'row'<'col-12'tr>>" +
-                "<'row mb-1 mb-lg-0'<'col-auto text-light'i><'col-auto ms-auto'p>>",
+            layout: {
+                top3Start: ['buttons', function () {
+                    return $('<div class="dead-filter d-flex align-items-center"></div>')[0];
+                }],
+                top3End: ['search', 'pageLength'],
+                top2: function () {
+                    return $('<div class="filter-bar"></div>')[0];
+                },
+                top: function () {
+                    return $('<div class="bulk-bar"></div>')[0];
+                },
+                bottomStart: 'info',
+                bottomEnd: 'paging'
+            },
+            deferRender: false,
             orderFixed: [0, 'des'],
             order: [[0, 'des'], [2, 'asc']],
             pageLength: 25,
@@ -513,8 +523,7 @@
             ],
             language: {
                 search: "",
-                searchPlaceholder: 'Search all columns',
-                lengthMenu: "_MENU_",
+                searchPlaceholder: 'Search all columns'
             },
             buttons: {
                 buttons: [
