@@ -256,7 +256,13 @@
         <button class="iconbtn" title={muted ? "Unmute" : "Mute"} onclick={() => (muted = !muted)}>
           {muted ? "🔇" : "🔊"}
         </button>
-        <button class="iconbtn" title="Full screen" onclick={toggleFullscreen}>⛶</button>
+        <button
+          class="iconbtn"
+          title={isFullscreen ? "Exit full screen" : "Full screen"}
+          onclick={toggleFullscreen}
+        >
+          {isFullscreen ? "⤢" : "⛶"}
+        </button>
         <button class="iconbtn" title="Multiview" onclick={() => navigate("/multiview")}>▦</button>
       </div>
       {#if debug}
