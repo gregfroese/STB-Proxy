@@ -9,45 +9,47 @@
             title="Fetch the guide from the portals again"><i class="bi bi-arrow-clockwise"></i> Reload guide</button>
     </div>
 
-    <input type="search" class="form-control form-control-lg" id="query" placeholder="Search programmes, e.g. oilers"
-        autocomplete="off" autofocus title="Words must all match. Comma: or. -word: leave out. &quot;quotes&quot;: a phrase.">
+    <div class="toolbar d-flex flex-column gap-2">
+        <input type="search" class="form-control form-control-lg" id="query" placeholder="Search programmes, e.g. oilers"
+            autocomplete="off" autofocus title="Words must all match. Comma: or. -word: leave out. &quot;quotes&quot;: a phrase.">
 
-    <div class="d-flex flex-wrap align-items-center mt-2">
-        <select class="form-select form-select-sm me-3 guide-filter" style="width: auto;" id="queryMode">
-            <option value="prefix">Words start with</option>
-            <option value="words">Whole words</option>
-            <option value="contains">Contains</option>
-            <option value="exact">Exact title</option>
-            <option value="regex">Regex</option>
-        </select>
-        <input type="search" class="form-control form-control-sm me-3" style="width: 240px;" id="channelFilter"
-            placeholder="Channel, e.g. TSN, sportsnet -4k" autocomplete="off"
-            title="Only these channels (whole words). Comma: or. -word: leave out.">
-        <span class="d-flex align-items-center" id="savedFilters"></span>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <select class="form-select form-select-sm guide-filter w-auto" id="queryMode">
+                <option value="prefix">Words start with</option>
+                <option value="words">Whole words</option>
+                <option value="contains">Contains</option>
+                <option value="exact">Exact title</option>
+                <option value="regex">Regex</option>
+            </select>
+            <input type="search" class="form-control form-control-sm" style="width: 240px;" id="channelFilter"
+                placeholder="Channel, e.g. TSN, sportsnet -4k" autocomplete="off"
+                title="Only these channels (whole words). Comma: or. -word: leave out.">
+            <span class="d-flex align-items-center" id="savedFilters"></span>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-3">
+            <div class="form-check form-switch mb-0">
+                <input type="checkbox" class="form-check-input guide-filter" id="onNow">
+                <label class="form-check-label" for="onNow">On now</label>
+            </div>
+            <div class="form-check form-switch mb-0">
+                <input type="checkbox" class="form-check-input guide-filter" id="lineupOnly">
+                <label class="form-check-label" for="lineupOnly">In my lineup</label>
+            </div>
+            <div class="form-check form-switch mb-0">
+                <input type="checkbox" class="form-check-input guide-filter" id="favouritesOnly">
+                <label class="form-check-label" for="favouritesOnly"><i class="bi bi-star-fill text-warning"></i> Favourites</label>
+            </div>
+            <div class="form-check form-switch mb-0">
+                <input type="checkbox" class="form-check-input guide-filter" id="hideDead" checked>
+                <label class="form-check-label" for="hideDead">Hide dead</label>
+            </div>
+        </div>
     </div>
 
-    <div class="d-flex flex-wrap mt-2">
-        <div class="form-check form-switch me-4">
-            <input type="checkbox" class="form-check-input guide-filter" id="onNow">
-            <label class="form-check-label" for="onNow">On now</label>
-        </div>
-        <div class="form-check form-switch me-4">
-            <input type="checkbox" class="form-check-input guide-filter" id="lineupOnly">
-            <label class="form-check-label" for="lineupOnly">In my lineup</label>
-        </div>
-        <div class="form-check form-switch me-4">
-            <input type="checkbox" class="form-check-input guide-filter" id="favouritesOnly">
-            <label class="form-check-label" for="favouritesOnly"><i class="bi bi-star-fill text-warning"></i> Favourites</label>
-        </div>
-        <div class="form-check form-switch me-4">
-            <input type="checkbox" class="form-check-input guide-filter" id="hideDead" checked>
-            <label class="form-check-label" for="hideDead">Hide dead</label>
-        </div>
-    </div>
-
-    <p id="guideStatus" class="text-body-secondary small mt-2 mb-2">Search the next 24 hours on every channel, or switch on a filter
-        to browse.</p>
-    <div id="results" class="table-responsive channel-list"></div>
+    <p id="guideStatus" class="notice mt-3 mb-2"><i class="bi bi-info-circle"></i><span>Search the next 24 hours on every
+            channel, or switch on a filter to browse.</span></p>
+    <div id="results" class="table-responsive channel-list mt-2"></div>
 
 </div>
 
@@ -107,10 +109,13 @@
         searchTimer = setTimeout(function () { runSearch(false); }, 350);
     }
 
-    function setStatus(html, className) {
+    function setStatus(html, kind) {
         var status = document.getElementById('guideStatus');
-        status.className = 'small mt-2 mb-2 ' + (className || 'text-body-secondary');
-        status.innerHTML = html;
+        status.className = 'notice mt-3 mb-2' + (kind ? ' ' + kind : '');
+        var icon = kind == 'error' ? 'bi-exclamation-octagon-fill'
+            : kind == 'busy' ? 'bi-arrow-repeat bi-spin'
+                : 'bi-info-circle';
+        status.innerHTML = '<i class="bi ' + icon + '"></i><span>' + html + '</span>';
     }
 
     function runSearch(refresh, quiet) {
@@ -129,9 +134,9 @@
         }
         var seq = ++searchSeq;
         if (!quiet) {
-            setStatus('<i class="bi bi-arrow-repeat bi-spin"></i> ' + (refresh || !loadedOnce
+            setStatus((refresh || !loadedOnce
                 ? 'Loading the guide from the portal. This takes about 15 seconds...'
-                : 'Searching...'));
+                : 'Searching...'), 'busy');
         }
         document.getElementById('reloadGuide').disabled = true;
         lastSearch = $.getJSON('/guide/search', {
@@ -156,7 +161,7 @@
                     return;
                 }
                 var error = xhr.responseJSON && xhr.responseJSON.error;
-                setStatus(error ? escapeAttr(error) : "Couldn't search the guide. Try again.", 'text-danger');
+                setStatus(error ? escapeAttr(error) : "Couldn't search the guide. Try again.", 'error');
             })
             .always(function () {
                 if (seq == searchSeq) {
@@ -215,7 +220,7 @@
             document.getElementById('results').innerHTML = '';
             return;
         }
-        var html = '<table class="table table-dark table-striped align-middle"><thead><tr>' +
+        var html = '<table class="table table-striped align-middle"><thead><tr>' +
             '<th style="width: 0%;"></th><th>When</th><th>Programme</th><th>Channel</th></tr></thead><tbody>';
         res.results.forEach(function (r) {
             var channel = channelsByKey[channelKey(r)];

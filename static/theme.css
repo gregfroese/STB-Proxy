@@ -534,16 +534,22 @@ i.bi {
     border-bottom: 1px solid var(--line);
 }
 
-/* --- Playlist Editor toolbar: DataTables layout rows as one panel -------- */
-/* #table_wrapper is the editor's DataTables output (the app's only table).
-   The rows above the grid — buttons + dead-filter switches, the filter bar,
-   and the bulk bar — read as one bordered toolbar band. The bulk row is hidden
+/* --- toolbar: one bordered panel ---------------------------------------- */
+/* The editor's generated DataTables rows and the Guide's authored filter bar
+   share the same panel treatment. #table_wrapper is the editor's DataTables
+   output; its rows above the grid — buttons + dead-filter switches, the filter
+   bar, and the bulk bar — join into one bordered band. The bulk row is hidden
    until something is selected (`.bulk-row.d-none`, toggled by showSelection). */
+.toolbar,
 #table_wrapper > .row:has(~ .row.dt-layout-table) {
     margin: 0;
     padding: var(--sp-2);
     background-color: var(--panel);
     border: 1px solid var(--line);
+}
+
+.toolbar {
+    border-radius: var(--r-md);
 }
 
 #table_wrapper > .row:has(~ .row.dt-layout-table):not(:first-child) {

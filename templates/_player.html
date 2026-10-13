@@ -133,27 +133,27 @@
             <div class="small text-danger text-truncate d-none" id="recordingNote"></div>
         </div>
         <button type="button" class="btn btn-sm btn-outline-light ms-auto" id="channelDown"
-            onclick="changeChannel(-1)" title="Channel down: previous in the list (Page Down)"><i class="bi bi-chevron-down"></i></button>
+            onclick="changeChannel(-1)" title="Channel down: previous in the list (Page Down)" aria-label="Channel down"><i class="bi bi-chevron-down"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="channelUp"
-            onclick="changeChannel(1)" title="Channel up: next in the list (Page Up)"><i class="bi bi-chevron-up"></i></button>
+            onclick="changeChannel(1)" title="Channel up: next in the list (Page Up)" aria-label="Channel up"><i class="bi bi-chevron-up"></i></button>
         <button type="button" class="btn btn-sm btn-outline-info ms-1" id="guideButton"
-            onclick="togglePlayerGuide()" title="This channel's guide (G)"><i class="bi bi-card-list"></i></button>
+            onclick="togglePlayerGuide()" title="This channel's guide (G)" aria-label="This channel's guide"><i class="bi bi-card-list"></i></button>
         <button type="button" class="btn btn-sm btn-outline-info ms-1 d-none" id="blockFavButton"
-            onclick="toggleBlockFavourite()" title="Favourite in this block"><i class="bi bi-bookmark"></i></button>
+            onclick="toggleBlockFavourite()" title="Favourite in this block" aria-label="Favourite in this block"><i class="bi bi-bookmark"></i></button>
         <button type="button" class="btn btn-sm btn-outline-warning ms-1" id="favouriteButton"
-            onclick="toggleFavourite()" title="Favourite"><i class="bi bi-star"></i></button>
+            onclick="toggleFavourite()" title="Favourite" aria-label="Favourite"><i class="bi bi-star"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="fullscreenButton"
-            onclick="toggleFullscreen()" title="Full screen (F)"><i class="bi bi-fullscreen"></i></button>
+            onclick="toggleFullscreen()" title="Full screen (F)" aria-label="Full screen"><i class="bi bi-fullscreen"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1 d-none" id="recordButton"
             onclick="recordClicked()" title="Record" aria-label="Record"><i class="bi bi-circle-fill text-danger"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="multiviewButton"
             onclick="sendToMultiview()" title="Send to Multiview" aria-label="Send to Multiview"><i class="bi bi-grid-3x3-gap"></i></button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="minimiseButton"
-            onclick="toggleMinimised()" title="Hide controls"><i class="bi bi-dash-lg"></i></button>
+            onclick="toggleMinimised()" title="Hide controls" aria-label="Hide controls"><i class="bi bi-dash-lg"></i></button>
         <button type="button" class="btn btn-sm btn-outline-danger ms-1 d-none" id="liveButton"
             onclick="backToLive()" title="Back to live">Live</button>
         <button type="button" class="btn btn-sm btn-outline-light ms-1" id="closePlayer"
-            onclick="closePlayer()" title="Stop and close"><i class="bi bi-x-lg"></i></button>
+            onclick="closePlayer()" title="Stop and close" aria-label="Stop and close"><i class="bi bi-x-lg"></i></button>
     </div>
     <!-- The browser's own full screen would show the video alone, without the controls above. -->
     <video width="100%" id="player" class="d-block bg-black" controls controlslist="nofullscreen" autoplay playsinline>

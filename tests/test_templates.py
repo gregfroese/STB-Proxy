@@ -347,5 +347,67 @@ class DashboardStreamsCompositionTest(unittest.TestCase):
         self.assertIn("/account/check", self.dashboard)
 
 
+class GuideRecordingsCompositionTest(unittest.TestCase):
+    """Ticket 10: Guide and Recordings compose from the shared toolbar, token
+    tables, token notice/error surfaces and the shared tab override."""
+
+    def setUp(self):
+        with open(os.path.join(ROOT, "templates", "guide.html")) as f:
+            self.guide = f.read()
+        with open(os.path.join(ROOT, "templates", "recordings.html")) as f:
+            self.recordings = f.read()
+        with open(os.path.join(ROOT, "static", "theme.css")) as f:
+            self.theme = f.read()
+
+    def test_guide_filter_bar_is_the_shared_toolbar(self):
+        self.assertIn('<div class="toolbar', self.guide)
+        # The same panel treatment the editor's generated rows use.
+        self.assertIn(".toolbar,", self.theme)
+        self.assertIn("#table_wrapper > .row:has(~ .row.dt-layout-table)", self.theme)
+
+    def test_guide_results_are_the_token_table(self):
+        self.assertIn('<table class="table table-striped align-middle">', self.guide)
+        self.assertNotIn("table-dark", self.guide)
+
+    def test_guide_status_is_the_shared_notice(self):
+        self.assertIn('id="guideStatus" class="notice', self.guide)
+        self.assertIn("status.className = 'notice mt-3 mb-2'", self.guide)
+        self.assertIn("kind == 'error'", self.guide)
+
+    def test_programme_desc_clamp_lives_in_theme(self):
+        self.assertIn(".programme-desc {", self.theme)
+        self.assertIn("-webkit-line-clamp: 2;", self.theme)
+
+    def test_recordings_tabs_use_the_shared_override(self):
+        self.assertIn('class="nav nav-tabs', self.recordings)
+        self.assertNotIn(".nav-tabs", self.recordings)  # no page-local override
+
+    def test_recordings_lists_are_token_tables(self):
+        self.assertIn('<table class="table table-striped align-middle">', self.recordings)
+        self.assertNotIn("table-dark", self.recordings)
+
+    def test_recordings_messages_are_token_notices(self):
+        self.assertNotIn('class="alert', self.recordings)
+        self.assertIn('id="listError" class="notice error', self.recordings)
+        self.assertIn('class="notice mb-3"', self.recordings)
+
+    def test_recordings_playback_is_a_token_modal(self):
+        self.assertIn("modal-xl", self.recordings)
+        self.assertNotIn("bg-dark", self.recordings)
+        self.assertNotIn("text-light", self.recordings)
+
+    def test_recordings_icon_buttons_are_labelled(self):
+        for label in ('aria-label="Watch from the start"', 'aria-label="Watch live"',
+                      'aria-label="Play"', 'aria-label="Download"', 'aria-label="Delete"'):
+            self.assertIn(label, self.recordings, label)
+
+    def test_guide_and_recordings_behaviour_is_unchanged(self):
+        self.assertIn("/guide/search", self.guide)
+        self.assertIn("scheduleSearch", self.guide)
+        self.assertIn("setInterval(load, 10000);", self.recordings)
+        for name in ("stopRecording", "deleteRecording", "playRecording", "openPlayer"):
+            self.assertIn(name, self.recordings)
+
+
 if __name__ == "__main__":
     unittest.main()
