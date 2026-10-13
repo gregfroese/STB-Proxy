@@ -1,0 +1,21 @@
+[Unit]
+Description=STB-Proxy web viewer (BFF + SPA)
+Documentation=https://watch.home.gregfroese.com
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stbproxy
+Group=stbproxy
+WorkingDirectory=/opt/stb-proxy/web
+EnvironmentFile=/etc/stb-proxy-web/env
+ExecStart=/opt/stb-proxy-web/venv/bin/uvicorn bff.main:app --host 0.0.0.0 --port 8000 --workers 1 --limit-concurrency 30
+Restart=always
+RestartSec=2
+
+# Long-lived stream sockets: the real ceiling is STB-Proxy's waitress threads, not this.
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

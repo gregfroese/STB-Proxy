@@ -1,0 +1,335 @@
+"""STB-Proxy web viewer BFF (spec 1.2/1.3/1.4).
+
+Same-origin FastAPI server: authenticates viewers against STB-Proxy, holds their
+credentials server-side, proxies the lineup / guide / live TS, and serves the
+built Svelte SPA.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from pathlib import Path
+
+import httpx
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+
+from .cache import TTLCache
+from .config import config
+from .epg import parse_now_next
+from .errors import (
+    ApiError,
+    all_tuners_busy,
+    api_error_handler,
+    not_found,
+    proxy_error,
+    proxy_unreachable,
+    session_invalid,
+    unauthorized,
+)
+from .security import apply_security_headers, check_origin, login_limiter, valid_csrf
+from .sessions import Session, SessionStore
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("stbweb")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.client = httpx.AsyncClient(
+        base_url=config.proxy_url,
+        follow_redirects=True,
+        timeout=httpx.Timeout(config.request_timeout, read=config.stream_timeout),
+    )
+    app.state.store = SessionStore(config.session_db)
+    app.state.lineup_cache = TTLCache()
+    app.state.epg_cache = TTLCache()
+    revalidate_task = asyncio.create_task(_revalidate_loop(app))
+    logger.info("BFF ready; upstream=%s static=%s", config.proxy_url, config.static_dir)
+    try:
+        yield
+    finally:
+        revalidate_task.cancel()
+        try:
+            await revalidate_task
+        except asyncio.CancelledError:
+            pass
+        await app.state.client.aclose()
+
+
+app = FastAPI(title="STB-Proxy Web", docs_url=None, redoc_url=None, openapi_url=None,
+              lifespan=lifespan)
+app.add_exception_handler(ApiError, api_error_handler)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    apply_security_headers(response.headers)
+    return response
+
+
+def _basic(request: Request, session: Session) -> tuple[str, str]:
+    return session.basic(request.app.state.store.fernet)
+
+
+def _get_session(request: Request) -> Session:
+    token = request.cookies.get(config.cookie_name)
+    session = request.app.state.store.get(token) if token else None
+    if session is None:
+        raise unauthorized()
+    return session
+
+
+def _set_cookie(response: JSONResponse, token: str) -> None:
+    response.set_cookie(
+        config.cookie_name,
+        token,
+        max_age=config.idle,
+        httponly=True,
+        secure=config.cookie_secure,
+        samesite="lax",
+        path="/",
+    )
+
+
+@app.post("/api/login")
+async def login(request: Request):
+    if not check_origin(request):
+        raise ApiError(403, "csrf", "Cross-site request rejected.")
+
+    try:
+        body = await request.json()
+    except ValueError:
+        raise ApiError(400, "bad_request", "Expected a JSON body.")
+    username = str(body.get("username") or "").strip()
+    password = str(body.get("password") or "")
+    if not username or not password:
+        raise ApiError(400, "bad_request", "Username and password are required.")
+
+    retry_after = login_limiter.retry_after(username)
+    if retry_after > 0:
+        return JSONResponse(
+            {"error": "Too many attempts. Try again later.", "code": "rate_limited"},
+            status_code=429,
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    client: httpx.AsyncClient = request.app.state.client
+    try:
+        upstream = await client.get("/api/lineup", auth=(username, password))
+    except httpx.HTTPError:
+        raise ApiError(503, "proxy_unreachable", "STB-Proxy is unreachable right now.")
+
+    if upstream.status_code == 401:
+        login_limiter.record_failure(username)
+        raise ApiError(401, "bad_credentials", "Wrong username or password.")
+    if upstream.status_code >= 500:
+        raise ApiError(503, "proxy_error", "STB-Proxy returned an error.")
+    if upstream.status_code != 200:
+        raise ApiError(502, "proxy_error", "STB-Proxy returned an error.")
+    try:
+        data = upstream.json()
+    except ValueError:
+        raise ApiError(502, "proxy_error", "STB-Proxy returned an error.")
+
+    account = data.get("account")
+    login_limiter.record_success(username)
+
+    token, csrf = request.app.state.store.create(
+        username=username,
+        account=account,
+        password=password,
+        user_agent=request.headers.get("user-agent"),
+        remote_ip=request.client.host if request.client else None,
+    )
+    response = JSONResponse({"account": account, "operator": account is None, "csrf": csrf})
+    _set_cookie(response, token)
+    return response
+
+
+@app.post("/api/logout")
+async def logout(request: Request):
+    session = _get_session(request)
+    if not valid_csrf(session.csrf, request.headers.get("x-csrf-token")):
+        raise ApiError(403, "csrf", "Invalid CSRF token.")
+    request.app.state.store.delete_hash(session.token_hash)
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(config.cookie_name, path="/")
+    return response
+
+
+@app.get("/api/session")
+async def session_info(request: Request):
+    session = _get_session(request)
+    return {
+        "account": session.account,
+        "operator": session.account is None,
+        "csrf": session.csrf,
+    }
+
+
+@app.get("/api/lineup")
+async def lineup(request: Request):
+    session = _get_session(request)
+    cache: TTLCache = request.app.state.lineup_cache
+    key = ("lineup", session.username)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    client: httpx.AsyncClient = request.app.state.client
+    try:
+        upstream = await client.get("/api/lineup", auth=_basic(request, session))
+    except httpx.HTTPError:
+        raise proxy_unreachable()
+
+    if upstream.status_code == 401:
+        request.app.state.store.delete_hash(session.token_hash)
+        raise session_invalid()
+    if upstream.status_code != 200:
+        raise proxy_error()
+    try:
+        data = upstream.json()
+    except ValueError:
+        raise proxy_error()
+
+    for channel in data.get("channels", []):
+        url = channel.get("url", "")
+        if isinstance(url, str) and url.startswith("/play/"):
+            channel["url"] = "/stream/" + url[len("/play/"):]
+
+    cache.set(key, data, config.lineup_ttl)
+    return data
+
+
+@app.get("/api/epg")
+async def epg(request: Request):
+    session = _get_session(request)
+    cache: TTLCache = request.app.state.epg_cache
+    key = ("epg", session.username)
+    cached = cache.get(key)
+    if cached is not None:
+        return cached
+
+    client: httpx.AsyncClient = request.app.state.client
+    try:
+        upstream = await client.get("/xmltv", auth=_basic(request, session))
+    except httpx.HTTPError:
+        raise proxy_unreachable()
+
+    if upstream.status_code == 401:
+        request.app.state.store.delete_hash(session.token_hash)
+        raise session_invalid()
+    if upstream.status_code != 200:
+        raise proxy_error()
+
+    data = parse_now_next(upstream.content, datetime.now(timezone.utc))
+    cache.set(key, data, config.epg_ttl)
+    return data
+
+
+@app.get("/stream/{portal}/{channel_id}")
+async def stream(portal: str, channel_id: str, request: Request):
+    token = request.cookies.get(config.cookie_name)
+    session = request.app.state.store.peek(token) if token else None
+    if session is None:
+        raise unauthorized()
+
+    client: httpx.AsyncClient = request.app.state.client
+    upstream_request = client.build_request(
+        "GET",
+        f"/play/{portal}/{channel_id}",
+        headers={"Accept-Encoding": "identity"},
+    )
+    try:
+        upstream = await client.send(upstream_request, stream=True, auth=_basic(request, session))
+    except httpx.HTTPError:
+        raise proxy_unreachable()
+
+    if upstream.status_code == 503:
+        await upstream.aclose()
+        raise all_tuners_busy()
+    if upstream.status_code == 404:
+        await upstream.aclose()
+        raise not_found()
+    if upstream.status_code == 401:
+        await upstream.aclose()
+        request.app.state.store.delete_hash(session.token_hash)
+        raise session_invalid()
+    if upstream.status_code >= 400:
+        await upstream.aclose()
+        raise proxy_error()
+
+    content_type = upstream.headers.get("content-type", "application/octet-stream")
+
+    async def body():
+        try:
+            async for chunk in upstream.aiter_raw(65536):
+                yield chunk
+        finally:
+            await upstream.aclose()
+
+    return StreamingResponse(
+        body(),
+        status_code=200,
+        headers={
+            "Content-Type": content_type,
+            "Cache-Control": "no-store",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def _revalidate_loop(app: FastAPI) -> None:
+    store: SessionStore = app.state.store
+    client: httpx.AsyncClient = app.state.client
+    while True:
+        await asyncio.sleep(config.revalidate)
+        try:
+            for session in store.all_valid():
+                try:
+                    auth = session.basic(store.fernet)
+                except Exception:
+                    store.delete_hash(session.token_hash)
+                    continue
+                try:
+                    response = await client.get("/api/lineup", auth=auth)
+                except httpx.HTTPError:
+                    continue  # proxy down: keep sessions, retry next pass
+                if response.status_code == 401:
+                    logger.info("dropping revoked session for %s", session.username)
+                    store.delete_hash(session.token_hash)
+        except Exception:
+            logger.exception("session revalidation pass failed")
+
+
+def _mount_spa() -> None:
+    dist: Path = config.static_dir
+    assets = dist / "assets"
+    if assets.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
+
+    @app.get("/{path:path}")
+    async def spa(path: str):
+        if path.startswith(("api/", "stream/")):
+            raise not_found("Not found.")
+        if path:
+            candidate = (dist / path).resolve()
+            try:
+                candidate.relative_to(dist.resolve())
+            except ValueError:
+                raise not_found("Not found.")
+            if candidate.is_file():
+                return FileResponse(candidate)
+        index = dist / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+        raise not_found("The web client is not built yet.")
+
+
+_mount_spa()

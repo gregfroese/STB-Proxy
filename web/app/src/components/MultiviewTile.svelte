@@ -1,0 +1,135 @@
+<script lang="ts">
+  import { untrack } from "svelte";
+  import { attachPlayer, liveTsSupported, type PlayerHandle } from "../lib/mpegts";
+  import { tileStatus, type MultiviewTile } from "../lib/multiviewLogic";
+  import type { PlaybackError } from "../lib/playerLogic";
+  import Logo from "./Logo.svelte";
+
+  let {
+    tile,
+    audio,
+    error,
+    swapping = false,
+    armed = false,
+    retryKey = 0,
+    onError,
+    onPick,
+    onSwap,
+    onAudio,
+    onRemove,
+    onActivate,
+  }: {
+    tile: MultiviewTile;
+    audio: boolean;
+    error: PlaybackError | null;
+    swapping?: boolean;
+    armed?: boolean;
+    retryKey?: number;
+    onError: (slot: number, error: PlaybackError | null) => void;
+    onPick: (slot: number) => void;
+    onSwap: (slot: number) => void;
+    onAudio: (slot: number) => void;
+    onRemove: (slot: number) => void;
+    onActivate: (slot: number) => void;
+  } = $props();
+
+  let videoEl: HTMLVideoElement | undefined = $state();
+  let handle: PlayerHandle | null = null;
+
+  const status = $derived(tileStatus(tile, error));
+
+  $effect(() => {
+    const channel = tile.channel;
+    const retry = retryKey;
+    void retry;
+    if (!channel || !videoEl) return;
+    handle?.destroy();
+    handle = null;
+    onError(tile.slot, null);
+    if (!liveTsSupported()) {
+      onError(tile.slot, { kind: "unreachable" });
+      return;
+    }
+    const media = videoEl;
+    const startMuted = untrack(() => !audio);
+    media.muted = startMuted;
+    handle = attachPlayer({
+      url: channel.url,
+      media,
+      muted: startMuted,
+      onError: (playbackError) => onError(tile.slot, playbackError),
+      onPlaying: () => onError(tile.slot, null),
+    });
+    return () => {
+      handle?.destroy();
+      handle = null;
+    };
+  });
+
+  $effect(() => {
+    if (videoEl) videoEl.muted = !audio;
+  });
+</script>
+
+{#if tile.channel}
+  <div
+    class="mvtile {audio ? 'audio' : ''} {swapping || armed ? 'swapping' : ''} tile{tile.slot}"
+    role="button"
+    tabindex="0"
+    onclick={() => armed && onActivate(tile.slot)}
+    onkeydown={(event) => {
+      if (armed && (event.key === "Enter" || event.key === " ")) onActivate(tile.slot);
+    }}
+  >
+    <video bind:this={videoEl} playsinline></video>
+
+    <div class="tagbadge">
+      <Logo name={tile.channel.name} logo={tile.channel.logo} size={22} />
+      {tile.channel.name}
+    </div>
+    {#if audio}<div class="audiobadge">🔊 AUDIO</div>{/if}
+
+    {#if status.kind === "tuner_busy"}
+      <div class="statemsg">
+        <div class="inner">
+          <div>⏳</div>
+          <h4>All tuners busy</h4>
+          <p>No free tuner for this tile — STB-Proxy is at its limit.</p>
+          <div class="btns">
+            <button class="btn primary" onclick={() => onActivate(tile.slot)}>Retry</button>
+            <button class="btn" onclick={() => onRemove(tile.slot)}>Remove</button>
+          </div>
+        </div>
+      </div>
+    {:else if status.kind === "failed"}
+      <div class="statemsg">
+        <div class="inner">
+          <div>⚠</div>
+          <h4>Stream unreachable</h4>
+          <p>Couldn't reach {tile.channel.name} on the proxy.</p>
+          <div class="btns">
+            <button class="btn primary" onclick={() => onActivate(tile.slot)}>Retry</button>
+            <button class="btn" onclick={() => onRemove(tile.slot)}>Remove</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <div class="tilechip">
+      <button class="tbtn" onclick={() => onPick(tile.slot)}>Pick</button>
+      <button class="tbtn" onclick={() => onSwap(tile.slot)}>Swap</button>
+      <button
+        class="tbtn {audio ? 'rec' : ''}"
+        title="Audio here"
+        onclick={() => onAudio(tile.slot)}
+      >
+        🔊
+      </button>
+      <button class="tbtn" onclick={() => onRemove(tile.slot)}>✕</button>
+    </div>
+  </div>
+{:else}
+  <button class="mvtile empty tile{tile.slot}" onclick={() => onPick(tile.slot)}
+    >＋ Add channel</button
+  >
+{/if}
