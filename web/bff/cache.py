@@ -26,7 +26,3 @@ class TTLCache:
     def set(self, key: Any, value: Any, ttl: float) -> None:
         with self._lock:
             self._data[key] = (value, time.time() + ttl)
-
-    def clear(self) -> None:
-        with self._lock:
-            self._data.clear()

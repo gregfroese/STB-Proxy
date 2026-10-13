@@ -1,5 +1,5 @@
 // Ported from the Android MultiviewLogic.kt (spec 2.5). D-pad moveFocusSlot and
-// the proactive tuner budget are dropped: the web grid is reactive-503 only.
+// the proactive tuner budget are dropped: the web Multiview is reactive-503 only.
 
 import type { Channel } from "./types";
 import type { PlaybackError } from "./playerLogic";
@@ -27,14 +27,7 @@ export function emptyTiles(count = MULTIVIEW_SLOTS): MultiviewTile[] {
 
 /** How many tiles a layout shows. */
 export function visibleCount(layout: MultiviewLayout): number {
-  switch (layout) {
-    case "big":
-      return 4;
-    case "2x2":
-      return 4;
-    case "3x3":
-      return 9;
-  }
+  return { big: 4, "2x2": 4, "3x3": 9 }[layout];
 }
 
 /** The Tiles a layout shows, in slot order. */
@@ -69,32 +62,20 @@ export function assignChannel(
   return tiles.map((tile) => (tile.slot === slot ? { ...tile, channel } : tile));
 }
 
-/** How many distinct channels the grid is asking for (the tuner-demand figure). */
-export function distinctChannelCount(tiles: MultiviewTile[]): number {
-  const seen = new Set<string>();
-  for (const tile of tiles) {
-    if (tile.channel) seen.add(`${tile.channel.portal}:${tile.channel.channelId}`);
-  }
-  return seen.size;
-}
-
 /**
  * The single audio-source slot. Exactly one Tile is unmuted: `requested` when it
- * still holds a channel, otherwise the lowest playable non-empty slot.
+ * still holds a channel, otherwise the lowest non-empty slot.
  */
 export function effectiveAudioSlot(
   tiles: MultiviewTile[],
   requested: number | null,
-  playable?: Set<number>,
 ): number | null {
   const nonEmpty = tiles
     .filter((tile) => tile.channel != null)
     .map((tile) => tile.slot)
     .sort((a, b) => a - b);
   if (nonEmpty.length === 0) return null;
-  const pool = playable != null ? nonEmpty.filter((slot) => playable.has(slot)) : [];
-  const candidates = pool.length > 0 ? pool : nonEmpty;
-  return requested != null && candidates.includes(requested) ? requested : candidates[0];
+  return requested != null && nonEmpty.includes(requested) ? requested : nonEmpty[0];
 }
 
 export type TileStatus =

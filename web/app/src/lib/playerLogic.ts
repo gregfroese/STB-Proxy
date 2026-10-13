@@ -38,14 +38,13 @@ export function programmeBoundaryPassed(now: Date, currentStop: Date | null): bo
   return currentStop != null && now.getTime() >= currentStop.getTime();
 }
 
-/** The refresh decision: refetch on foreground / programme boundary, else recompute. */
+/** The refresh decision: refetch on a programme boundary, else recompute each minute. */
 export function epgRefreshAction(
   now: Date,
   lastComputedAt: Date,
   currentStop: Date | null,
-  foregrounded = false,
 ): EpgRefreshAction {
-  if (foregrounded || programmeBoundaryPassed(now, currentStop)) return "REFETCH";
+  if (programmeBoundaryPassed(now, currentStop)) return "REFETCH";
   if (minuteBoundaryPassed(now, lastComputedAt)) return "RECOMPUTE";
   return "NONE";
 }

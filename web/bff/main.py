@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -70,6 +70,12 @@ app.add_exception_handler(ApiError, api_error_handler)
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
     apply_security_headers(response.headers)
+    # Re-issue the cookie on activity so its browser Max-Age tracks the sliding
+    # idle window (spec 1.4); the server-side expiry stays authoritative.
+    token = request.cookies.get(config.cookie_name)
+    store: SessionStore | None = getattr(request.app.state, "store", None)
+    if token and store is not None and store.get(token) is not None:
+        _set_cookie(response, token)
     return response
 
 
@@ -85,7 +91,7 @@ def _get_session(request: Request) -> Session:
     return session
 
 
-def _set_cookie(response: JSONResponse, token: str) -> None:
+def _set_cookie(response: Response, token: str) -> None:
     response.set_cookie(
         config.cookie_name,
         token,
@@ -291,6 +297,7 @@ async def _revalidate_loop(app: FastAPI) -> None:
     while True:
         await asyncio.sleep(config.revalidate)
         try:
+            store.purge_expired()
             for session in store.all_valid():
                 try:
                     auth = session.basic(store.fernet)

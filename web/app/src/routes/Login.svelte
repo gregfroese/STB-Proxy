@@ -2,18 +2,21 @@
   import { ApiError, login } from "../lib/api";
   import { clearLineup } from "../lib/lineup";
   import { navigate } from "../lib/router";
-  import { setSession } from "../lib/session";
+  import { sessionMessage, setSession } from "../lib/session";
 
   let username = $state(localStorage.getItem("stbproxy.username") ?? "");
   let password = $state("");
   let error = $state<string | null>(null);
   let busy = $state(false);
 
+  const shownError = $derived(error ?? $sessionMessage);
+
   async function submit(event: SubmitEvent) {
     event.preventDefault();
     if (busy) return;
     busy = true;
     error = null;
+    sessionMessage.set(null);
     try {
       const info = await login(username.trim(), password);
       localStorage.setItem("stbproxy.username", username.trim());
@@ -34,8 +37,8 @@
       <h1>STB Proxy</h1>
       <p class="sub">Sign in with your viewer account.</p>
     </div>
-    {#if error}
-      <div class="error-banner">{error}</div>
+    {#if shownError}
+      <div class="error-banner">{shownError}</div>
     {/if}
     <div class="field">
       <label for="username">Username</label>

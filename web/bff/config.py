@@ -36,7 +36,7 @@ class Config:
         self.lineup_ttl: int = _int("LINEUP_TTL", 30)
         self.epg_ttl: int = _int("EPG_TTL", 300)
         self.idle: int = _int("IDLE", 3600)
-        self.abs: int = _int("ABS", 43200)
+        self.absolute_ttl: int = _int("ABS", 43200)
         self.revalidate: int = _int("REVALIDATE", 900)
 
         self.session_db: str = os.environ.get(

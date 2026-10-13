@@ -72,10 +72,6 @@ describe("EPG refresh decision", () => {
     expect(programmeBoundaryPassed(t0, null)).toBe(false);
   });
 
-  it("foreground forces a refetch", () => {
-    expect(epgRefreshAction(t0, t0, at(600), true)).toBe("REFETCH");
-  });
-
   it("a programme boundary forces a refetch even mid-minute", () => {
     expect(epgRefreshAction(at(30), t0, at(30))).toBe("REFETCH");
   });

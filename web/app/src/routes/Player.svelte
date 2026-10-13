@@ -5,7 +5,7 @@
   import { timeRange } from "../lib/format";
   import { lineup, loadLineup } from "../lib/lineup";
   import { attachPlayer, liveTsSupported, type PlayerHandle } from "../lib/mpegts";
-  import { channelsInBlock, launchBlockFor } from "../lib/pickerLogic";
+  import { channelsInBlock, channelKey, launchBlockFor } from "../lib/pickerLogic";
   import {
     epgRefreshAction,
     programmeProgress,
@@ -75,6 +75,14 @@
 
   $effect(() => {
     if (videoEl) videoEl.muted = muted;
+  });
+
+  $effect(() => {
+    const el = stageEl;
+    if (!el) return;
+    const unmute = () => (muted = false);
+    el.addEventListener("pointerdown", unmute);
+    return () => el.removeEventListener("pointerdown", unmute);
   });
 
   function goto(target: Channel) {
@@ -243,11 +251,9 @@
 
           <h3>{launchBlock} — channel up/down</h3>
           <div class="zaplist">
-            {#each zapChannels as item (`${item.portal}:${item.channelId}`)}
+            {#each zapChannels as item (channelKey(item))}
               <button
-                class="z {item.portal === channel.portal && item.channelId === channel.channelId
-                  ? 'on'
-                  : ''}"
+                class="z {channelKey(item) === channelKey(channel) ? 'on' : ''}"
                 onclick={() => goto(item)}
               >
                 <Logo name={item.name} logo={item.logo} size={38} />

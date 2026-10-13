@@ -11,81 +11,71 @@
     removeTile,
     swapTiles,
     visibleTiles,
-    type MultiviewLayout,
   } from "../lib/multiviewLogic";
   import { audioSlot, layout, tileErrors, tiles } from "../lib/multiview";
+  import { channelKey, searchChannels } from "../lib/pickerLogic";
   import type { PlaybackError } from "../lib/playerLogic";
   import { navigate } from "../lib/router";
   import type { Channel } from "../lib/types";
 
-  const LAYOUT_KEY = "stbproxy.multiview.layout";
-  const TILES_KEY = "stbproxy.multiview.tiles";
-
   let pickSlot = $state<number | null>(null);
   let armed = $state<number | null>(null);
+  let focusSlot = $state(0);
   let pickQuery = $state("");
   let retryKeys = $state<Record<number, number>>({});
-  let hydrationKeys: (string | null)[] = [];
-  let hydrated = false;
+  let unmuted = $state(false);
+  let phone = $state(false);
+  let portrait = $state(false);
+  let rootEl: HTMLDivElement | undefined = $state();
+
+  $effect(() => {
+    const el = rootEl;
+    if (!el) return;
+    const unmute = () => (unmuted = true);
+    el.addEventListener("pointerdown", unmute);
+    return () => el.removeEventListener("pointerdown", unmute);
+  });
 
   onMount(() => {
     void loadLineup();
     void loadEpg();
-    const savedLayout = localStorage.getItem(LAYOUT_KEY) as MultiviewLayout | null;
-    if (savedLayout && LAYOUTS.some((entry) => entry.key === savedLayout)) {
-      layout.set(savedLayout);
-    }
-    try {
-      const saved = localStorage.getItem(TILES_KEY);
-      if (saved) hydrationKeys = JSON.parse(saved) as (string | null)[];
-    } catch {
-      hydrationKeys = [];
-    }
-  });
-
-  $effect(() => {
-    const line = $lineup;
-    if (!line || hydrated || hydrationKeys.length === 0) return;
-    hydrated = true;
-    const byKey = new Map(line.channels.map((c) => [`${c.portal}:${c.channelId}`, c]));
-    tiles.update((list) =>
-      list.map((tile, index) => {
-        const key = hydrationKeys[index];
-        const channel = key ? byKey.get(key) : undefined;
-        return channel ? { ...tile, channel } : tile;
-      }),
-    );
-  });
-
-  $effect(() => {
-    localStorage.setItem(
-      TILES_KEY,
-      JSON.stringify(
-        $tiles.map((tile) =>
-          tile.channel ? `${tile.channel.portal}:${tile.channel.channelId}` : null,
-        ),
-      ),
-    );
-  });
-
-  $effect(() => {
-    localStorage.setItem(LAYOUT_KEY, $layout);
+    const phoneQuery = window.matchMedia("(max-width: 720px)");
+    const portraitQuery = window.matchMedia("(orientation: portrait)");
+    const sync = () => {
+      phone = phoneQuery.matches;
+      portrait = portraitQuery.matches;
+    };
+    sync();
+    phoneQuery.addEventListener("change", sync);
+    portraitQuery.addEventListener("change", sync);
+    return () => {
+      phoneQuery.removeEventListener("change", sync);
+      portraitQuery.removeEventListener("change", sync);
+    };
   });
 
   const channels = $derived($lineup?.channels ?? []);
-  const shown = $derived(visibleTiles($tiles, $layout));
-  const audio = $derived(effectiveAudioSlot($tiles, $audioSlot));
 
-  const pickMatches = $derived.by(() => {
-    const needle = pickQuery.trim().toLowerCase();
-    if (!needle) return channels;
-    return channels.filter(
-      (channel) =>
-        channel.name.toLowerCase().includes(needle) || (channel.number ?? "").includes(needle),
-    );
+  // Phone: portrait = single focused tile, landscape = 1×2. Desktop uses the layout chooser.
+  const shown = $derived.by(() => {
+    if (!phone) return visibleTiles($tiles, $layout);
+    if (portrait) {
+      const tile = $tiles[focusSlot];
+      return tile ? [tile] : [];
+    }
+    return $tiles.slice(0, 2);
   });
 
-  const gridClass = $derived($layout === "big" ? "big" : $layout === "2x2" ? "two" : "three");
+  const LAYOUT_CLASS: Record<string, string> = { big: "big", "2x2": "two", "3x3": "three" };
+
+  const layoutClass = $derived.by(() => {
+    if (phone) return portrait ? "one" : "two";
+    return LAYOUT_CLASS[$layout];
+  });
+
+  const audio = $derived(effectiveAudioSlot($tiles, $audioSlot));
+
+  const pickMatches = $derived(searchChannels(channels, pickQuery));
 
   function setError(slot: number, error: PlaybackError | null) {
     tileErrors.update((map) => ({ ...map, [slot]: error }));
@@ -118,49 +108,76 @@
     armed = null;
   }
 
-  function activate(slot: number) {
+  function tileClick(slot: number) {
     if (armed != null && armed !== slot) {
       tiles.update((list) => swapTiles(list, armed as number, slot));
       armed = null;
-      return;
+    } else {
+      armed = null;
     }
-    armed = null;
+    focusSlot = slot;
+  }
+
+  function retry(slot: number) {
     retryKeys = { ...retryKeys, [slot]: (retryKeys[slot] ?? 0) + 1 };
+  }
+
+  function chooseAudio(slot: number) {
+    audioSlot.set(slot);
+    unmuted = true;
   }
 </script>
 
-<div class="multiview">
+<div class="multiview" bind:this={rootEl}>
   <div class="mvbar">
     <button class="btn" onclick={() => navigate("/")}>‹ Channels</button>
     <div class="brand">Multiview</div>
     <div class="spacer"></div>
-    <div class="seg">
-      {#each LAYOUTS as option (option.key)}
-        <button class={$layout === option.key ? "on" : ""} onclick={() => layout.set(option.key)}>
-          {option.label}
-        </button>
-      {/each}
-    </div>
+    {#if !phone}
+      <div class="seg">
+        {#each LAYOUTS as option (option.key)}
+          <button class={$layout === option.key ? "on" : ""} onclick={() => layout.set(option.key)}>
+            {option.label}
+          </button>
+        {/each}
+      </div>
+    {/if}
     <button class="btn" onclick={() => navigate("/settings")}>Settings</button>
   </div>
 
-  <div class="mvgrid {gridClass}">
+  <div class="mvgrid {layoutClass}">
     {#each shown as tile (tile.slot)}
       <MultiviewTile
         {tile}
-        audio={audio === tile.slot}
+        audio={unmuted && audio === tile.slot}
         error={$tileErrors[tile.slot] ?? null}
         armed={armed === tile.slot}
+        focused={focusSlot === tile.slot}
         retryKey={retryKeys[tile.slot] ?? 0}
         onError={setError}
         onPick={openPick}
         onSwap={swap}
-        onAudio={(slot) => audioSlot.set(slot)}
+        onAudio={chooseAudio}
         onRemove={remove}
-        onActivate={activate}
+        onTileClick={tileClick}
+        onRetry={retry}
       />
     {/each}
   </div>
+
+  {#if phone}
+    <div class="mvstrip">
+      {#each $tiles as tile (tile.slot)}
+        <button
+          class="sc {focusSlot === tile.slot ? 'on' : ''}"
+          onclick={() => (focusSlot = tile.slot)}
+        >
+          <Logo name={tile.channel?.name ?? "+"} logo={tile.channel?.logo ?? null} size={22} />
+          <span>{tile.channel?.name ?? "Empty"}</span>
+        </button>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 {#if pickSlot != null}
@@ -180,7 +197,7 @@
         </div>
       </div>
       <div class="bl">
-        {#each pickMatches as channel (`${channel.portal}:${channel.channelId}`)}
+        {#each pickMatches as channel (channelKey(channel))}
           <button class="r" onclick={() => choose(channel)}>
             <Logo name={channel.name} logo={channel.logo} size={40} />
             <div>

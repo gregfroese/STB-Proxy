@@ -4,13 +4,11 @@
   import { resetMultiview } from "../lib/multiview";
   import { logout } from "../lib/api";
   import { navigate } from "../lib/router";
-  import { clearSession, session } from "../lib/session";
+  import { accountLabel, clearSession, session } from "../lib/session";
 
   let busy = $state(false);
 
-  const accountLabel = $derived(
-    $session?.operator ? "Full lineup (operator / security off)" : ($session?.account ?? ""),
-  );
+  const label = $derived(accountLabel($session));
 
   async function signOut() {
     if (busy) return;
@@ -37,7 +35,7 @@
   <div class="body">
     <div class="card">
       <h2>Account</h2>
-      <div class="kv"><span>Signed in as</span><span>{accountLabel}</span></div>
+      <div class="kv"><span>Signed in as</span><span>{label}</span></div>
       <div>
         <button class="btn danger" onclick={signOut} disabled={busy}>
           {busy ? "Signing out…" : "Sign out"}

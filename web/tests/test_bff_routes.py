@@ -157,6 +157,14 @@ def test_logout_requires_csrf_and_clears_session(client):
     assert client.get("/api/session").status_code == 401
 
 
+def test_cookie_is_reissued_on_activity(client):
+    client.post("/api/login", json={"username": "katie", "password": "pw"})
+    response = client.get("/api/session")
+    assert response.status_code == 200
+    # The sliding idle window is re-issued to the browser on each authenticated call.
+    assert "set-cookie" in response.headers
+
+
 def test_security_headers_present(client):
     response = client.get("/api/session")
     assert response.headers["x-content-type-options"] == "nosniff"

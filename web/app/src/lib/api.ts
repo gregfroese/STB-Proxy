@@ -23,6 +23,14 @@ export function setCsrfToken(token: string | null): void {
   csrfToken = token;
 }
 
+type UnauthorizedHandler = (code: string) => void;
+let unauthorizedHandler: UnauthorizedHandler | null = null;
+
+/** Called when a request fails with a dead session, so the app can return to login. */
+export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): void {
+  unauthorizedHandler = handler;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -48,11 +56,11 @@ async function parse<T>(response: Response): Promise<T> {
   } catch {
     /* non-JSON error body */
   }
-  throw new ApiError(
-    response.status,
-    body.code ?? "error",
-    body.error ?? `Request failed (${response.status}).`,
-  );
+  const code = body.code ?? "error";
+  if (response.status === 401 && (code === "unauthorized" || code === "session_invalid")) {
+    unauthorizedHandler?.(code);
+  }
+  throw new ApiError(response.status, code, body.error ?? `Request failed (${response.status}).`);
 }
 
 /** A read: 2 retries on network failure or 5xx, then surface. */

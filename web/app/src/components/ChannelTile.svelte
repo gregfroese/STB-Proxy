@@ -7,13 +7,11 @@
     channel,
     activeBlock,
     searching = false,
-    nowTitle = null,
     onpick,
   }: {
     channel: Channel;
     activeBlock: string | null;
     searching?: boolean;
-    nowTitle?: string | null;
     onpick: (channel: Channel) => void;
   } = $props();
 
@@ -30,7 +28,6 @@
   {#if channel.favourite}<span class="favmark">★</span>{/if}
   <Logo name={channel.name} logo={channel.logo} size={56} />
   <div class="tnm">{channel.name}</div>
-  {#if nowTitle}<div class="tnow">{nowTitle}</div>{/if}
   <div class="tags">
     {#if channel.blocks.length > 0}
       {#each channel.blocks as block (block)}

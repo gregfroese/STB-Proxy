@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { navigate, route } from "./lib/router";
-  import { loadSession, session, sessionChecked } from "./lib/session";
+  import { installUnauthorizedHandler, loadSession, session, sessionChecked } from "./lib/session";
   import Login from "./routes/Login.svelte";
   import Picker from "./routes/Picker.svelte";
   import Player from "./routes/Player.svelte";
@@ -9,6 +9,7 @@
   import Settings from "./routes/Settings.svelte";
 
   onMount(() => {
+    installUnauthorizedHandler();
     void loadSession();
   });
 

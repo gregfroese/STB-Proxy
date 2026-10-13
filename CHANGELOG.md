@@ -6,7 +6,7 @@ STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/ST
 
 ### Web viewer
 
-- A new **web viewer client** (`web/`), a browser app that mirrors the Android companion: log in as an Account, browse channels grouped by Block, play one channel with now/next EPG, or watch a Multiview grid — for desktop and phone equally.
+- A new **web viewer client** (`web/`), a browser app that mirrors the Android companion: log in as an Account, browse channels grouped by Block, play one channel with now/next EPG, or watch a Multiview — for desktop and phone equally.
 - **BFF + SPA**: a small **FastAPI** server (`web/bff/`) holds Account credentials server-side, proxies the int-only STB-Proxy's `/api/lineup`, `/xmltv` (as now/next `/api/epg`) and live `/play` (as `/stream/…`), and serves a **Svelte 5 + Vite + TypeScript** SPA (`web/app/`). The proxy stays off the internet; no CORS.
 - **Auth**: login form → server-side sessions (opaque token, Fernet-encrypted credentials, `__Host-session` HttpOnly cookie), idle 60 min + absolute 12 h, ~15 min credential re-validation, per-username login backoff, CSRF and security headers.
 - Hosted on LXC 119 `stb-proxy-web` behind Caddy at `watch.home.gregfroese.com`; `web/deploy.sh` builds and restarts the systemd unit.

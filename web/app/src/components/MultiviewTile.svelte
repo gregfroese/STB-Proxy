@@ -9,28 +9,30 @@
     tile,
     audio,
     error,
-    swapping = false,
     armed = false,
+    focused = false,
     retryKey = 0,
     onError,
     onPick,
     onSwap,
     onAudio,
     onRemove,
-    onActivate,
+    onTileClick,
+    onRetry,
   }: {
     tile: MultiviewTile;
     audio: boolean;
     error: PlaybackError | null;
-    swapping?: boolean;
     armed?: boolean;
+    focused?: boolean;
     retryKey?: number;
     onError: (slot: number, error: PlaybackError | null) => void;
     onPick: (slot: number) => void;
     onSwap: (slot: number) => void;
     onAudio: (slot: number) => void;
     onRemove: (slot: number) => void;
-    onActivate: (slot: number) => void;
+    onTileClick: (slot: number) => void;
+    onRetry: (slot: number) => void;
   } = $props();
 
   let videoEl: HTMLVideoElement | undefined = $state();
@@ -73,12 +75,14 @@
 
 {#if tile.channel}
   <div
-    class="mvtile {audio ? 'audio' : ''} {swapping || armed ? 'swapping' : ''} tile{tile.slot}"
+    class="mvtile {audio ? 'audio' : ''} {armed ? 'swapping' : ''} {focused
+      ? 'focused'
+      : ''} tile{tile.slot}"
     role="button"
     tabindex="0"
-    onclick={() => armed && onActivate(tile.slot)}
+    onclick={() => onTileClick(tile.slot)}
     onkeydown={(event) => {
-      if (armed && (event.key === "Enter" || event.key === " ")) onActivate(tile.slot);
+      if (event.key === "Enter" || event.key === " ") onTileClick(tile.slot);
     }}
   >
     <video bind:this={videoEl} playsinline></video>
@@ -96,7 +100,7 @@
           <h4>All tuners busy</h4>
           <p>No free tuner for this tile — STB-Proxy is at its limit.</p>
           <div class="btns">
-            <button class="btn primary" onclick={() => onActivate(tile.slot)}>Retry</button>
+            <button class="btn primary" onclick={() => onRetry(tile.slot)}>Retry</button>
             <button class="btn" onclick={() => onRemove(tile.slot)}>Remove</button>
           </div>
         </div>
@@ -108,7 +112,7 @@
           <h4>Stream unreachable</h4>
           <p>Couldn't reach {tile.channel.name} on the proxy.</p>
           <div class="btns">
-            <button class="btn primary" onclick={() => onActivate(tile.slot)}>Retry</button>
+            <button class="btn primary" onclick={() => onRetry(tile.slot)}>Retry</button>
             <button class="btn" onclick={() => onRemove(tile.slot)}>Remove</button>
           </div>
         </div>
@@ -129,7 +133,7 @@
     </div>
   </div>
 {:else}
-  <button class="mvtile empty tile{tile.slot}" onclick={() => onPick(tile.slot)}
-    >＋ Add channel</button
-  >
+  <button class="mvtile empty tile{tile.slot}" onclick={() => onPick(tile.slot)}>
+    ＋ Add channel
+  </button>
 {/if}

@@ -1,7 +1,8 @@
 # STB-Proxy web viewer
 
 A browser client for STB-Proxy: log in as an **Account**, browse channels grouped by **Block**, play
-one channel with now/next EPG, or watch a **Multiview** grid — for desktop and phone equally.
+one channel with now/next EPG, or watch several at once in a **Multiview** — for desktop and phone
+equally.
 
 It is a **BFF + SPA** pair, hosted on its own public LXC behind Caddy at
 `https://watch.home.gregfroese.com`:

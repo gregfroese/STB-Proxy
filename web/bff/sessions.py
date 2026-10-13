@@ -184,7 +184,7 @@ class SessionStore:
     def _expired(self, row: sqlite3.Row, now: float) -> bool:
         return (
             now - row["last_seen_at"] > config.idle
-            or now - row["created_at"] > config.abs
+            or now - row["created_at"] > config.absolute_ttl
         )
 
     @staticmethod

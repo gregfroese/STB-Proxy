@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import type { Channel } from "./types";
 import {
   assignChannel,
-  distinctChannelCount,
   effectiveAudioSlot,
   emptyTiles,
   removeTile,
@@ -103,11 +102,6 @@ describe("audio source", () => {
   it("an empty grid has no audio source", () => {
     expect(effectiveAudioSlot(grid(null, null), 0)).toBeNull();
   });
-
-  it("audio prefers a playable tile over a busy one", () => {
-    const tiles = grid(a, b, c);
-    expect(effectiveAudioSlot(tiles, 2, new Set([0, 1]))).toBe(0);
-  });
 });
 
 describe("status derivation", () => {
@@ -141,9 +135,5 @@ describe("layouts", () => {
     expect(visibleCount("3x3")).toBe(9);
     expect(visibleTiles(tiles, "2x2")).toHaveLength(4);
     expect(visibleTiles(tiles, "3x3")).toHaveLength(9);
-  });
-
-  it("counts distinct channels", () => {
-    expect(distinctChannelCount(grid(a, a, b))).toBe(2);
   });
 });

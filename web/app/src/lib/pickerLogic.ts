@@ -5,6 +5,11 @@ import type { Channel } from "./types";
 /** Rail entry for public channels in no visible Block (`blocks: []`). */
 export const OTHER_BLOCK = "Other";
 
+/** A Channel's identity — the GLOSSARY's `(portal, channelId)` pair, as one key. */
+export function channelKey(channel: Channel): string {
+  return `${channel.portal}:${channel.channelId}`;
+}
+
 /** The picker's favourites filter (read-only). */
 export type ChannelFilter = "ALL" | "FAVOURITES" | "BLOCK_FAVOURITES";
 
