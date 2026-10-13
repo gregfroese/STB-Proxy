@@ -18,4 +18,6 @@ Cover:
 
 For each: the target look, which components it reuses, and any page-local CSS that survives.
 
+**Domain constraint (from the token contract):** a **Channel can be in several Blocks**. The Block column in the Playlist Editor and the block display in Blocks/Multiview must show a set of blocks per channel, not one — see **Decide canonical component styles** for the badge pattern this reuses.
+
 Consult `grilling` + `domain-modeling`. Output: the per-page section of the spec.
