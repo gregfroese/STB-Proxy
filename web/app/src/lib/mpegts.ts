@@ -32,10 +32,9 @@ export function attachPlayer(options: AttachOptions): PlayerHandle | null {
     const player = mpegts.createPlayer(
       { type: "mpegts", isLive: true, url: options.url },
       {
-        // Offload demux to the blob worker (allowed by the BFF's CSP), keep a
-        // generous stash, and do NOT chase latency — chasing drops frames and
-        // stutters a live feed. Smoothness beats a few hundred ms of latency.
-        enableWorker: true,
+        // Main-thread demux (no blob Worker), a generous stash, and no latency
+        // chasing (which drops frames and stutters a live feed).
+        enableWorker: false,
         enableStashBuffer: true,
         stashInitialSize: 1024,
         liveBufferLatencyChasing: false,
