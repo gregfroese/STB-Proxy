@@ -382,6 +382,17 @@ def resolveViewer():
     return viewer, account
 
 
+def viewerLabel():
+    """Who is making this request, for the active-streams list: the Account's username,
+    "operator", or None (anonymous, shown by IP). Requires resolveViewer() to have run."""
+    account = getattr(g, "account", None)
+    if account:
+        return account["username"]
+    if getattr(g, "viewer", None) == "operator":
+        return "operator"
+    return None
+
+
 def viewerBlocks():
     """The block dict to scope a request with: the account's assigned blocks with their
     global on/off state, the configured default blocks for an anonymous request, or None
@@ -2269,10 +2280,16 @@ class SharedStream:
         self.created = time.time()
         self.closing = False  # being stopped to free its tuner: nobody new may join
 
-    def join(self, ip, kind="client", tile=None):
+    def join(self, ip, kind="client", tile=None, account=None):
         """kind: "client" (Plex, Jellyfin, apps), "recording" or "preview"; tile: a preview's
-        (viewer id, tile id)."""
-        viewer = {"queue": queue.Queue(VIEWER_BACKLOG), "ip": ip, "kind": kind, "tile": tile}
+        (viewer id, tile id); account: the Account username (or "operator"), for the streams list."""
+        viewer = {
+            "queue": queue.Queue(VIEWER_BACKLOG),
+            "ip": ip,
+            "kind": kind,
+            "tile": tile,
+            "account": account,
+        }
         with self.lock:
             if self.done or self.closing:
                 return None
@@ -2298,6 +2315,9 @@ class SharedStream:
         if self.entry is not None:
             self.entry["viewers"] = len(self.viewers)
             self.entry["kinds"] = sorted({v["kind"] for v in self.viewers})
+            self.entry["accounts"] = sorted(
+                {v["account"] for v in self.viewers if v.get("account")}
+            )
 
     def priority(self):
         """The highest claim among its viewers; a stream nobody watches has the lowest."""
@@ -2483,13 +2503,14 @@ def ffmpegCommand(link, proxy, realTime=True):
     return cmd
 
 
-def startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip):
+def startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip, account=None):
     """Start shared reading the channel. False if it was stopped while it was connecting."""
     entry = {
         "mac": mac,
         "channel id": channelId,
         "channel name": channelName,
         "client": ip,
+        "account": account,
         "portal name": portalName,
         "start time": datetime.now(timezone.utc).timestamp(),
     }
@@ -2719,6 +2740,7 @@ def playChannel(portalId, channelId):
     recording = request.args.get("recording")
     kind = "preview" if web else "recording" if recording else "client"
     ip = request.remote_addr
+    account = viewerLabel()
     # Each browser sends its own ID: behind a reverse proxy every viewer has the proxy's IP.
     viewer = request.args.get("viewer") or ip
     tile = (viewer, request.args.get("tile") or "player") if web else None
@@ -2738,7 +2760,7 @@ def playChannel(portalId, channelId):
         with sharedStreamsLock:
             existing = sharedStreams.get(key)
             if existing is not None and not existing.done:
-                joined = existing.join(ip, kind, tile)
+                joined = existing.join(ip, kind, tile, account)
                 if joined:
                     logger.info("IP({}) shares the stream already open for Portal({}):Channel({})".format(ip, portalId, channelId))
                     if web:
@@ -2747,7 +2769,7 @@ def playChannel(portalId, channelId):
             shared = SharedStream(key)
             sharedStreams[key] = shared
         flask.g.startingShare = shared
-        firstViewer = shared.join(ip, kind, tile)
+        firstViewer = shared.join(ip, kind, tile, account)
         if not makeRoom(portalId, kind, shared):
             logger.info("No free tuner for Portal({}):Channel({})".format(portalId, channelId))
             if tile:
@@ -2795,14 +2817,14 @@ def playChannel(portalId, channelId):
             if web or getSettings().get("test streams", "true") == "false" or testStream():
                 if web:
                     cmd = ffmpegCommand(link, proxy, realTime=False)
-                    if not startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip):
+                    if not startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip, account):
                         return flask.jsonify({"error": TUNER_BUSY}), 503  # stopped while connecting
                     return Response(watchPreview(shared, firstViewer, tile), mimetype="application/octet-stream")
 
                 else:
                     if recording or getSettings().get("stream method", "ffmpeg") == "ffmpeg":
                         cmd = ffmpegCommand(link, proxy)
-                        if not startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip):
+                        if not startShared(shared, cmd, portalId, portalName, mac, channelId, channelName, ip, account):
                             return flask.jsonify({"error": TUNER_BUSY}), 503  # stopped while connecting
                         return Response(watchShared(shared, firstViewer), mimetype="application/octet-stream")
                     else:
@@ -3180,6 +3202,12 @@ def dashboard():
 @authorise
 def streaming():
     return flask.jsonify(occupied)
+
+
+@app.route("/streams")
+@authorise
+def streams():
+    return render_template("streams.html")
 
 
 @app.route("/log")

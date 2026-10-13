@@ -11,6 +11,11 @@ STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/ST
 - **Auth**: login form → server-side sessions (opaque token, Fernet-encrypted credentials, `__Host-session` HttpOnly cookie), idle 60 min + absolute 12 h, ~15 min credential re-validation, per-username login backoff, CSRF and security headers.
 - Hosted on LXC 119 `stb-proxy-web` behind Caddy at `watch.home.gregfroese.com`; `web/deploy.sh` builds and restarts the systemd unit.
 
+### Active streams page
+
+- A new **Streams** page (nav **Streams**) lists every active stream: **who is watching** (the Account username, or the client IP for anonymous players), the client IP, the kind of viewer (client / recording / preview), the portal, MAC, channel and duration.
+- `/streaming` now includes the resolved `account` for each stream, so the Dashboard and the Streams page can name the viewer behind a shared connection (e.g. the web viewer's BFF).
+
 ## [1.8.0] - 2026-10-12
 
 ### Android app

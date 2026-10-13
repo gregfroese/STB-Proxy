@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="container-fluid text-light p-lg-5">
+    <div class="d-flex align-items-center">
+        <h4 class="mb-0">Active streams</h4>
+        <span class="badge bg-secondary ms-2" id="streamCount">0</span>
+        <div class="ms-auto small text-muted">Tuners in use, who is watching, and from where.</div>
+    </div>
+    <hr>
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3" id="streamOut"></div>
+</div>
+
+<script>
+    var streamingURL = "{{ url_for('streaming') }}";
+
+    function duration(start) {
+        var diff = Date.now() - start * 1000;
+        var d = new Date(diff);
+        var h = d.getUTCHours(), m = d.getUTCMinutes(), s = d.getUTCSeconds();
+        return String(h).padStart(2, "0") + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+    }
+
+    function kindBadges(kinds) {
+        var labels = { client: "client", recording: "recording", preview: "preview" };
+        var colours = { client: "bg-success", recording: "bg-danger", preview: "bg-warning text-dark" };
+        return (kinds || []).map(function (k) {
+            return '<span class="badge ' + (colours[k] || "bg-secondary") + ' ms-1">' + (labels[k] || k) + "</span>";
+        }).join("");
+    }
+
+    function row(icon, value) {
+        return '<tr><td class="pe-2"><i class="fa ' + icon + '"></i></td>' +
+            '<td><p class="card-text text-nowrap mb-0">' + value + "</p></td></tr>";
+    }
+
+    function esc(text) {
+        var div = document.createElement("div");
+        div.textContent = text == null ? "" : String(text);
+        return div.innerHTML;
+    }
+
+    function update() {
+        fetch(streamingURL).then(function (r) { return r.json(); }).then(function (json) {
+            var cards = [];
+            var total = 0;
+
+            for (var portal in json) {
+                for (var i = 0; i < json[portal].length; i++) {
+                    var s = json[portal][i];
+                    total++;
+                    var who = s["account"] ? s["account"] : s["client"];
+                    var ip = s["account"] ? " (" + esc(s["client"]) + ")" : "";
+                    var sharing = s["viewers"] > 1
+                        ? ' <span class="badge bg-info text-dark ms-1" title="Players sharing this portal connection">' +
+                          s["viewers"] + " viewers</span>"
+                        : "";
+
+                    cards.push(
+                        '<div class="col"><div class="card text-dark bg-light h-100">' +
+                        '<div class="card-header d-flex align-items-center">' +
+                        '<i class="fa fa-user me-2"></i>' + esc(who) + ip +
+                        '<span class="ms-auto">' + kindBadges(s["kinds"]) + sharing + "</span>" +
+                        "</div>" +
+                        '<div class="card-body"><table class="table table-sm mb-0">' +
+                        row("fa-play", esc(s["channel name"])) +
+                        row("fa-server", esc(s["portal name"])) +
+                        row("fa-lock", esc((s["mac"] || "").toUpperCase())) +
+                        row("fa-clock-o", duration(s["start time"])) +
+                        "</table></div></div></div>"
+                    );
+                }
+            }
+
+            document.getElementById("streamCount").textContent = total;
+            document.getElementById("streamOut").innerHTML = cards.length
+                ? cards.join("")
+                : '<div class="col"><p class="text-muted">No active streams.</p></div>';
+        });
+    }
+
+    update();
+    setInterval(update, 2000);
+</script>
+
+{% endblock %}
