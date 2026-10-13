@@ -35,6 +35,7 @@ Facts gathered while charting are in the child tickets that needed them.
 - [Research: vendored asset recipe](issues/02-research-vendored-asset-recipe.md): vendor **Bootstrap 5.3.8, Bootstrap Icons 1.13.2 (font), jQuery 3.7.1, DataTables 2.3.8 + Buttons 3.2.6**; DataTables 2 drops the bundled jQuery and needs `dom:`→`layout:`. Full manifest + SRI in [the research doc](research/vendored-asset-recipe.md).
 - [Design-token contract](issues/01-design-token-contract.md): adopt the Web Viewer palette **verbatim** (prototype **Variant A**); one `static/theme.css` with a `:root` token block; tints via `color-mix`; semantic set extended with used `ok`/`warn`/success. Prototype: [theme-tokens.html](prototype/theme-tokens.html).
 - [Decide frontend migration plan](issues/03-decide-frontend-migration-plan.md): vendor **BS 5.3.8 / Bootstrap Icons 1.13.2 (font) / jQuery 3.7.1 / DataTables 2.3.8 + Buttons 3.2.6** into `static/vendor/`; `data-bs-theme="dark"`; migrate editor `dom:`→`layout:` (`deferRender:false`); drop `navbar-light`/`text-muted`/`btn-block`; packaging test for vendored refs; no SRI.
+- [Map Font Awesome 4 icons](issues/04-map-font-awesome-icons.md): full FA4→Bootstrap Icons table (solid→`-fill`, `-o`→outline) at [fa-to-bi-icon-map.md](fa-to-bi-icon-map.md); 4 open decisions (spin keyframe, `fa-signal`→`bi-broadcast`, window glyphs, `fa-expand`/`-compress` overload).
 
 ## Not yet specified
 
