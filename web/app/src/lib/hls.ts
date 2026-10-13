@@ -37,6 +37,11 @@ export function attachHls(options: AttachOptions): HlsHandle | null {
     liveSyncDurationCount: 3,
   });
 
+  const playMedia = () => {
+    const play = options.media.play() as unknown as Promise<void> | undefined;
+    if (play && typeof play.catch === "function") play.catch(() => undefined);
+  };
+
   hls.on(Hls.Events.ERROR, (_event, data) => {
     if (!data.fatal) return;
     const code = data.response?.code;
@@ -44,11 +49,15 @@ export function attachHls(options: AttachOptions): HlsHandle | null {
     else if (code === 404) options.onError({ kind: "unreachable" });
     else options.onError({ kind: "unreachable" });
   });
-  hls.on(Hls.Events.MANIFEST_PARSED, () => options.onPlaying?.());
+  hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    options.onPlaying?.();
+    playMedia();
+  });
 
   options.media.muted = options.muted;
   hls.loadSource(options.url);
   hls.attachMedia(options.media);
+  playMedia();
 
   return {
     destroy() {
