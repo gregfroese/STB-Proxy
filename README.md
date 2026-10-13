@@ -1,5 +1,7 @@
 # STB-Proxy
 
+STB-Proxy turns IPTV portals (set-top-box accounts) into a single, Plex/Jellyfin-compatible channel lineup, and comes with a companion app for **Android TV and phones**.
+
 - Play STB portal streams in regular m3u media players
 - Responds as HD Homerun for Plex etc
 - Configuration through web UI
@@ -17,7 +19,7 @@
 - Order your blocks, and hide them from the API/Plex/Jellyfin ("STB-Proxy only")
 - Keeps a Plex DVR's channel list in step automatically
 - Works with portals that lock a MAC to a specific device
-- A **companion Android app** for phone and Android TV: picker, player and Multiview
+- A companion app for **Android TV and phones**: picker, player and Multiview
 
 
 # Setup
@@ -116,9 +118,9 @@ Give each player its own set of channels, without changing the operator login.
 - Each different channel needs a tuner (see Streams and portal connections). Tiles on the same channel, or on a channel Plex is watching, share one. With more tiles than tuners, the extra tiles say **No free tuner**. If Plex needs a tuner a tile is using, the tile stops and says so. **Try again** once a tuner is free.
 - Your browser remembers the tiles and layout, and opens them again next time.
 
-# Android app
+# Companion app (Android TV & phones)
 
-**STB Proxy** is the **companion app** for STB-Proxy: one app for phone and Android TV, it signs in to your proxy as an account, browses your channels grouped by **Block**, plays one channel or a **Multiview** grid, with now/next from your XMLTV guide. It's a sideloaded APK (no Play Store) — the same APK for both.
+A companion app for **Android TV and phones**, included in this project. The same APK runs on both: sign in to your proxy as an account, browse your channels grouped by **Block**, play one channel or a **Multiview** grid, with now/next from your XMLTV guide. It's sideloaded (no Play Store).
 
 | Phone | | |
 | --- | --- | --- |
