@@ -187,9 +187,11 @@
         : 0;
       const quality = video.getVideoPlaybackQuality?.();
       const speed = handle?.stats().speedKBps ?? 0;
-      debugText = `speed ${speed.toFixed(0)} KB/s · buffer ${ahead.toFixed(1)}s · dropped ${
-        quality?.droppedVideoFrames ?? "?"
-      }/${quality?.totalVideoFrames ?? "?"} · readyState ${video.readyState}`;
+      debugText = `${video.videoWidth}×${video.videoHeight} · speed ${speed.toFixed(
+        0,
+      )} KB/s · buffer ${ahead.toFixed(1)}s · dropped ${quality?.droppedVideoFrames ?? "?"}/${
+        quality?.totalVideoFrames ?? "?"
+      } · rate ${video.playbackRate} · rs ${video.readyState}`;
     }, 1000);
     return () => window.clearInterval(timer);
   });
