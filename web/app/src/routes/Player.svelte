@@ -24,6 +24,7 @@
   let retryKey = $state(0);
   let now = $state(new Date());
   let lastComputed = $state(new Date());
+  let isFullscreen = $state(false);
 
   const params = $derived({
     portal: $route.query.get("portal") ?? "",
@@ -107,8 +108,22 @@
   }
 
   function toggleFullscreen() {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void stageEl?.requestFullscreen();
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+      return;
+    }
+    // Fullscreen the video element itself: fullscreening a container that holds
+    // an MSE video stalls playback on some Android Chrome versions.
+    const request = videoEl?.requestFullscreen();
+    if (request && typeof request.catch === "function") request.catch(() => undefined);
+  }
+
+  function onFullscreenChange() {
+    isFullscreen = document.fullscreenElement != null;
+    if (videoEl && videoEl.paused) {
+      const play = videoEl.play();
+      if (play && typeof play.catch === "function") play.catch(() => undefined);
+    }
   }
 
   function onKey(event: KeyboardEvent) {
@@ -145,10 +160,12 @@
     }, 30000);
     window.addEventListener("keydown", onKey);
     document.addEventListener("visibilitychange", onVisibility);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener("keydown", onKey);
       document.removeEventListener("visibilitychange", onVisibility);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
     };
   });
 
