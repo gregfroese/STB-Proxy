@@ -40,6 +40,12 @@
 
   const status = $derived(tileStatus(tile, error));
 
+  // A control's click must not reach the tile's own click (which would swap/focus).
+  const act = (handler: (slot: number) => void) => (event: MouseEvent) => {
+    event.stopPropagation();
+    handler(tile.slot);
+  };
+
   $effect(() => {
     const channel = tile.channel;
     const retry = retryKey;
@@ -93,42 +99,37 @@
     {#if audio}<div class="audiobadge">🔊 AUDIO</div>{/if}
 
     {#if status.kind === "tuner_busy"}
-      <div class="statemsg" onclick={(event) => event.stopPropagation()}>
+      <div class="statemsg">
         <div class="inner">
           <div>⏳</div>
           <h4>All tuners busy</h4>
           <p>No free tuner for this tile — STB-Proxy is at its limit.</p>
           <div class="btns">
-            <button class="btn primary" onclick={() => onRetry(tile.slot)}>Retry</button>
-            <button class="btn" onclick={() => onRemove(tile.slot)}>Remove</button>
+            <button class="btn primary" onclick={act(onRetry)}>Retry</button>
+            <button class="btn" onclick={act(onRemove)}>Remove</button>
           </div>
         </div>
       </div>
     {:else if status.kind === "failed"}
-      <div class="statemsg" onclick={(event) => event.stopPropagation()}>
+      <div class="statemsg">
         <div class="inner">
           <div>⚠</div>
           <h4>Stream unreachable</h4>
           <p>Couldn't reach {tile.channel.name} on the proxy.</p>
           <div class="btns">
-            <button class="btn primary" onclick={() => onRetry(tile.slot)}>Retry</button>
-            <button class="btn" onclick={() => onRemove(tile.slot)}>Remove</button>
+            <button class="btn primary" onclick={act(onRetry)}>Retry</button>
+            <button class="btn" onclick={act(onRemove)}>Remove</button>
           </div>
         </div>
       </div>
     {/if}
 
-    <div class="tilechip" onclick={(event) => event.stopPropagation()}>
-      <button class="tbtn" onclick={() => onPick(tile.slot)}>Pick</button>
-      <button class="tbtn" onclick={() => onSwap(tile.slot)}>Swap</button>
-      <button
-        class="tbtn {audio ? 'rec' : ''}"
-        title="Audio here"
-        onclick={() => onAudio(tile.slot)}
+    <div class="tilechip">
+      <button class="tbtn" onclick={act(onPick)}>Pick</button>
+      <button class="tbtn" onclick={act(onSwap)}>Swap</button>
+      <button class="tbtn {audio ? 'rec' : ''}" title="Audio here" onclick={act(onAudio)}>🔊</button
       >
-        🔊
-      </button>
-      <button class="tbtn" onclick={() => onRemove(tile.slot)}>✕</button>
+      <button class="tbtn" onclick={act(onRemove)}>✕</button>
     </div>
   </div>
 {:else}
