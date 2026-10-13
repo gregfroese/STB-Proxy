@@ -127,7 +127,7 @@ export function attachStream(options: AttachOptions): StreamHandle | null {
     lastFrames = quality.totalVideoFrames;
     lastDropped = quality.droppedVideoFrames;
     const stuttering =
-      Date.now() - startedAt > 8000 &&
+      Date.now() - startedAt > 6000 &&
       quality.totalVideoFrames > 300 &&
       deltaFrames > 0 &&
       deltaDropped / deltaFrames > 0.2;
