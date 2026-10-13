@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  PROTOTYPE — throwaway. Do not fold into production directly.
+
+  Ticket: Define light mode  (.scratch/operator-ui-modernization/issues/08-define-light-mode.md)
+
+  Plan: Three light-mode token directions (plus the settled Dark baseline to judge
+  "same product" against), switchable via ?variant=, shown as the same component
+  gallery as the token prototype (swatches, buttons, badges, card, table, form,
+  modal, alerts, nav shell). The winning light :root block becomes the light half
+  of static/theme.css; the switching mechanism sketched here (data-bs-theme +
+  prefers-color-scheme + localStorage) is the subject of the grilling round.
+
+    dark - the settled Web Viewer palette (ticket 01), for comparison only.
+    A (Daylight)  - flat inversion of the dark ladder: gray page, white cards,
+                    panel2 gray, border-led, accent darkened for AA. Closest mirror.
+    B (Slate)     - cooler blue-tinted grays, higher contrast, denser borders.
+    C (Warm paper)- warm neutral page, soft borders, same blue accent family.
+
+  How to run: open this file directly in a browser (no server, no build, no internet).
+  Flip with the floating bar or the left/right arrow keys. Toggle the sun/moon in
+  the top bar to feel the light/dark switch the real shell will get.
+
+  The winning variant's :root block becomes the light half of static/theme.css.
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prototype · Operator UI light mode</title>
+<style>
+  /* ============================================================
+     VARIANT TOKENS
+     ============================================================ */
+
+  /* ---- Dark baseline (settled, ticket 01) ---- */
+  body[data-variant="dark"] {
+    --bg: #0d1117;
+    --bg-glow: 24, 34, 51;
+    --panel: #161b22;
+    --panel2: #1c2330;
+    --line: #2b3542;
+    --ink: #e6edf3;
+    --dim: #8b98a7;
+    --accent: #3ba6ff;
+    --on-accent: #04121f;
+    --focus: #ffd34d;
+    --ok: #3fb950;
+    --warn: #e3b341;
+    --bad: #f85149;
+    --hi: #ffffff22;
+    --shadow: 0 1px 0 rgba(0,0,0,.25);
+    --shadow-lg: 0 24px 60px rgba(0,0,0,.66);
+    --scrim: rgba(0,0,0,.6);
+    --logo-mat: var(--ink);
+    color-scheme: dark;
+  }
+
+  /* ---- A: Daylight (flat inversion) ---- */
+  body[data-variant="A"] {
+    --bg: #f6f8fa;
+    --bg-glow: 214, 222, 232;
+    --panel: #ffffff;
+    --panel2: #eef1f4;
+    --line: #d0d7de;
+    --ink: #1f2328;
+    --dim: #59636e;
+    --accent: #0969da;
+    --on-accent: #ffffff;
+    --focus: #bf8700;
+    --ok: #1a7f37;
+    --warn: #9a6700;
+    --bad: #cf222e;
+    --hi: #00000014;
+    --shadow: 0 1px 2px rgba(31,35,40,.06);
+    --shadow-lg: 0 24px 60px rgba(31,35,40,.22);
+    --scrim: rgba(31,35,40,.35);
+    --logo-mat: #ffffff;
+    color-scheme: light;
+  }
+
+  /* ---- B: Slate (cooler, higher contrast) ---- */
+  body[data-variant="B"] {
+    --bg: #eef2f7;
+    --bg-glow: 200, 214, 232;
+    --panel: #ffffff;
+    --panel2: #e4ebf3;
+    --line: #c3cfdd;
+    --ink: #17202b;
+    --dim: #5a6b7e;
+    --accent: #0b63c9;
+    --on-accent: #ffffff;
+    --focus: #b7791f;
+    --ok: #177245;
+    --warn: #b7791f;
+    --bad: #c0272d;
+    --hi: #0000001a;
+    --shadow: 0 1px 2px rgba(23,32,43,.07);
+    --shadow-lg: 0 24px 60px rgba(23,32,43,.24);
+    --scrim: rgba(23,32,43,.35);
+    --logo-mat: #ffffff;
+    color-scheme: light;
+  }
+
+  /* ---- C: Warm paper (soft, warm neutrals) ---- */
+  body[data-variant="C"] {
+    --bg: #faf8f4;
+    --bg-glow: 236, 228, 214;
+    --panel: #ffffff;
+    --panel2: #f2eee7;
+    --line: #ddd6ca;
+    --ink: #2a2622;
+    --dim: #6b6258;
+    --accent: #1f6feb;
+    --on-accent: #ffffff;
+    --focus: #9a6700;
+    --ok: #2f7d4f;
+    --warn: #9a6700;
+    --bad: #c0362c;
+    --hi: #00000014;
+    --shadow: 0 1px 2px rgba(42,38,34,.06);
+    --shadow-lg: 0 24px 60px rgba(42,38,34,.22);
+    --scrim: rgba(42,38,34,.35);
+    --logo-mat: #ffffff;
+    color-scheme: light;
+  }
+
+  /* Shared type/space/radius (mode-independent) */
+  body {
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --fs-body: 13px;
+    --fs-sm: 12px;
+    --fs-xs: 11px;
+    --fs-h: 20px;
+    --sp-1: 6px;  --sp-2: 10px; --sp-3: 14px; --sp-4: 20px;
+    --r-sm: 8px;  --r-md: 10px; --r-lg: 14px; --r-pill: 999px;
+    --card-border: 1px solid var(--line);
+    --control-border: 1px solid var(--line);
+  }
+
+  /* ============================================================
+     SHARED GALLERY SHELL (uses only the tokens above)
+     ============================================================ */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background:
+      radial-gradient(1200px 700px at 50% -10%, rgb(var(--bg-glow)) 0%, var(--bg) 60%);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: var(--fs-body);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+    padding-bottom: 90px;
+    transition: background .2s, color .2s;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: var(--sp-4) var(--sp-3); }
+  h1 { font-size: var(--fs-h); font-weight: 700; margin: 0 0 var(--sp-1); }
+  h2 {
+    font-size: var(--fs-xs); font-weight: 700; letter-spacing: .8px;
+    text-transform: uppercase; color: var(--dim);
+    margin: var(--sp-4) 0 var(--sp-2);
+  }
+  p.lede { color: var(--dim); margin: 0 0 var(--sp-3); font-size: var(--fs-sm); }
+  code, .mono { font-family: var(--mono); }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--sp-3); }
+  .stack { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .row { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+
+  /* Card */
+  .card {
+    background: var(--panel);
+    border: var(--card-border);
+    border-radius: var(--r-lg);
+    padding: var(--sp-3);
+    box-shadow: var(--shadow);
+  }
+  .card h3 { margin: 0 0 var(--sp-1); font-size: var(--fs-sm); font-weight: 600; }
+  .card .sub { color: var(--dim); font-size: var(--fs-xs); margin: 0 0 var(--sp-2); }
+
+  /* Buttons */
+  .btn {
+    font: inherit; font-size: var(--fs-sm); font-weight: 600;
+    color: var(--ink); background: var(--panel2);
+    border: var(--control-border); border-radius: var(--r-md);
+    padding: var(--sp-1) var(--sp-3); cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .btn.danger { color: var(--bad); }
+  .btn.ghost { background: transparent; border-color: transparent; color: var(--dim); }
+  .btn.icon { width: 34px; height: 34px; padding: 0; display: inline-grid; place-items: center; }
+  .btn:disabled { opacity: .5; cursor: default; }
+
+  /* Badges / pills */
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: var(--fs-xs); font-weight: 600; line-height: 1;
+    padding: 4px 9px; border-radius: var(--r-pill);
+    border: 1px solid transparent;
+  }
+  .badge.dot::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .badge.ok   { color: var(--ok);   background: color-mix(in srgb, var(--ok) 16%, transparent);   border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .badge.bad  { color: var(--bad);  background: color-mix(in srgb, var(--bad) 16%, transparent);  border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+  .badge.mute { color: var(--dim);  background: color-mix(in srgb, var(--ink) 6%, transparent);  border-color: var(--line); }
+  .badge.acc  { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  thead th {
+    text-align: left; color: var(--dim); font-size: var(--fs-xs);
+    text-transform: uppercase; letter-spacing: .5px; font-weight: 700;
+    padding: var(--sp-2) var(--sp-2); border-bottom: 1px solid var(--line);
+  }
+  tbody td { padding: var(--sp-2) var(--sp-2); border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+  tbody tr:nth-child(odd) td { background: color-mix(in srgb, var(--panel2) 55%, transparent); }
+  tbody tr:hover td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  td.num { font-family: var(--mono); color: var(--dim); }
+
+  /* Form */
+  label.field { display: block; margin-bottom: var(--sp-2); }
+  label.field > span { display: block; font-size: var(--fs-xs); color: var(--dim); margin-bottom: 5px; }
+  .input {
+    width: 100%; font: inherit; font-size: var(--fs-sm);
+    color: var(--ink); background: var(--panel2);
+    border: var(--control-border); border-radius: var(--r-md);
+    padding: var(--sp-2) var(--sp-2);
+  }
+  .input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .switch { display: inline-flex; align-items: center; gap: var(--sp-2); cursor: pointer; font-size: var(--fs-sm); }
+  .switch input { display: none; }
+  .switch .track { width: 38px; height: 22px; border-radius: var(--r-pill); background: var(--line); position: relative; transition: background .15s; }
+  .switch .track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--panel); transition: transform .15s; }
+  .switch input:checked + .track { background: var(--accent); }
+  .switch input:checked + .track::after { transform: translateX(16px); background: var(--on-accent); }
+
+  /* Alerts */
+  .alert { display: flex; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); font-size: var(--fs-sm); border: 1px solid; }
+  .alert.ok   { color: var(--ok);   background: color-mix(in srgb, var(--ok) 12%, transparent);   border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .alert.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+  .alert.bad  { color: var(--bad);  background: color-mix(in srgb, var(--bad) 12%, transparent);  border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+  .alert.info { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+  .alert b { color: var(--ink); }
+
+  /* Modal */
+  .scrim { background: var(--scrim); border-radius: var(--r-lg); padding: var(--sp-4) var(--sp-3); }
+  .modal {
+    max-width: 420px; margin: 0 auto; background: var(--panel);
+    border: var(--card-border); border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+  .modal .mh { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--line); font-weight: 700; font-size: var(--fs-sm); }
+  .modal .mb { padding: var(--sp-3); color: var(--dim); font-size: var(--fs-sm); }
+  .modal .mf { padding: var(--sp-2) var(--sp-3); border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: var(--sp-1); }
+
+  /* Empty state */
+  .empty { text-align: center; color: var(--dim); padding: var(--sp-4); font-size: var(--fs-sm); border: 1px dashed var(--line); border-radius: var(--r-lg); }
+
+  /* Nav shell */
+  .appbar {
+    display: flex; align-items: center; gap: var(--sp-3);
+    background: var(--panel); border: var(--card-border); border-radius: var(--r-lg);
+    padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-3);
+  }
+  .brand { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .brand .logo { width: 22px; height: 22px; border-radius: var(--r-sm); background: var(--accent); color: var(--on-accent); display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 800; }
+  .appbar nav { display: flex; gap: 2px; margin-left: var(--sp-2); flex-wrap: wrap; }
+  .appbar nav a {
+    color: var(--dim); text-decoration: none; font-size: var(--fs-sm);
+    padding: 6px 10px; border-radius: var(--r-md);
+  }
+  .appbar nav a:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
+  .appbar nav a[aria-current="page"] { color: var(--ink); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+  /* theme toggle — the real shell gets one of these */
+  .themebtn {
+    margin-left: auto; display: inline-grid; place-items: center;
+    width: 34px; height: 34px; border-radius: var(--r-md);
+    background: var(--panel2); border: var(--control-border);
+    color: var(--dim); cursor: pointer; font-size: 15px;
+  }
+  .themebtn:hover { color: var(--ink); border-color: var(--accent); }
+
+  /* Swatches */
+  .swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--sp-2); }
+  .sw { border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; font-size: var(--fs-xs); }
+  .sw .chip { height: 42px; }
+  .sw .meta { padding: 6px 8px; background: var(--panel); }
+  .sw .meta b { display: block; font-weight: 600; color: var(--ink); }
+  .sw .meta span { color: var(--dim); font-family: var(--mono); }
+
+  /* Floating switcher */
+  .switcher {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: #000; color: #fff; border: 1px solid #444; border-radius: 999px;
+    padding: 7px 12px; font: 600 12px var(--font); box-shadow: 0 10px 30px rgba(0,0,0,.6);
+    z-index: 99;
+  }
+  .switcher button { background: #222; color: #fff; border: 1px solid #555; border-radius: 999px; width: 26px; height: 26px; cursor: pointer; font-size: 14px; line-height: 1; }
+  .switcher button:hover { background: #333; }
+  .switcher .tag { opacity: .6; margin-left: 4px; }
+</style>
+
+<body data-variant="A">
+<div class="wrap">
+
+  <!-- NAV SHELL -->
+  <div class="appbar">
+    <div class="brand"><span class="logo">SB</span> STB Proxy</div>
+    <nav>
+      <a href="#" aria-current="page">Playlist Editor</a>
+      <a href="#">Blocks</a>
+      <a href="#">Accounts</a>
+      <a href="#">Guide</a>
+      <a href="#">Multiview</a>
+      <a href="#">Dashboard</a>
+    </nav>
+    <button class="themebtn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light or dark theme">☀</button>
+  </div>
+
+  <h1>Light-mode gallery</h1>
+  <p class="lede">The dark product is the baseline. Three light directions; flip with the bar below or ← / →. The winning light <span class="mono">:root</span> block joins the dark one in <span class="mono">static/theme.css</span>.</p>
+
+  <!-- SWATCHES -->
+  <h2>Colour tokens <span id="variantName" class="tag" style="text-transform:none;letter-spacing:0"></span></h2>
+  <div class="swatches" id="swatches"></div>
+
+  <div class="grid2" style="margin-top:var(--sp-4)">
+    <!-- BUTTONS + BADGES -->
+    <div class="card">
+      <h3>Buttons</h3>
+      <p class="sub">Primary, secondary, danger, ghost, icon</p>
+      <div class="row">
+        <button class="btn primary">Save</button>
+        <button class="btn">Cancel</button>
+        <button class="btn danger">Mark dead</button>
+        <button class="btn ghost">Reset</button>
+        <button class="btn icon" title="Add">+</button>
+        <button class="btn primary" disabled>Disabled</button>
+      </div>
+      <h3 style="margin-top:var(--sp-3)">Badges &amp; pills</h3>
+      <div class="row">
+        <span class="badge acc">Block</span>
+        <span class="badge ok dot">Enabled</span>
+        <span class="badge warn dot">Partial</span>
+        <span class="badge bad dot">Dead</span>
+        <span class="badge mute">Hidden</span>
+      </div>
+    </div>
+
+    <!-- FORM -->
+    <div class="card">
+      <h3>Form controls</h3>
+      <p class="sub">Inputs, focus ring, switch</p>
+      <label class="field"><span>Portal address</span>
+        <input class="input" value="http://192.168.1.10:8001" /></label>
+      <div class="stack">
+        <label class="switch"><input type="checkbox" checked><span class="track"></span> Keep a Plex DVR in step</label>
+        <label class="switch"><input type="checkbox"><span class="track"></span> Hide channels in blocks</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <h2>Data table</h2>
+  <div class="card" style="padding:0;overflow:hidden">
+    <table>
+      <thead><tr><th style="width:40px"></th><th>#</th><th>Channel</th><th>Block</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><input type="checkbox" checked></td><td class="num">101</td><td>TSN 1 FHD</td><td><span class="badge acc">Sports</span></td><td><span class="badge ok dot">Enabled</span></td></tr>
+        <tr><td><input type="checkbox" checked></td><td class="num">102</td><td>Sportsnet One</td><td><span class="badge acc">Sports</span></td><td><span class="badge ok dot">Enabled</span></td></tr>
+        <tr><td><input type="checkbox"></td><td class="num">204</td><td>BBC World News</td><td><span class="badge mute">—</span></td><td><span class="badge bad dot">Dead</span></td></tr>
+        <tr><td><input type="checkbox" checked></td><td class="num">305</td><td>Discovery Channel</td><td><span class="badge acc">Docs</span></td><td><span class="badge warn dot">Partial</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- MODAL + ALERTS -->
+  <div class="grid2" style="margin-top:var(--sp-4)">
+    <div class="card" style="padding:0;border:0;background:transparent;box-shadow:none">
+      <h2 style="margin-top:0">Modal</h2>
+      <div class="scrim">
+        <div class="modal">
+          <div class="mh">Add to block</div>
+          <div class="mb">Choose the blocks these 4 channels belong to.</div>
+          <div class="mf"><button class="btn">Cancel</button><button class="btn primary">Add</button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Notifications</h2>
+      <div class="stack">
+        <div class="alert ok"><b>Saved.</b> Filters kept under “NHL”.</div>
+        <div class="alert warn"><b>Partial.</b> The portal dropped the stream twice.</div>
+        <div class="alert bad"><b>Plex unreachable.</b> Retrying in 2 minutes.</div>
+        <div class="alert info"><b>Guide reloaded.</b> 24 hours cached for 1 hour.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EMPTY STATE -->
+  <h2>Empty state</h2>
+  <div class="empty">No channels in this block yet. Type a block name in the editor to add some.</div>
+
+</div>
+
+<!-- FLOATING SWITCHER -->
+<div class="switcher" role="group" aria-label="Prototype variant">
+  <button id="prev" aria-label="Previous variant">‹</button>
+  <span><b id="vkey">A</b><span class="tag" id="vlabel">(Daylight)</span></span>
+  <button id="next" aria-label="Next variant">›</button>
+</div>
+
+<script>
+  const VARIANTS = {
+    dark: { name: "Dark baseline",  note: "settled Web Viewer palette · for comparison" },
+    A:    { name: "Daylight",       note: "flat inversion · gray page / white cards · accent darkened for AA" },
+    B:    { name: "Slate",          note: "cooler blue-tinted grays · higher contrast · denser borders" },
+    C:    { name: "Warm paper",     note: "warm neutral page · soft borders · same blue accent family" }
+  };
+  const ORDER = ["dark", "A", "B", "C"];
+  const TOKENS = [
+    ["--bg", "background"], ["--panel", "surface"], ["--panel2", "raised"],
+    ["--line", "border"], ["--ink", "text"], ["--dim", "muted"],
+    ["--accent", "accent"], ["--on-accent", "on-accent"], ["--focus", "focus"],
+    ["--ok", "ok"], ["--warn", "warn"], ["--bad", "bad"]
+  ];
+
+  function current() {
+    const v = new URLSearchParams(location.search).get("variant");
+    return ORDER.includes(v) ? v : "A";
+  }
+
+  function renderSwatches() {
+    const cs = getComputedStyle(document.body);
+    const box = document.getElementById("swatches");
+    box.innerHTML = TOKENS.map(([tok, role]) => {
+      const val = cs.getPropertyValue(tok).trim();
+      return `<div class="sw"><div class="chip" style="background:${val}"></div>
+        <div class="meta"><b>${role}</b><span>${tok}</span><br><span>${val}</span></div></div>`;
+    }).join("");
+  }
+
+  function apply(v) {
+    document.body.dataset.variant = v;
+    document.getElementById("vkey").textContent = v;
+    document.getElementById("vlabel").textContent = "(" + VARIANTS[v].name + ")";
+    document.getElementById("variantName").textContent = " — " + VARIANTS[v].note;
+    renderSwatches();
+    const url = new URL(location.href);
+    url.searchParams.set("variant", v);
+    history.replaceState(null, "", url);
+  }
+
+  function step(d) {
+    const i = ORDER.indexOf(current());
+    apply(ORDER[(i + d + ORDER.length) % ORDER.length]);
+  }
+
+  document.getElementById("prev").onclick = () => step(-1);
+  document.getElementById("next").onclick = () => step(1);
+  document.addEventListener("keydown", (e) => {
+    const el = e.target;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+    if (e.key === "ArrowLeft") step(-1);
+    if (e.key === "ArrowRight") step(1);
+  });
+  // Sketch of the real toggle: flips between the current light direction and dark.
+  document.getElementById("themeToggle").onclick = () => {
+    const v = current();
+    apply(v === "dark" ? "A" : "dark");
+  };
+
+  apply(current());
+</script>
+</body>
+</html>

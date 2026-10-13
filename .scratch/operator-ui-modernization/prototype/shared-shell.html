@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  PROTOTYPE — throwaway. Do not fold into production directly.
+
+  Ticket: Design shared shell  (.scratch/operator-ui-modernization/issues/05-design-shared-shell.md)
+
+  Plan: Three structurally different variants of the shared shell (nav + container + placeholder
+  content + flash), switchable via ?variant= on this one file. Tokens are the SETTLED contract
+  from ticket 01 (Variant A "Converged", the Web Viewer palette) — only the shell changes here.
+    A (Grouped bar)   - one top bar; destinations grouped by faint separators; meta links
+                        (Playlist/XMLTV) as icon-only ghost buttons; active = filled accent pill;
+                        flash = toast, bottom-right; mobile = hamburger sheet.
+    B (Two-tier)      - thin utility strip (brand/version/theme/external) above a primary nav row;
+                        active = accent underline; flash = inline banner under the nav; mobile =
+                        horizontally-scrolling nav row (no hamburger).
+    C (Priority + More) - 5 primary items inline + a "More" menu; a "Jump to…" command field;
+                        active = accent text + dot; flash = toast, top-centre; mobile = hamburger.
+
+  Deliberately NOT a variant: a Svelte-viewer-style LEFT RAIL. Ticket 05 says note it, don't decide
+  it. It stays a note on the map, not a shell here.
+
+  Icons use the real Bootstrap Icons CDN so grouping reads correctly; every item also carries a
+  text label, so the prototype is still legible offline. Names follow ticket 04's FA4→BI map.
+
+  How to run: open this file directly in a browser. Flip variants with the bar below or ← / →.
+-->
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prototype · Operator UI shared shell</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.2/font/bootstrap-icons.min.css">
+<style>
+  /* ============================================================
+     TOKENS — settled contract from ticket 01 (Variant A, Converged).
+     ============================================================ */
+  :root {
+    --bg: #0d1117;
+    --bg-glow: 24, 34, 51;
+    --panel: #161b22;
+    --panel2: #1c2330;
+    --line: #2b3542;
+    --ink: #e6edf3;
+    --dim: #8b98a7;
+    --accent: #3ba6ff;
+    --on-accent: #04121f;
+    --focus: #ffd34d;
+    --star: #ffd34d;
+    --ok: #3fb950;
+    --warn: #e3b341;
+    --bad: #f85149;
+
+    --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --fs-body: 13px;
+    --fs-sm: 12px;
+    --fs-xs: 11px;
+    --fs-h: 20px;
+    --sp-1: 6px;  --sp-2: 10px; --sp-3: 14px; --sp-4: 20px;
+    --r-sm: 8px;  --r-md: 10px; --r-lg: 14px; --r-pill: 999px;
+    --shadow: 0 1px 0 rgba(0, 0, 0, .25);
+    --shadow-lg: 0 24px 60px rgba(0, 0, 0, .66);
+  }
+
+  /* ============================================================
+     SHARED BASE
+     ============================================================ */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: radial-gradient(1200px 700px at 50% -10%, rgb(var(--bg-glow)) 0%, var(--bg) 60%);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: var(--fs-body);
+    -webkit-font-smoothing: antialiased;
+    color-scheme: dark;
+    min-height: 100vh;
+    padding-bottom: 92px;
+  }
+  a { color: var(--accent); }
+  code, .mono { font-family: var(--mono); }
+  i.bi { font-size: 15px; line-height: 1; vertical-align: -2px; }
+
+  /* Focus treatment (absent today) — one rule, applied everywhere */
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: var(--r-sm); }
+
+  /* Skip link (absent today) */
+  .skip {
+    position: absolute; left: 12px; top: -60px; z-index: 200;
+    background: var(--accent); color: var(--on-accent); font-weight: 700;
+    padding: 8px 14px; border-radius: var(--r-md); text-decoration: none;
+    transition: top .15s;
+  }
+  .skip:focus { top: 12px; }
+
+  /* Containers */
+  .container { max-width: 1280px; margin: 0 auto; padding: 0 var(--sp-4); }
+
+  /* Shell visibility per variant */
+  .shell { display: none; }
+  body[data-variant="A"] #shellA { display: block; }
+  body[data-variant="B"] #shellB { display: block; }
+  body[data-variant="C"] #shellC { display: block; }
+
+  /* Nav item primitive (shared look, per-variant dressing) */
+  .navlink {
+    display: inline-flex; align-items: center; gap: 7px;
+    color: var(--dim); text-decoration: none; white-space: nowrap;
+    font-size: var(--fs-sm); font-weight: 600;
+    padding: 7px 11px; border-radius: var(--r-md);
+    transition: color .15s, background .15s;
+  }
+  .navlink:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
+  .navlink i.bi { font-size: 14px; opacity: .9; }
+
+  .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 800; color: var(--ink); text-decoration: none; font-size: var(--fs-body); }
+  .brand .logo {
+    width: 26px; height: 26px; border-radius: var(--r-sm); display: grid; place-items: center;
+    background: var(--accent); color: var(--on-accent); font-size: 12px; font-weight: 800;
+  }
+  .verchip {
+    font-family: var(--mono); font-size: var(--fs-xs); color: var(--dim);
+    text-decoration: none; padding: 3px 8px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  }
+  .verchip:hover { color: var(--ink); border-color: var(--accent); }
+  .iconbtn {
+    display: inline-grid; place-items: center; width: 32px; height: 32px;
+    color: var(--dim); background: transparent; border: 1px solid transparent;
+    border-radius: var(--r-md); cursor: pointer; text-decoration: none;
+  }
+  .iconbtn:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
+  .hamburger {
+    display: none; background: transparent; border: 1px solid var(--line); color: var(--ink);
+    border-radius: var(--r-md); width: 34px; height: 32px; cursor: pointer; font-size: 16px;
+  }
+
+  /* Placeholder content block (same in every variant) */
+  .pagehead { display: flex; align-items: baseline; gap: var(--sp-2); margin: var(--sp-4) 0 var(--sp-3); }
+  .pagehead h1 { font-size: var(--fs-h); margin: 0; }
+  .pagehead .sub { color: var(--dim); font-size: var(--fs-sm); }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg);
+    padding: var(--sp-3); box-shadow: var(--shadow);
+  }
+  .card h3 { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); font-weight: 700; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: var(--sp-3); }
+  table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); margin-top: var(--sp-2); }
+  thead th { text-align: left; color: var(--dim); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .5px; padding: 8px; border-bottom: 1px solid var(--line); }
+  tbody td { padding: 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 55%, transparent); }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-xs); font-weight: 600; padding: 3px 8px; border-radius: var(--r-pill); }
+  .pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 16%, transparent); border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent); }
+
+  /* ---------- Variant A: grouped bar ---------- */
+  .shellA .bar {
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    border-bottom: 1px solid var(--line);
+    backdrop-filter: blur(8px);
+  }
+  .shellA .bar .container { display: flex; align-items: center; gap: var(--sp-2); min-height: 56px; }
+  .shellA nav { display: flex; align-items: center; gap: 2px; margin-left: var(--sp-2); flex-wrap: wrap; }
+  .shellA nav .sep { width: 1px; height: 20px; background: var(--line); margin: 0 8px; }
+  .shellA .navlink[aria-current="page"] {
+    color: var(--ink); background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .shellA .meta { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+
+  /* ---------- Variant B: two-tier ---------- */
+  .shellB .util {
+    background: #0a0e14; border-bottom: 1px solid var(--line);
+  }
+  .shellB .util .container { display: flex; align-items: center; gap: var(--sp-2); min-height: 42px; }
+  .shellB .util .right { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+  .shellB .primary {
+    background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  .shellB .primary .container { display: flex; align-items: center; gap: 2px; min-height: 50px; overflow-x: auto; }
+  .shellB .navlink { border-radius: 0; padding: 14px 12px; }
+  .shellB .navlink[aria-current="page"] { color: var(--ink); box-shadow: inset 0 -3px 0 var(--accent); background: transparent; }
+
+  /* ---------- Variant C: priority + more ---------- */
+  .shellC .bar {
+    background: color-mix(in srgb, var(--panel) 92%, transparent);
+    border-bottom: 1px solid var(--line); backdrop-filter: blur(8px);
+  }
+  .shellC .bar .container { display: flex; align-items: center; gap: var(--sp-2); min-height: 56px; }
+  .shellC nav { display: flex; align-items: center; gap: 2px; margin-left: var(--sp-2); }
+  .shellC .navlink[aria-current="page"] { color: var(--accent); background: transparent; }
+  .shellC .navlink[aria-current="page"]::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  .shellC .navlink { position: relative; }
+  .shellC .more { position: relative; }
+  .shellC .more > .navlink { cursor: pointer; }
+  .shellC .menu {
+    display: none; position: absolute; top: 42px; left: 0; z-index: 60; min-width: 220px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-md);
+    box-shadow: var(--shadow-lg); padding: var(--sp-1); flex-direction: column;
+  }
+  .shellC .more.open .menu { display: flex; }
+  .shellC .menu .navlink { justify-content: flex-start; }
+  .shellC .menu .grp { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .6px; color: var(--dim); padding: 8px 11px 3px; }
+  .shellC .cmd {
+    margin-left: auto; display: flex; align-items: center; gap: 7px;
+    background: var(--panel2); border: 1px solid var(--line); border-radius: var(--r-md);
+    padding: 6px 10px; color: var(--dim); font-size: var(--fs-sm); min-width: 190px;
+  }
+  .shellC .cmd input { background: transparent; border: 0; outline: 0; color: var(--ink); font: inherit; width: 100%; }
+
+  /* ---------- Flash / toast treatments ---------- */
+  /* A + C: toast */
+  .toasts { position: fixed; z-index: 90; display: flex; flex-direction: column; gap: 8px; }
+  body[data-variant="A"] .toasts { right: 18px; bottom: 18px; }
+  body[data-variant="C"] .toasts { left: 50%; transform: translateX(-50%); top: 70px; }
+  .toast {
+    display: flex; align-items: flex-start; gap: 10px; min-width: 280px; max-width: 380px;
+    background: var(--panel2); border: 1px solid var(--line); border-left: 3px solid var(--ok);
+    border-radius: var(--r-md); box-shadow: var(--shadow-lg); padding: var(--sp-2) var(--sp-3);
+    font-size: var(--fs-sm);
+  }
+  .toast i.bi { color: var(--ok); margin-top: 1px; }
+  .toast .x { margin-left: auto; color: var(--dim); cursor: pointer; background: none; border: 0; }
+  .toast.warn { border-left-color: var(--warn); } .toast.warn i.bi { color: var(--warn); }
+  .toast.bad { border-left-color: var(--bad); } .toast.bad i.bi { color: var(--bad); }
+
+  /* B: inline banner under the nav */
+  .flashbar {
+    display: flex; align-items: center; gap: 10px;
+    background: color-mix(in srgb, var(--ok) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--ok) 40%, transparent);
+    color: var(--ok); border-radius: var(--r-md);
+    padding: var(--sp-2) var(--sp-3); margin-top: var(--sp-3); font-size: var(--fs-sm);
+  }
+  .flashbar .x { margin-left: auto; color: var(--ok); cursor: pointer; background: none; border: 0; opacity: .8; }
+
+  /* ---------- Responsive ---------- */
+  /* A + C: hamburger sheet under 992px */
+  @media (max-width: 992px) {
+    body[data-variant="A"] .shellA nav,
+    body[data-variant="C"] .shellC nav { display: none; }
+    body[data-variant="A"] .hamburger,
+    body[data-variant="C"] .hamburger { display: inline-grid; place-items: center; }
+    body[data-variant="A"] .shellA .meta .iconbtn,
+    body[data-variant="C"] .shellC .cmd { display: none; }
+    body[data-variant="A"] .sheet,
+    body[data-variant="C"] .sheet { display: none; background: var(--panel); border-bottom: 1px solid var(--line); padding: var(--sp-2) var(--sp-4); }
+    body[data-variant="A"] .sheet.open,
+    body[data-variant="C"] .sheet.open { display: flex; flex-direction: column; gap: 2px; }
+    .sheet .grp { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .6px; color: var(--dim); padding: 8px 11px 3px; }
+    /* B: keep the row, just let it scroll */
+    .container { padding: 0 var(--sp-3); }
+  }
+  @media (min-width: 993px) {
+    body[data-variant="A"] .sheet,
+    body[data-variant="C"] .sheet { display: none !important; }
+  }
+
+  /* ---------- Floating switcher (unchanged from the tokens prototype) ---------- */
+  .switcher {
+    position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: #000; color: #fff; border: 1px solid #444; border-radius: 999px;
+    padding: 7px 12px; font: 600 12px var(--font); box-shadow: 0 10px 30px rgba(0, 0, 0, .6);
+    z-index: 999;
+  }
+  .switcher button { background: #222; color: #fff; border: 1px solid #555; border-radius: 999px; width: 26px; height: 26px; cursor: pointer; font-size: 14px; line-height: 1; }
+  .switcher button:hover { background: #333; }
+  .switcher .tag { opacity: .6; margin-left: 4px; }
+</style>
+
+<body data-variant="A">
+
+<a class="skip" href="#main">Skip to content</a>
+
+<!-- ============================================================
+     VARIANT A — Grouped bar
+     ============================================================ -->
+<div class="shell shellA" id="shellA">
+  <header class="bar">
+    <div class="container">
+      <a class="brand" href="#"><span class="logo">SB</span> STB Proxy</a>
+      <a class="verchip" href="#" title="What's new">v1.9.0</a>
+
+      <nav aria-label="Primary">
+        <a class="navlink" href="#"><i class="bi bi-speedometer2"></i> Dashboard</a>
+        <a class="navlink" href="#"><i class="bi bi-broadcast"></i> Streams</a>
+        <a class="navlink" href="#" aria-current="page"><i class="bi bi-record-circle"></i> Recordings</a>
+        <a class="navlink" href="#"><i class="bi bi-grid-3x3-gap"></i> Multiview</a>
+        <span class="sep" aria-hidden="true"></span>
+        <a class="navlink" href="#"><i class="bi bi-list-ul"></i> Playlist Editor</a>
+        <a class="navlink" href="#"><i class="bi bi-card-list"></i> Guide</a>
+        <a class="navlink" href="#"><i class="bi bi-grid"></i> Blocks</a>
+        <span class="sep" aria-hidden="true"></span>
+        <a class="navlink" href="#"><i class="bi bi-server"></i> Portals</a>
+        <a class="navlink" href="#"><i class="bi bi-people-fill"></i> Accounts</a>
+        <a class="navlink" href="#"><i class="bi bi-sliders"></i> Settings</a>
+      </nav>
+
+      <div class="meta">
+        <a class="iconbtn" href="#" title="Playlist (.m3u)" target="_blank"><i class="bi bi-file-earmark-play"></i></a>
+        <a class="iconbtn" href="#" title="XMLTV" target="_blank"><i class="bi bi-file-earmark-code"></i></a>
+      </div>
+      <button class="hamburger" aria-label="Toggle navigation" onclick="toggleSheet('sheetA')"><i class="bi bi-list"></i></button>
+    </div>
+    <div class="sheet" id="sheetA">
+      <div class="grp">Monitor</div>
+      <a class="navlink" href="#"><i class="bi bi-speedometer2"></i> Dashboard</a>
+      <a class="navlink" href="#"><i class="bi bi-broadcast"></i> Streams</a>
+      <a class="navlink" href="#" aria-current="page"><i class="bi bi-record-circle"></i> Recordings</a>
+      <a class="navlink" href="#"><i class="bi bi-grid-3x3-gap"></i> Multiview</a>
+      <div class="grp">Programme</div>
+      <a class="navlink" href="#"><i class="bi bi-list-ul"></i> Playlist Editor</a>
+      <a class="navlink" href="#"><i class="bi bi-card-list"></i> Guide</a>
+      <a class="navlink" href="#"><i class="bi bi-grid"></i> Blocks</a>
+      <div class="grp">Configuration</div>
+      <a class="navlink" href="#"><i class="bi bi-server"></i> Portals</a>
+      <a class="navlink" href="#"><i class="bi bi-people-fill"></i> Accounts</a>
+      <a class="navlink" href="#"><i class="bi bi-sliders"></i> Settings</a>
+      <div class="grp">Feeds</div>
+      <a class="navlink" href="#"><i class="bi bi-file-earmark-play"></i> Playlist</a>
+      <a class="navlink" href="#"><i class="bi bi-file-earmark-code"></i> XMLTV</a>
+    </div>
+  </header>
+
+  <div class="toasts" role="status" aria-live="polite">
+    <div class="toast ok">
+      <i class="bi bi-check-circle-fill"></i>
+      <span><b>Saved.</b> Filters kept under “NHL”.</span>
+      <button class="x" aria-label="Dismiss"><i class="bi bi-x-lg"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     VARIANT B — Two-tier (utility strip + primary nav)
+     ============================================================ -->
+<div class="shell shellB" id="shellB">
+  <div class="util">
+    <div class="container">
+      <a class="brand" href="#"><span class="logo">SB</span> STB Proxy</a>
+      <a class="verchip" href="#" title="What's new">v1.9.0</a>
+      <div class="right">
+        <a class="iconbtn" href="#" title="Playlist (.m3u)" target="_blank"><i class="bi bi-file-earmark-play"></i></a>
+        <a class="iconbtn" href="#" title="XMLTV" target="_blank"><i class="bi bi-file-earmark-code"></i></a>
+        <button class="iconbtn" title="Theme (light mode — later ticket)" disabled><i class="bi bi-circle-half"></i></button>
+      </div>
+    </div>
+  </div>
+  <div class="primary">
+    <div class="container">
+      <a class="navlink" href="#"><i class="bi bi-speedometer2"></i> Dashboard</a>
+      <a class="navlink" href="#"><i class="bi bi-list-ul"></i> Playlist Editor</a>
+      <a class="navlink" href="#"><i class="bi bi-card-list"></i> Guide</a>
+      <a class="navlink" href="#"><i class="bi bi-grid-3x3-gap"></i> Multiview</a>
+      <a class="navlink" href="#" aria-current="page"><i class="bi bi-record-circle"></i> Recordings</a>
+      <a class="navlink" href="#"><i class="bi bi-broadcast"></i> Streams</a>
+      <a class="navlink" href="#"><i class="bi bi-server"></i> Portals</a>
+      <a class="navlink" href="#"><i class="bi bi-grid"></i> Blocks</a>
+      <a class="navlink" href="#"><i class="bi bi-people-fill"></i> Accounts</a>
+      <a class="navlink" href="#"><i class="bi bi-sliders"></i> Settings</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="flashbar" role="status" aria-live="polite">
+      <i class="bi bi-check-circle-fill"></i>
+      <span><b>Saved.</b> Filters kept under “NHL”.</span>
+      <button class="x" aria-label="Dismiss"><i class="bi bi-x-lg"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     VARIANT C — Priority + More (+ command field)
+     ============================================================ -->
+<div class="shell shellC" id="shellC">
+  <header class="bar">
+    <div class="container">
+      <a class="brand" href="#"><span class="logo">SB</span> STB Proxy</a>
+      <nav aria-label="Primary">
+        <a class="navlink" href="#"><i class="bi bi-speedometer2"></i> Dashboard</a>
+        <a class="navlink" href="#"><i class="bi bi-list-ul"></i> Playlist Editor</a>
+        <a class="navlink" href="#"><i class="bi bi-card-list"></i> Guide</a>
+        <a class="navlink" href="#"><i class="bi bi-grid-3x3-gap"></i> Multiview</a>
+        <a class="navlink" href="#" aria-current="page"><i class="bi bi-record-circle"></i> Recordings</a>
+        <div class="more" id="moreC">
+          <a class="navlink" href="#" onclick="toggleMore(event)">More <i class="bi bi-chevron-down"></i></a>
+          <div class="menu" role="menu">
+            <div class="grp">Monitor</div>
+            <a class="navlink" href="#"><i class="bi bi-broadcast"></i> Streams</a>
+            <div class="grp">Programme</div>
+            <a class="navlink" href="#"><i class="bi bi-grid"></i> Blocks</a>
+            <div class="grp">Configuration</div>
+            <a class="navlink" href="#"><i class="bi bi-server"></i> Portals</a>
+            <a class="navlink" href="#"><i class="bi bi-people-fill"></i> Accounts</a>
+            <a class="navlink" href="#"><i class="bi bi-sliders"></i> Settings</a>
+            <div class="grp">Feeds</div>
+            <a class="navlink" href="#"><i class="bi bi-file-earmark-play"></i> Playlist</a>
+            <a class="navlink" href="#"><i class="bi bi-file-earmark-code"></i> XMLTV</a>
+            <a class="navlink" href="#"><i class="bi bi-clock-history"></i> Changelog <span class="mono" style="color:var(--dim)">v1.9.0</span></a>
+          </div>
+        </div>
+      </nav>
+      <label class="cmd"><i class="bi bi-search"></i><input placeholder="Jump to…"></label>
+      <button class="hamburger" aria-label="Toggle navigation" onclick="toggleSheet('sheetC')"><i class="bi bi-list"></i></button>
+    </div>
+    <div class="sheet" id="sheetC">
+      <div class="grp">Monitor</div>
+      <a class="navlink" href="#"><i class="bi bi-speedometer2"></i> Dashboard</a>
+      <a class="navlink" href="#"><i class="bi bi-broadcast"></i> Streams</a>
+      <a class="navlink" href="#" aria-current="page"><i class="bi bi-record-circle"></i> Recordings</a>
+      <a class="navlink" href="#"><i class="bi bi-grid-3x3-gap"></i> Multiview</a>
+      <div class="grp">Programme</div>
+      <a class="navlink" href="#"><i class="bi bi-list-ul"></i> Playlist Editor</a>
+      <a class="navlink" href="#"><i class="bi bi-card-list"></i> Guide</a>
+      <a class="navlink" href="#"><i class="bi bi-grid"></i> Blocks</a>
+      <div class="grp">Configuration</div>
+      <a class="navlink" href="#"><i class="bi bi-server"></i> Portals</a>
+      <a class="navlink" href="#"><i class="bi bi-people-fill"></i> Accounts</a>
+      <a class="navlink" href="#"><i class="bi bi-sliders"></i> Settings</a>
+      <div class="grp">Feeds</div>
+      <a class="navlink" href="#"><i class="bi bi-file-earmark-play"></i> Playlist</a>
+      <a class="navlink" href="#"><i class="bi bi-file-earmark-code"></i> XMLTV</a>
+      <a class="navlink" href="#"><i class="bi bi-clock-history"></i> Changelog</a>
+    </div>
+  </header>
+
+  <div class="toasts" role="status" aria-live="polite">
+    <div class="toast ok">
+      <i class="bi bi-check-circle-fill"></i>
+      <span><b>Saved.</b> Filters kept under “NHL”.</span>
+      <button class="x" aria-label="Dismiss"><i class="bi bi-x-lg"></i></button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     PLACEHOLDER CONTENT (identical in every variant)
+     ============================================================ -->
+<main id="main" class="container">
+  <div class="pagehead">
+    <h1>Recordings</h1>
+    <span class="sub">3 active · 1 partial · refreshed 12s ago</span>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <h3>Now recording</h3>
+      <table>
+        <thead><tr><th>Channel</th><th>Programme</th><th>State</th></tr></thead>
+        <tbody>
+          <tr><td>TSN 1 FHD</td><td>NHL · Leafs vs Habs</td><td><span class="pill ok">● Recording</span></td></tr>
+          <tr><td>Sportsnet One</td><td>Blue Jays Live</td><td><span class="pill ok">● Recording</span></td></tr>
+          <tr><td>Discovery</td><td>How It's Made</td><td><span class="pill ok">● Recording</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Recently finished</h3>
+      <p class="sub" style="color:var(--dim)">Completed recordings stay listed until the portal prunes them.</p>
+      <table>
+        <thead><tr><th>Channel</th><th>Duration</th></tr></thead>
+        <tbody>
+          <tr><td>BBC World News</td><td class="mono">00:30:00</td></tr>
+          <tr><td>CNN</td><td class="mono">01:00:00</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- ============================================================
+     FLOATING SWITCHER
+     ============================================================ -->
+<div class="switcher" role="group" aria-label="Prototype variant">
+  <button id="prev" aria-label="Previous variant">‹</button>
+  <span><b id="vkey">A</b><span class="tag" id="vlabel">(Grouped bar)</span></span>
+  <button id="next" aria-label="Next variant">›</button>
+</div>
+
+<script>
+  const VARIANTS = {
+    A: { name: "Grouped bar", note: "one bar · grouped by role · meta icons · active pill · toast bottom-right · hamburger" },
+    B: { name: "Two-tier", note: "utility strip + nav row · active underline · inline flash · scrolling nav" },
+    C: { name: "Priority + More", note: "5 inline + More menu · command field · active dot · toast top-centre" }
+  };
+  const ORDER = ["A", "B", "C"];
+
+  function current() {
+    const v = new URLSearchParams(location.search).get("variant");
+    return ORDER.includes(v) ? v : "A";
+  }
+
+  function apply(v) {
+    document.body.dataset.variant = v;
+    document.getElementById("vkey").textContent = v;
+    document.getElementById("vlabel").textContent = "(" + VARIANTS[v].name + ")";
+    const url = new URL(location.href);
+    url.searchParams.set("variant", v);
+    history.replaceState(null, "", url);
+  }
+
+  function step(d) {
+    const i = ORDER.indexOf(current());
+    apply(ORDER[(i + d + ORDER.length) % ORDER.length]);
+  }
+
+  function toggleSheet(id) { document.getElementById(id).classList.toggle("open"); }
+  function toggleMore(e) { e.preventDefault(); document.getElementById("moreC").classList.toggle("open"); }
+  document.addEventListener("click", (e) => {
+    const more = document.getElementById("moreC");
+    if (more && !more.contains(e.target)) more.classList.remove("open");
+  });
+
+  document.getElementById("prev").onclick = () => step(-1);
+  document.getElementById("next").onclick = () => step(1);
+  document.addEventListener("keydown", (e) => {
+    const el = e.target;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+    if (e.key === "ArrowLeft") step(-1);
+    if (e.key === "ArrowRight") step(1);
+  });
+
+  apply(current());
+</script>
+</body>
+</html>
