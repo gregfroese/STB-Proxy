@@ -20,7 +20,6 @@
 
   let pickSlot = $state<number | null>(null);
   let armed = $state<number | null>(null);
-  let focusSlot = $state(0);
   let pickQuery = $state("");
   let retryKeys = $state<Record<number, number>>({});
   let unmuted = $state(false);
@@ -56,20 +55,23 @@
 
   const channels = $derived($lineup?.channels ?? []);
 
-  // Phone: portrait = single focused tile, landscape = 1×2. Desktop uses the layout chooser.
+  // Phone: two tiles, laid out by orientation (landscape 2×1, portrait 1×2).
+  // Desktop uses the layout chooser.
   const shown = $derived.by(() => {
-    if (!phone) return visibleTiles($tiles, $layout);
-    if (portrait) {
-      const tile = $tiles[focusSlot];
-      return tile ? [tile] : [];
-    }
-    return $tiles.slice(0, 2);
+    if (phone) return $tiles.slice(0, 2);
+    return visibleTiles($tiles, $layout);
   });
 
-  const LAYOUT_CLASS: Record<string, string> = { big: "big", "2x2": "two", "3x3": "three" };
+  const LAYOUT_CLASS: Record<string, string> = {
+    big: "big",
+    "2x1": "two-by-one",
+    "1x2": "one-by-two",
+    "2x2": "two",
+    "3x3": "three",
+  };
 
   const layoutClass = $derived.by(() => {
-    if (phone) return portrait ? "one" : "two";
+    if (phone) return portrait ? "one-by-two" : "two-by-one";
     return LAYOUT_CLASS[$layout];
   });
 
@@ -111,11 +113,8 @@
   function tileClick(slot: number) {
     if (armed != null && armed !== slot) {
       tiles.update((list) => swapTiles(list, armed as number, slot));
-      armed = null;
-    } else {
-      armed = null;
     }
-    focusSlot = slot;
+    armed = null;
   }
 
   function retry(slot: number) {
@@ -152,7 +151,6 @@
         audio={unmuted && audio === tile.slot}
         error={$tileErrors[tile.slot] ?? null}
         armed={armed === tile.slot}
-        focused={focusSlot === tile.slot}
         retryKey={retryKeys[tile.slot] ?? 0}
         onError={setError}
         onPick={openPick}
@@ -164,20 +162,6 @@
       />
     {/each}
   </div>
-
-  {#if phone}
-    <div class="mvstrip">
-      {#each $tiles as tile (tile.slot)}
-        <button
-          class="sc {focusSlot === tile.slot ? 'on' : ''}"
-          onclick={() => (focusSlot = tile.slot)}
-        >
-          <Logo name={tile.channel?.name ?? "+"} logo={tile.channel?.logo ?? null} size={22} />
-          <span>{tile.channel?.name ?? "Empty"}</span>
-        </button>
-      {/each}
-    </div>
-  {/if}
 </div>
 
 {#if pickSlot != null}

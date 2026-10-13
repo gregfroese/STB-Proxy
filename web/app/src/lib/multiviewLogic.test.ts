@@ -131,8 +131,12 @@ describe("layouts", () => {
   it("each layout shows the right number of tiles", () => {
     const tiles = emptyTiles();
     expect(visibleCount("big")).toBe(4);
+    expect(visibleCount("2x1")).toBe(2);
+    expect(visibleCount("1x2")).toBe(2);
     expect(visibleCount("2x2")).toBe(4);
     expect(visibleCount("3x3")).toBe(9);
+    expect(visibleTiles(tiles, "2x1")).toHaveLength(2);
+    expect(visibleTiles(tiles, "1x2")).toHaveLength(2);
     expect(visibleTiles(tiles, "2x2")).toHaveLength(4);
     expect(visibleTiles(tiles, "3x3")).toHaveLength(9);
   });

@@ -7,10 +7,12 @@ import type { PlaybackError } from "./playerLogic";
 /** Web grid slots (spec 2.5: up to 3×3). */
 export const MULTIVIEW_SLOTS = 9;
 
-export type MultiviewLayout = "big" | "2x2" | "3x3";
+export type MultiviewLayout = "big" | "2x1" | "1x2" | "2x2" | "3x3";
 
 export const LAYOUTS: { key: MultiviewLayout; label: string }[] = [
   { key: "big", label: "Big + strip" },
+  { key: "2x1", label: "2×1" },
+  { key: "1x2", label: "1×2" },
   { key: "2x2", label: "2×2" },
   { key: "3x3", label: "3×3" },
 ];
@@ -27,7 +29,7 @@ export function emptyTiles(count = MULTIVIEW_SLOTS): MultiviewTile[] {
 
 /** How many tiles a layout shows. */
 export function visibleCount(layout: MultiviewLayout): number {
-  return { big: 4, "2x2": 4, "3x3": 9 }[layout];
+  return { big: 4, "2x1": 2, "1x2": 2, "2x2": 4, "3x3": 9 }[layout];
 }
 
 /** The Tiles a layout shows, in slot order. */
