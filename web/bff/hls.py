@@ -55,6 +55,8 @@ class HlsManager:
                 f"{self.proxy_url}/play/{portal}/{channel_id}",
                 "-c",
                 "copy",
+                "-bsf:a",
+                "aac_adtstoasc",
                 "-f",
                 "hls",
                 "-hls_time",
