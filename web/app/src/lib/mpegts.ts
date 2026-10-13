@@ -26,74 +26,102 @@ interface AttachOptions {
   onPlaying?: () => void;
 }
 
+const PLAYER_CONFIG = {
+  // A generous stash smooths jitter, and we do NOT chase latency (chasing drops
+  // frames and stutters a live feed). Bound the MSE buffer so long live playback
+  // doesn't stall on the SourceBuffer quota.
+  enableStashBuffer: true,
+  stashInitialSize: 1024,
+  liveBufferLatencyChasing: false,
+  autoCleanupSourceBuffer: true,
+  autoCleanupMaxBackwardDuration: 30,
+  autoCleanupMinBackwardDuration: 10,
+  lazyLoad: false,
+} as const;
+
+type MpegtsPlayer = ReturnType<typeof mpegts.createPlayer>;
+
+function classify(info: { code?: number } | undefined): PlaybackError {
+  const status =
+    info && typeof info.code === "number" && info.code >= 100 && info.code <= 599
+      ? info.code
+      : null;
+  return classifySourceError({
+    isHttpResponse: status != null,
+    responseCode: status,
+    location: null,
+  });
+}
+
 export function attachPlayer(options: AttachOptions): PlayerHandle | null {
   if (!mpegts.isSupported()) return null;
 
-  try {
-    const player = mpegts.createPlayer(
+  let player: MpegtsPlayer | null = null;
+  let gotMedia = false;
+  let usingWorker = true;
+  let destroyed = false;
+
+  const start = (worker: boolean): void => {
+    player = mpegts.createPlayer(
       { type: "mpegts", isLive: true, url: options.url },
-      {
-        // Main-thread demux (no blob Worker), a generous stash, and no latency
-        // chasing (which drops frames and stutters a live feed). Bound the MSE
-        // buffer so long live playback doesn't stall on the SourceBuffer quota.
-        enableWorker: false,
-        enableStashBuffer: true,
-        stashInitialSize: 1024,
-        liveBufferLatencyChasing: false,
-        autoCleanupSourceBuffer: true,
-        autoCleanupMaxBackwardDuration: 30,
-        autoCleanupMinBackwardDuration: 10,
-        lazyLoad: false,
-      },
+      { ...PLAYER_CONFIG, enableWorker: worker },
     );
     player.attachMediaElement(options.media);
-    player.on(
-      mpegts.Events.ERROR,
-      (_type: string, _detail: string, info: { code?: number } | undefined) => {
-        const status =
-          info && typeof info.code === "number" && info.code >= 100 && info.code <= 599
-            ? info.code
-            : null;
-        options.onError(
-          classifySourceError({
-            isHttpResponse: status != null,
-            responseCode: status,
-            location: null,
-          }),
-        );
-      },
-    );
-    player.on(mpegts.Events.MEDIA_INFO, () => options.onPlaying?.());
-
+    player.on(mpegts.Events.ERROR, (_type: string, _detail: string, info: { code?: number }) => {
+      if (!gotMedia && usingWorker && !destroyed) {
+        // The blob worker is unavailable here (e.g. CSP): retry on the main thread.
+        usingWorker = false;
+        try {
+          player?.destroy();
+        } catch {
+          /* ignore */
+        }
+        start(false);
+        return;
+      }
+      options.onError(classify(info));
+    });
+    player.on(mpegts.Events.MEDIA_INFO, () => {
+      gotMedia = true;
+      options.onPlaying?.();
+    });
     options.media.muted = options.muted;
     player.load();
     const play = player.play() as unknown as Promise<void> | undefined;
     if (play && typeof play.catch === "function") play.catch(() => undefined);
+  };
 
-    return {
-      destroy() {
-        try {
-          player.pause();
-          player.unload();
-          player.detachMediaElement();
-          player.destroy();
-        } catch {
-          /* already torn down */
-        }
-      },
-      stats() {
-        try {
-          const info = (
-            player as unknown as { statisticsInfo?: { speed?: number } }
-          ).statisticsInfo;
-          return { speedKBps: info?.speed ?? 0 };
-        } catch {
-          return { speedKBps: 0 };
-        }
-      },
-    };
+  try {
+    start(true);
   } catch {
-    options.onError({ kind: "unreachable" });
-    return null;
+    try {
+      start(false);
+    } catch {
+      options.onError({ kind: "unreachable" });
+      return null;
+    }
   }
+
+  return {
+    destroy() {
+      destroyed = true;
+      try {
+        player?.pause();
+        player?.unload();
+        player?.detachMediaElement();
+        player?.destroy();
+      } catch {
+        /* already torn down */
+      }
+    },
+    stats() {
+      try {
+        const info = (player as unknown as { statisticsInfo?: { speed?: number } } | null)
+          ?.statisticsInfo;
+        return { speedKBps: info?.speed ?? 0 };
+      } catch {
+        return { speedKBps: 0 };
+      }
+    },
+  };
 }
