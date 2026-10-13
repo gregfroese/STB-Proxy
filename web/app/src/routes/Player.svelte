@@ -172,6 +172,8 @@
   // Playback telemetry, shown when the URL carries ?debug=1.
   const debug = $derived($route.query.get("debug") === "1");
   let debugText = $state("");
+  let prevFrames = 0;
+  let prevDropped = 0;
 
   $effect(() => {
     if (!debug) return;
@@ -182,11 +184,16 @@
       const ahead = buffered.length ? buffered.end(buffered.length - 1) - video.currentTime : 0;
       const quality = video.getVideoPlaybackQuality?.();
       const speed = handle?.stats().speedKBps ?? 0;
+      const deltaFrames = (quality?.totalVideoFrames ?? 0) - prevFrames;
+      const deltaDropped = (quality?.droppedVideoFrames ?? 0) - prevDropped;
+      prevFrames = quality?.totalVideoFrames ?? prevFrames;
+      prevDropped = quality?.droppedVideoFrames ?? prevDropped;
+      const rate = deltaFrames > 0 ? Math.round((deltaDropped / deltaFrames) * 100) : 0;
       debugText = `${handle?.mode() ?? "?"} · ${video.videoWidth}×${video.videoHeight} · speed ${speed.toFixed(
         0,
       )} KB/s · buffer ${ahead.toFixed(1)}s · dropped ${quality?.droppedVideoFrames ?? "?"}/${
         quality?.totalVideoFrames ?? "?"
-      } · rate ${video.playbackRate} · rs ${video.readyState}`;
+      } (now ${rate}%) · rate ${video.playbackRate} · rs ${video.readyState}`;
     }, 1000);
     return () => window.clearInterval(timer);
   });
