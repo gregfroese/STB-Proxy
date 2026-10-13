@@ -93,7 +93,7 @@
     {#if audio}<div class="audiobadge">🔊 AUDIO</div>{/if}
 
     {#if status.kind === "tuner_busy"}
-      <div class="statemsg">
+      <div class="statemsg" onclick={(event) => event.stopPropagation()}>
         <div class="inner">
           <div>⏳</div>
           <h4>All tuners busy</h4>
@@ -105,7 +105,7 @@
         </div>
       </div>
     {:else if status.kind === "failed"}
-      <div class="statemsg">
+      <div class="statemsg" onclick={(event) => event.stopPropagation()}>
         <div class="inner">
           <div>⚠</div>
           <h4>Stream unreachable</h4>
@@ -118,7 +118,7 @@
       </div>
     {/if}
 
-    <div class="tilechip">
+    <div class="tilechip" onclick={(event) => event.stopPropagation()}>
       <button class="tbtn" onclick={() => onPick(tile.slot)}>Pick</button>
       <button class="tbtn" onclick={() => onSwap(tile.slot)}>Swap</button>
       <button
