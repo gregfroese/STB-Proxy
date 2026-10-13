@@ -22,6 +22,10 @@
     --warn: #e3b341;
     --bad: #f85149;
 
+    /* Component-only tokens */
+    --scrim: rgba(0, 0, 0, .62);
+    --logo-mat: var(--ink);
+
     /* Type */
     --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -251,19 +255,26 @@ i.bi {
     gap: 4px;
 }
 
+/* One icon-button component: square 2rem, a 24x24 minimum hit target, --dim
+   brightening to --ink. `iconbtn` is the shell's alias for the same rule. */
+.icon-button,
 .iconbtn {
     display: inline-grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
+    width: 2rem;
+    height: 2rem;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
     color: var(--dim);
     background: transparent;
     border: 1px solid transparent;
-    border-radius: var(--r-md);
+    border-radius: var(--r-sm);
     cursor: pointer;
     text-decoration: none;
 }
 
+.icon-button:hover,
 .iconbtn:hover {
     color: var(--ink);
     background: color-mix(in srgb, var(--ink) 6%, transparent);
@@ -411,6 +422,611 @@ i.bi {
         display: none !important;
     }
 }
+
+/* ========================================================== components ==== */
+/* Release 3 (ticket 06): the canonical component contract. Every value comes
+   from the tokens above, as Bootstrap-class overrides, so pages inherit the
+   look without page-local CSS. */
+
+/* --- text utilities onto tokens ------------------------------------------ */
+
+.text-body-secondary,
+.text-muted {
+    color: var(--dim) !important;
+}
+
+.text-secondary { color: var(--dim) !important; }
+.text-success { color: var(--ok) !important; }
+.text-warning { color: var(--warn) !important; }
+.text-danger { color: var(--bad) !important; }
+.text-info { color: var(--accent) !important; }
+
+/* --- cards --------------------------------------------------------------- */
+
+.card {
+    --bs-card-bg: var(--panel);
+    --bs-card-border-color: var(--line);
+    --bs-card-border-radius: var(--r-md);
+    --bs-card-inner-border-radius: calc(var(--r-md) - 1px);
+    --bs-card-color: var(--ink);
+    --bs-card-cap-bg: transparent;
+    --bs-card-cap-color: var(--ink);
+    background-color: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    color: var(--ink);
+}
+
+.card-header,
+.card-footer {
+    background-color: transparent;
+    border-color: var(--line);
+    color: var(--ink);
+}
+
+.card-header { border-bottom: 1px solid var(--line); }
+.card-footer { border-top: 1px solid var(--line); }
+
+/* The old colour variants collapse onto the one canonical card. */
+.card.bg-light,
+.card.bg-secondary,
+.card.bg-dark,
+.card.bg-black {
+    background-color: var(--panel) !important;
+    border-color: var(--line) !important;
+}
+
+.card.text-dark,
+.card.text-light {
+    color: var(--ink) !important;
+}
+
+.card.border-secondary { border-color: var(--line) !important; }
+
+/* --- card grid (Streams' grid is the shared treatment: 1 / 2 / 3) -------- */
+
+.card-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-3);
+}
+
+.card-grid > * { min-width: 0; }
+
+@media (min-width: 768px) {
+    .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1200px) {
+    .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* --- data tables (DataTables 2 output and plain HTML tables alike) ------- */
+
+.table,
+.table-dark {
+    --bs-table-bg: transparent;
+    --bs-table-color: var(--ink);
+    --bs-table-border-color: var(--line);
+    --bs-table-striped-bg: color-mix(in srgb, var(--panel2) 55%, transparent);
+    --bs-table-striped-color: var(--ink);
+    --bs-table-active-bg: color-mix(in srgb, var(--accent) 12%, transparent);
+    --bs-table-active-color: var(--ink);
+    --bs-table-hover-bg: color-mix(in srgb, var(--accent) 8%, transparent);
+    --bs-table-hover-color: var(--ink);
+    color: var(--ink);
+    border-color: var(--line);
+    vertical-align: middle;
+}
+
+.table > :not(caption) > * > * {
+    border-bottom-color: var(--line);
+    vertical-align: middle;
+}
+
+.table thead th,
+.table > thead > tr > th {
+    color: var(--dim);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-bold);
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--line);
+}
+
+/* --- forms and switches -------------------------------------------------- */
+
+.form-control,
+.form-select {
+    background-color: var(--panel2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    color: var(--ink);
+}
+
+.form-control:focus,
+.form-select:focus {
+    background-color: var(--panel2);
+    border-color: var(--accent);
+    color: var(--ink);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.form-control::placeholder { color: var(--dim); opacity: 1; }
+
+.form-control:disabled,
+.form-select:disabled {
+    background-color: color-mix(in srgb, var(--panel2) 55%, transparent);
+    color: var(--dim);
+}
+
+.form-label,
+.form-check-label { color: var(--ink); }
+
+.form-text { color: var(--dim); }
+
+.input-group-text {
+    background-color: var(--panel2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--r-sm);
+    color: var(--dim);
+}
+
+.input-group > .form-control,
+.input-group > .form-select,
+.input-group > .input-group-text,
+.input-group > .btn {
+    border-color: var(--line-strong);
+}
+
+.form-check-input {
+    background-color: var(--panel2);
+    border: 1px solid var(--line-strong);
+}
+
+.form-check-input:checked {
+    background-color: var(--accent);
+    border-color: var(--accent);
+}
+
+.form-check-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* --- buttons ------------------------------------------------------------- */
+
+.btn {
+    --bs-btn-color: var(--ink);
+    --bs-btn-bg: var(--panel2);
+    --bs-btn-border-color: var(--line);
+    --bs-btn-hover-color: var(--ink);
+    --bs-btn-hover-bg: color-mix(in srgb, var(--ink) 8%, var(--panel2));
+    --bs-btn-hover-border-color: var(--accent);
+    --bs-btn-active-color: var(--ink);
+    --bs-btn-active-bg: var(--panel2);
+    --bs-btn-active-border-color: var(--accent);
+    --bs-btn-disabled-color: var(--dim);
+    --bs-btn-disabled-bg: var(--panel2);
+    --bs-btn-disabled-border-color: var(--line);
+    border-radius: var(--r-sm);
+}
+
+/* Filled variants: semantic background, --on-accent text. */
+.btn-primary,
+.btn-info {
+    --bs-btn-bg: var(--accent);
+    --bs-btn-border-color: var(--accent);
+    --bs-btn-color: var(--on-accent);
+    --bs-btn-hover-bg: color-mix(in srgb, var(--accent) 85%, var(--ink));
+    --bs-btn-hover-border-color: color-mix(in srgb, var(--accent) 85%, var(--ink));
+    --bs-btn-hover-color: var(--on-accent);
+    --bs-btn-active-bg: color-mix(in srgb, var(--accent) 72%, var(--ink));
+    --bs-btn-active-border-color: color-mix(in srgb, var(--accent) 72%, var(--ink));
+    --bs-btn-active-color: var(--on-accent);
+    --bs-btn-disabled-bg: var(--accent);
+    --bs-btn-disabled-border-color: var(--accent);
+    --bs-btn-disabled-color: var(--on-accent);
+}
+
+.btn-success {
+    --bs-btn-bg: var(--ok);
+    --bs-btn-border-color: var(--ok);
+    --bs-btn-color: var(--on-accent);
+    --bs-btn-hover-bg: color-mix(in srgb, var(--ok) 85%, var(--ink));
+    --bs-btn-hover-border-color: color-mix(in srgb, var(--ok) 85%, var(--ink));
+    --bs-btn-hover-color: var(--on-accent);
+    --bs-btn-active-bg: color-mix(in srgb, var(--ok) 72%, var(--ink));
+    --bs-btn-active-border-color: color-mix(in srgb, var(--ok) 72%, var(--ink));
+    --bs-btn-active-color: var(--on-accent);
+    --bs-btn-disabled-bg: var(--ok);
+    --bs-btn-disabled-border-color: var(--ok);
+    --bs-btn-disabled-color: var(--on-accent);
+}
+
+.btn-danger {
+    --bs-btn-bg: var(--bad);
+    --bs-btn-border-color: var(--bad);
+    --bs-btn-color: var(--on-accent);
+    --bs-btn-hover-bg: color-mix(in srgb, var(--bad) 85%, var(--ink));
+    --bs-btn-hover-border-color: color-mix(in srgb, var(--bad) 85%, var(--ink));
+    --bs-btn-hover-color: var(--on-accent);
+    --bs-btn-active-bg: color-mix(in srgb, var(--bad) 72%, var(--ink));
+    --bs-btn-active-border-color: color-mix(in srgb, var(--bad) 72%, var(--ink));
+    --bs-btn-active-color: var(--on-accent);
+    --bs-btn-disabled-bg: var(--bad);
+    --bs-btn-disabled-border-color: var(--bad);
+    --bs-btn-disabled-color: var(--on-accent);
+}
+
+.btn-warning {
+    --bs-btn-bg: var(--warn);
+    --bs-btn-border-color: var(--warn);
+    --bs-btn-color: var(--on-accent);
+    --bs-btn-hover-bg: color-mix(in srgb, var(--warn) 85%, var(--ink));
+    --bs-btn-hover-border-color: color-mix(in srgb, var(--warn) 85%, var(--ink));
+    --bs-btn-hover-color: var(--on-accent);
+    --bs-btn-active-bg: color-mix(in srgb, var(--warn) 72%, var(--ink));
+    --bs-btn-active-border-color: color-mix(in srgb, var(--warn) 72%, var(--ink));
+    --bs-btn-active-color: var(--on-accent);
+    --bs-btn-disabled-bg: var(--warn);
+    --bs-btn-disabled-border-color: var(--warn);
+    --bs-btn-disabled-color: var(--on-accent);
+}
+
+/* Default / secondary / outline-light: --panel2 with a --line border. */
+.btn-secondary,
+.btn-light,
+.btn-dark,
+.btn-outline-light,
+.btn-outline-secondary {
+    --bs-btn-color: var(--ink);
+    --bs-btn-bg: var(--panel2);
+    --bs-btn-border-color: var(--line);
+    --bs-btn-hover-color: var(--ink);
+    --bs-btn-hover-bg: color-mix(in srgb, var(--ink) 8%, var(--panel2));
+    --bs-btn-hover-border-color: var(--accent);
+    --bs-btn-active-color: var(--ink);
+    --bs-btn-active-bg: var(--panel2);
+    --bs-btn-active-border-color: var(--accent);
+    --bs-btn-disabled-color: var(--dim);
+    --bs-btn-disabled-bg: var(--panel2);
+    --bs-btn-disabled-border-color: var(--line);
+}
+
+/* Outline semantic variants: token border/colour, filled on hover. */
+.btn-outline-success {
+    --bs-btn-color: var(--ok);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--ok);
+    --bs-btn-hover-color: var(--on-accent);
+    --bs-btn-hover-bg: var(--ok);
+    --bs-btn-hover-border-color: var(--ok);
+    --bs-btn-active-color: var(--on-accent);
+    --bs-btn-active-bg: var(--ok);
+    --bs-btn-active-border-color: var(--ok);
+}
+
+.btn-outline-danger {
+    --bs-btn-color: var(--bad);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--bad);
+    --bs-btn-hover-color: var(--on-accent);
+    --bs-btn-hover-bg: var(--bad);
+    --bs-btn-hover-border-color: var(--bad);
+    --bs-btn-active-color: var(--on-accent);
+    --bs-btn-active-bg: var(--bad);
+    --bs-btn-active-border-color: var(--bad);
+}
+
+.btn-outline-warning {
+    --bs-btn-color: var(--warn);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--warn);
+    --bs-btn-hover-color: var(--on-accent);
+    --bs-btn-hover-bg: var(--warn);
+    --bs-btn-hover-border-color: var(--warn);
+    --bs-btn-active-color: var(--on-accent);
+    --bs-btn-active-bg: var(--warn);
+    --bs-btn-active-border-color: var(--warn);
+}
+
+.btn-outline-info {
+    --bs-btn-color: var(--accent);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: var(--accent);
+    --bs-btn-hover-color: var(--on-accent);
+    --bs-btn-hover-bg: var(--accent);
+    --bs-btn-hover-border-color: var(--accent);
+    --bs-btn-active-color: var(--on-accent);
+    --bs-btn-active-bg: var(--accent);
+    --bs-btn-active-border-color: var(--accent);
+}
+
+.btn-link {
+    --bs-btn-color: var(--accent);
+    --bs-btn-bg: transparent;
+    --bs-btn-border-color: transparent;
+    --bs-btn-hover-color: color-mix(in srgb, var(--accent) 78%, var(--ink));
+    --bs-btn-hover-bg: transparent;
+    --bs-btn-hover-border-color: transparent;
+    --bs-btn-active-color: color-mix(in srgb, var(--accent) 78%, var(--ink));
+    --bs-btn-active-bg: transparent;
+    --bs-btn-active-border-color: transparent;
+}
+
+/* --- tabs: one canonical .nav-tabs override ------------------------------ */
+
+.nav-tabs {
+    --bs-nav-tabs-border-color: var(--line);
+    --bs-nav-tabs-link-active-color: var(--ink);
+    --bs-nav-tabs-link-active-bg: var(--tint-accent);
+    --bs-nav-tabs-link-active-border-color: var(--line) var(--line) var(--line);
+    border-bottom: 1px solid var(--line);
+}
+
+.nav-tabs .nav-link {
+    color: var(--dim);
+    border: 1px solid transparent;
+    border-top-left-radius: var(--r-sm);
+    border-top-right-radius: var(--r-sm);
+}
+
+.nav-tabs .nav-link:hover,
+.nav-tabs .nav-link:focus {
+    color: var(--ink);
+    border-color: transparent;
+    isolation: auto;
+}
+
+.nav-tabs .nav-link.active,
+.nav-tabs .nav-item.show .nav-link {
+    color: var(--ink);
+    background-color: var(--tint-accent);
+    border-color: var(--line) var(--line) var(--line);
+}
+
+/* --- modals -------------------------------------------------------------- */
+
+.modal-content {
+    background-color: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg);
+    color: var(--ink);
+}
+
+.modal-content.bg-dark,
+.modal-content.text-light {
+    background-color: var(--panel) !important;
+    color: var(--ink) !important;
+}
+
+.modal-header { border-bottom: 1px solid var(--line); }
+.modal-footer { border-top: 1px solid var(--line); }
+
+.modal-backdrop {
+    --bs-backdrop-bg: var(--scrim);
+    --bs-backdrop-opacity: 1;
+}
+
+[data-bs-theme="dark"] .btn-close {
+    filter: var(--bs-btn-close-white-filter);
+}
+
+[data-bs-theme="light"] .btn-close {
+    filter: none;
+}
+
+/* --- notices / error surfaces -------------------------------------------- */
+
+.notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    background-color: color-mix(in srgb, var(--panel2) 60%, transparent);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    color: var(--ink);
+    font-size: var(--fs-sm);
+}
+
+.notice i.bi { color: var(--dim); margin-top: 1px; }
+
+.notice.error {
+    background-color: var(--tint-bad);
+    border-color: var(--border-bad);
+}
+
+.notice.error i.bi { color: var(--bad); }
+
+/* Existing Bootstrap alerts collapse onto the token surfaces. */
+.alert {
+    --bs-alert-color: var(--ink);
+    --bs-alert-bg: color-mix(in srgb, var(--panel2) 60%, transparent);
+    --bs-alert-border-color: var(--line);
+    --bs-alert-border-radius: var(--r-md);
+    border: 1px solid var(--bs-alert-border-color);
+}
+
+.alert-secondary {
+    --bs-alert-color: var(--ink);
+    --bs-alert-bg: color-mix(in srgb, var(--panel2) 60%, transparent);
+    --bs-alert-border-color: var(--line);
+}
+
+.alert-success {
+    --bs-alert-color: var(--ink);
+    --bs-alert-bg: var(--tint-ok);
+    --bs-alert-border-color: var(--border-ok);
+}
+
+.alert-warning {
+    --bs-alert-color: var(--ink);
+    --bs-alert-bg: var(--tint-warn);
+    --bs-alert-border-color: var(--border-warn);
+}
+
+.alert-danger {
+    --bs-alert-color: var(--ink);
+    --bs-alert-bg: var(--tint-bad);
+    --bs-alert-border-color: var(--border-bad);
+}
+
+.alert-info {
+    --bs-alert-color: var(--ink);
+    --bs-alert-bg: var(--tint-info);
+    --bs-alert-border-color: var(--border-info);
+}
+
+/* --- badges: --ink label, semantic colour in the fill + border + dot ----- */
+
+.badge {
+    color: var(--ink) !important;
+    background-color: color-mix(in srgb, var(--ink) 8%, transparent);
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    font-weight: var(--fw-semibold);
+    line-height: 1;
+}
+
+.badge.bg-secondary,
+.badge.bg-dark,
+.badge.bg-light,
+.badge.bg-black {
+    background-color: color-mix(in srgb, var(--ink) 8%, transparent) !important;
+    border-color: var(--line);
+    color: var(--ink) !important;
+}
+
+.badge.bg-success { background-color: var(--tint-ok) !important; border-color: var(--border-ok); }
+.badge.bg-warning { background-color: var(--tint-warn) !important; border-color: var(--border-warn); }
+.badge.bg-danger { background-color: var(--tint-bad) !important; border-color: var(--border-bad); }
+.badge.bg-info,
+.badge.bg-primary { background-color: var(--tint-accent) !important; border-color: var(--border-info); }
+
+.badge.text-dark,
+.badge.text-light { color: var(--ink) !important; }
+
+.badge.dot::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    margin-right: 5px;
+}
+
+/* --- block-set pills: the wrapping .tag stack ---------------------------- */
+
+.tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background-color: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    color: var(--ink);
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-semibold);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.tag.extra {
+    background-color: var(--tint-accent);
+    border-color: var(--border-info);
+}
+
+.tag .more { color: var(--dim); }
+
+/* --- empty state (busy and error variants) ------------------------------- */
+
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    padding: var(--sp-4);
+    color: var(--dim);
+    font-size: var(--fs-sm);
+    text-align: center;
+    border: 1px dashed var(--line);
+    border-radius: var(--r-lg);
+}
+
+.empty-state i.bi { font-size: 28px; opacity: .8; }
+
+.empty-state .actions {
+    display: flex;
+    gap: var(--sp-1);
+    margin-top: var(--sp-1);
+}
+
+.empty-state.busy i.bi {
+    animation: spin 1s linear infinite;
+    opacity: 1;
+}
+
+.empty-state.error {
+    color: var(--bad);
+    border-color: var(--border-bad);
+}
+
+.empty-state.error i.bi { color: var(--bad); }
+
+/* --- log panel ----------------------------------------------------------- */
+
+.log-panel {
+    height: 40pc;
+    margin: 0;
+    padding: var(--sp-3);
+    overflow-y: auto;
+    background-color: var(--panel2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: var(--fs-sm);
+    white-space: pre-wrap;
+}
+
+/* --- shared page rules moved out of the templates ------------------------ */
+
+/* Channel logos: most are made for a light background, so they get a mat.
+   In dark the mat is --ink; in light it is --panel (see the light tokens). */
+.channel-logo {
+    width: 48px;
+    height: 28px;
+    object-fit: contain;
+    flex-shrink: 0;
+    padding: 2px;
+    border-radius: var(--r-sm);
+    background-color: var(--logo-mat);
+}
+
+/* A programme description clamps to two lines in the guide and the player. */
+.programme-desc {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    max-width: 40rem;
+}
+
+/* The changelog reads as a document. */
+.changelog h3 { margin-bottom: 1rem; }
+.changelog h4 {
+    margin-top: 2rem;
+    padding-bottom: .5rem;
+    border-bottom: 1px solid var(--line);
+}
+.changelog h5 { margin-top: 1.5rem; }
+.changelog li { margin-bottom: .35rem; }
+.changelog code { color: var(--warn); }
 
 /* -------------------------------------------------------------- utility --- */
 

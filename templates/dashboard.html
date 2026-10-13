@@ -1,12 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
 
-<style>
-    #accountOut .text-body-secondary {
-        color: #adb5bd !important;
-    }
-</style>
-
 <div class="page--full">
     <div class="d-flex align-items-center">
         <h4 class="mb-0">Account activity</h4>
@@ -42,7 +36,7 @@
                 <input type="checkbox" class="checkbox form-check-input" id="autoscroll" checked>
             </div>
         </div>
-        <pre class="border p-3" style="height: 40pc; overflow-y: scroll;" id="logOut"></pre>
+        <pre class="log-panel" id="logOut"></pre>
     </div>
 </div>
 
