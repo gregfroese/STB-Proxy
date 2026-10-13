@@ -9,6 +9,8 @@ REPO_DIR="${REPO_DIR:-/opt/stb-proxy}"
 VENV_DIR="${VENV_DIR:-/opt/stb-proxy-web/venv}"
 SERVICE="${SERVICE:-stb-proxy-web}"
 
+if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
+
 echo "==> Pulling $REPO_DIR"
 git -C "$REPO_DIR" pull --ff-only
 
@@ -21,6 +23,6 @@ echo "==> Installing BFF requirements"
 "$VENV_DIR/bin/pip" install --upgrade -r "$REPO_DIR/web/requirements.txt"
 
 echo "==> Restarting $SERVICE"
-sudo systemctl restart "$SERVICE"
+$SUDO systemctl restart "$SERVICE"
 
 echo "==> Done"

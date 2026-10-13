@@ -32,11 +32,15 @@ export function attachPlayer(options: AttachOptions): PlayerHandle | null {
     const player = mpegts.createPlayer(
       { type: "mpegts", isLive: true, url: options.url },
       {
-        // Main-thread demux: avoids a blob worker (which a strict CSP can block).
-        enableWorker: false,
-        liveBufferLatencyChasing: true,
+        // Offload demux to the blob worker (allowed by the BFF's CSP), keep a
+        // generous stash, and do NOT chase latency — chasing drops frames and
+        // stutters a live feed. Smoothness beats a few hundred ms of latency.
+        enableWorker: true,
+        enableStashBuffer: true,
+        stashInitialSize: 1024,
+        liveBufferLatencyChasing: false,
+        autoCleanupSourceBuffer: true,
         lazyLoad: false,
-        stashInitialSize: 128,
       },
     );
     player.attachMediaElement(options.media);
