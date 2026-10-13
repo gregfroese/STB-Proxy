@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html data-bs-theme="dark">
-
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html data-bs-theme="dark" lang="en">
 
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>STB Proxy</title>
     <link rel="shortcut icon" type="image/png" href="../static/tv.png" />
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
@@ -15,95 +15,135 @@
     <script src="{{ url_for('static', filename='vendor/datatables/datatables.min.js') }}"></script>
 </head>
 
+{% set navGroups = [
+    ("Monitor", [
+        ("/dashboard", "bi-speedometer2", "Dashboard"),
+        ("/streams", "bi-broadcast", "Streams"),
+        ("/recordings", "bi-record-circle", "Recordings"),
+        ("/multiview", "bi-grid-3x3-gap", "Multiview"),
+    ]),
+    ("Programme", [
+        ("/editor", "bi-list-ul", "Playlist Editor"),
+        ("/guide", "bi-card-list", "Guide"),
+        ("/blocks", "bi-grid", "Blocks"),
+    ]),
+    ("Configuration", [
+        ("/portals", "bi-server", "Portals"),
+        ("/accounts", "bi-people-fill", "Accounts"),
+        ("/settings", "bi-sliders", "Settings"),
+    ]),
+] %}
+{% set toastKind = {"success": "ok", "danger": "bad", "warning": "warn", "info": "info"} %}
+{% set toastIcon = {"ok": "bi-check-circle-fill", "warn": "bi-exclamation-triangle-fill", "bad": "bi-x-octagon-fill", "info": "bi-info-circle-fill"} %}
+
 <body>
-    <nav class="navbar navbar-expand-lg bg-light mb-3 mb-lg-3 mt-lg-5 mx-lg-5">
-        <div class="container-fluid">
-            <a class="navbar-brand" target="_blank" href="https://github.com/Chris230291/STB-Proxy">
-                <img src="../static/tv.png" alt="" width="24" class="d-inline-block align-text-top">
-                STB Proxy
+    <a class="skip" href="#main">Skip to content</a>
+
+    <header class="bar">
+        <div class="page">
+            <a class="brand" href="https://github.com/Chris230291/STB-Proxy" target="_blank">
+                <span class="logo" aria-hidden="true">SB</span> STB Proxy
             </a>
-            <a class="small text-body-secondary text-decoration-none me-auto me-lg-3" href="/changelog" title="What's new">v{{ version }}</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
-                data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false"
-                aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarSupportedContent">
-                <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/portals"><i class="bi bi-server"></i> Portals</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/editor"><i class="bi bi-list-ul"></i> Playlist Editor</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/blocks"><i class="bi bi-grid"></i> Blocks</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/accounts"><i class="bi bi-people-fill"></i> Accounts</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/guide"><i class="bi bi-search"></i> Guide</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/multiview"><i class="bi bi-grid-3x3-gap"></i> Multiview</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/recordings"><i class="bi bi-circle-fill text-danger"></i> Recordings</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/settings"><i class="bi bi-sliders"></i> Settings</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/streams"><i class="bi bi-broadcast"></i> Streams</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" target="_blank" href="/playlist"><i class="bi bi-file-earmark-play"></i>
-                            Playlist</a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" target="_blank" href="/xmltv"><i class="bi bi-file-earmark-code"></i> XMLTV</a>
-                    </li>
-                </ul>
+            <a class="verchip" href="/changelog" title="What's new">v{{ version }}</a>
+
+            <nav class="nav" aria-label="Primary">
+                {% for group, items in navGroups %}
+                {% if not loop.first %}<span class="sep" aria-hidden="true"></span>{% endif %}
+                {% for href, icon, label in items %}
+                <a class="navlink" href="{{ href }}"{% if request.path == href %} aria-current="page"{% endif %}>
+                    <i class="bi {{ icon }}"></i> {{ label }}
+                </a>
+                {% endfor %}
+                {% endfor %}
+            </nav>
+
+            <div class="meta">
+                <a class="iconbtn" href="/playlist" title="Playlist (.m3u)" target="_blank" aria-label="Playlist (.m3u)">
+                    <i class="bi bi-file-earmark-play"></i>
+                </a>
+                <a class="iconbtn" href="/xmltv" title="XMLTV" target="_blank" aria-label="XMLTV">
+                    <i class="bi bi-file-earmark-code"></i>
+                </a>
             </div>
+
+            <button class="hamburger" type="button" aria-label="Toggle navigation" aria-controls="navSheet"
+                aria-expanded="false" onclick="toggleSheet(this)">
+                <i class="bi bi-list"></i>
+            </button>
         </div>
-    </nav>
+
+        <div class="sheet" id="navSheet">
+            {% for group, items in navGroups %}
+            <div class="grp">{{ group }}</div>
+            {% for href, icon, label in items %}
+            <a class="navlink" href="{{ href }}"{% if request.path == href %} aria-current="page"{% endif %}>
+                <i class="bi {{ icon }}"></i> {{ label }}
+            </a>
+            {% endfor %}
+            {% endfor %}
+            <div class="grp">Feeds</div>
+            <a class="navlink" href="/playlist" target="_blank"><i class="bi bi-file-earmark-play"></i> Playlist</a>
+            <a class="navlink" href="/xmltv" target="_blank"><i class="bi bi-file-earmark-code"></i> XMLTV</a>
+        </div>
+    </header>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
-    {% for category, message in messages %}
-    <div class="alert alert-{{ category }} alert-dismissible auto-dismiss fade show mx-lg-5" role="alert">
-        {{ message }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    {% if messages %}
+    <div class="toasts" role="status" aria-live="polite">
+        {% for category, message in messages %}
+        {% set kind = toastKind.get(category, "info") %}
+        <div class="toast auto-dismiss {{ kind }}">
+            <i class="bi {{ toastIcon[kind] }}"></i>
+            <span>{{ message }}</span>
+            <button type="button" class="x" aria-label="Dismiss"><i class="bi bi-x-lg"></i></button>
+        </div>
+        {% endfor %}
     </div>
-    {% endfor %}
+    {% endif %}
     {% endwith %}
 
-    {% block content %}{% endblock %}
+    <main id="main">
+        {% block content %}{% endblock %}
+    </main>
 
+    <script>
+        function toggleSheet(button) {
+            var sheet = document.getElementById("navSheet");
+            if (!sheet) {
+                return;
+            }
+            var open = sheet.classList.toggle("open");
+            if (button) {
+                button.setAttribute("aria-expanded", open ? "true" : "false");
+            }
+        }
+
+        // dismiss a toast by hand
+        $(document).on("click", ".toast .x", function () {
+            $(this).closest(".toast").fadeTo(200, 0).slideUp(200, function () {
+                $(this).remove();
+            });
+        });
+
+        // remove flash after delay
+        window.setTimeout(function () {
+            $(".auto-dismiss").fadeTo(500, 0).slideUp(500, function () {
+                $(this).remove();
+            });
+        }, 4000);
+
+        // remove sticky focus on buttons
+        $(".btn").mouseup(function () {
+            $(this).blur();
+        })
+
+        // prevent enter submitting forms
+        $(document).on("keydown", ":input:not(textarea)", function (event) {
+            if (event.key == "Enter") {
+                event.preventDefault();
+            }
+        });
+    </script>
 </body>
 
 </html>
-
-<script>
-    // remove flash after delay
-    window.setTimeout(function () {
-        $(".auto-dismiss").fadeTo(500, 0).slideUp(500, function () {
-            $(this).remove();
-        });
-    }, 4000);
-
-    // remove sticky focus on buttons
-    $(".btn").mouseup(function () {
-        $(this).blur();
-    })
-
-    // prevent enter submitting forms
-    $(document).on("keydown", ":input:not(textarea)", function (event) {
-        if (event.key == "Enter") {
-            event.preventDefault();
-        }
-    });
-</script>
