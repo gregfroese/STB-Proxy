@@ -144,6 +144,32 @@ class TemplateScriptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class EditorToolbarTest(unittest.TestCase):
+    """Ticket 07: the editor toolbar is one panel and its icon buttons are labelled."""
+
+    def setUp(self):
+        with open(os.path.join(ROOT, "templates", "editor.html")) as f:
+            self.editor = f.read()
+        with open(os.path.join(ROOT, "templates", "_player.html")) as f:
+            self.player = f.read()
+
+    def test_toolbar_owns_every_top_layout_row(self):
+        # The default topStart/topEnd row would repeat search + pageLength below the
+        # toolbar, so it is cleared; the bulk row is the hidden-until-selected row.
+        for key in ("topStart: null", "topEnd: null", "top3Start", "top3End", "top2", "top:"):
+            self.assertIn(key, self.editor, key)
+        self.assertIn("bulk-row", self.editor)
+
+    def test_save_and_reset_icon_buttons_are_labelled(self):
+        self.assertIn("'aria-label': 'Save'", self.editor)
+        self.assertIn("'aria-label': 'Reset'", self.editor)
+
+    def test_row_icon_buttons_are_labelled(self):
+        for label in ('aria-label="Play"', 'aria-label="Guide"', 'aria-label="Favourite"',
+                      'aria-label="Watch live"', 'aria-label="Watch the recording from the start"'):
+            self.assertIn(label, self.player, label)
+
+
 class PreviewPromptTest(unittest.TestCase):
     def setUp(self):
         self.script = inlineScripts("_player.html")

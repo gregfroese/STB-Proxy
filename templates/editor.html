@@ -2,12 +2,13 @@
 {% block content %}
 
 <div class="page--full table-responsive">
-    <table id="table" class="table table-striped table-dark nowrap" width="100%">
+    <table id="table" class="table table-striped nowrap" width="100%">
         <thead>
             <tr>
                 <th>
                     <div class="form-check form-switch">
-                        <input type="checkbox" class="checkbox form-check-input" onchange="editAll(this)">
+                        <input type="checkbox" class="checkbox form-check-input" onchange="editAll(this)"
+                            aria-label="Toggle enabled for all channels">
                     </div>
                 </th>
                 <th>Play</th>
@@ -197,6 +198,8 @@
             this.checked = selected.has(this.getAttribute('data-key'));
         });
         document.getElementById('selectedCount').textContent = selected.size + ' selected';
+        // The bulk row is part of the toolbar, but only while a selection exists.
+        $('div.bulk-bar').closest('[class*="dt-layout-"]').parent().toggleClass('d-none', selected.size === 0);
     }
 
     function toggleSelected(ele) {
@@ -441,8 +444,12 @@
     $(document).ready(function () {
         table = $('#table').DataTable({
             layout: {
+                // The default topStart/topEnd row would repeat search + pageLength below
+                // the toolbar; the composition owns every top row, so clear it.
+                topStart: null,
+                topEnd: null,
                 top3Start: ['buttons', function () {
-                    return $('<div class="dead-filter d-flex align-items-center"></div>')[0];
+                    return $('<div class="dead-filter d-flex flex-wrap align-items-center gap-3"></div>')[0];
                 }],
                 top3End: ['search', 'pageLength'],
                 top2: function () {
@@ -460,48 +467,49 @@
             pageLength: 25,
             initComplete: function () {
                 $('div.filter-bar').html(
-                    '<div class="d-flex flex-wrap align-items-center text-light">' +
-                    '<input type="search" class="form-control form-control-sm me-1" style="width: 240px;" id="nameFilter" ' +
+                    '<div class="d-flex flex-wrap align-items-center gap-2">' +
+                    '<input type="search" class="form-control form-control-sm" style="width: 240px;" id="nameFilter" ' +
                     'placeholder="Name, e.g. TSN, sportsnet -4k" title="Words must all match. Comma: or. -word: leave out. ' +
-                    '&quot;quotes&quot;: a phrase.">' +
-                    '<select class="form-select form-select-sm me-3" style="width: auto;" id="nameMode">' +
+                    '&quot;quotes&quot;: a phrase." aria-label="Filter by name">' +
+                    '<select class="form-select form-select-sm w-auto" id="nameMode" aria-label="Name match mode">' +
                     '<option value="words">Whole words</option><option value="prefix">Word starts with</option>' +
                     '<option value="contains">Contains</option><option value="exact">Exact name</option>' +
                     '<option value="regex">Regex</option></select>' +
-                    '<select class="form-select form-select-sm me-2" style="width: auto;" id="genreFilter"></select>' +
-                    '<select class="form-select form-select-sm me-2" style="width: auto;" id="blockFilter"></select>' +
-                    '<select class="form-select form-select-sm me-2" style="width: auto;" id="enabledFilter">' +
+                    '<select class="form-select form-select-sm w-auto" id="genreFilter" aria-label="Filter by genre"></select>' +
+                    '<select class="form-select form-select-sm w-auto" id="blockFilter" aria-label="Filter by block"></select>' +
+                    '<select class="form-select form-select-sm w-auto" id="enabledFilter" aria-label="Filter by enabled state">' +
                     '<option value="">Enabled or not</option><option value="on">Enabled</option>' +
                     '<option value="off">Not enabled</option></select>' +
-                    '<button type="button" class="btn btn-sm btn-outline-light me-3" onclick="resetFilters()">Clear filters</button>' +
-                    '<span class="d-flex align-items-center me-2" id="savedFilters"></span>' +
+                    '<button type="button" class="btn btn-sm" onclick="resetFilters()">Clear filters</button>' +
+                    '<span class="d-flex align-items-center" id="savedFilters"></span>' +
                     '<span class="small text-danger" id="nameFilterError"></span></div>'
                 );
                 setUpFilters();
                 $('div.bulk-bar').html(
-                    '<div class="d-flex flex-wrap align-items-center text-light">' +
-                    '<span class="me-2" id="selectedCount">0 selected</span>' +
-                    '<button type="button" class="btn btn-sm btn-outline-light me-2" onclick="selectShown()" ' +
+                    '<div class="d-flex flex-wrap align-items-center gap-2">' +
+                    '<span id="selectedCount">0 selected</span>' +
+                    '<button type="button" class="btn btn-sm" onclick="selectShown()" ' +
                     'title="Select every channel the filter and switches show, on all pages">Select all shown</button>' +
-                    '<button type="button" class="btn btn-sm btn-outline-light me-3" onclick="clearSelection()">Clear</button>' +
-                    '<input type="text" class="form-control form-control-sm me-2" style="width: 180px;" id="bulkBlock" ' +
-                    'list="blockNames" placeholder="Block name">' +
+                    '<button type="button" class="btn btn-sm" onclick="clearSelection()">Clear</button>' +
+                    '<input type="text" class="form-control form-control-sm" style="width: 180px;" id="bulkBlock" ' +
+                    'list="blockNames" placeholder="Block name" aria-label="Block name">' +
                     '<datalist id="blockNames"></datalist>' +
-                    '<button type="button" class="btn btn-sm btn-success me-2" id="bulkAdd" onclick="bulkBlocks(\'add\')">Add to block</button>' +
-                    '<button type="button" class="btn btn-sm btn-outline-danger me-2" id="bulkRemove" onclick="bulkBlocks(\'remove\')">Remove from block</button>' +
+                    '<button type="button" class="btn btn-sm btn-success" id="bulkAdd" onclick="bulkBlocks(\'add\')">Add to block</button>' +
+                    '<button type="button" class="btn btn-sm btn-outline-danger" id="bulkRemove" onclick="bulkBlocks(\'remove\')">Remove from block</button>' +
                     '<span class="small" id="bulkStatus"></span></div>'
                 );
+                $('div.bulk-bar').closest('[class*="dt-layout-"]').parent().addClass('bulk-row d-none');
                 refreshBlockNames();
                 $('div.dead-filter').html(
-                    '<div class="form-check form-switch text-light mb-0">' +
+                    '<div class="form-check form-switch mb-0">' +
                     '<input type="checkbox" class="form-check-input" id="hideDead" checked ' +
                     'onchange="hideDead = this.checked; table.draw(false);">' +
                     '<label class="form-check-label" for="hideDead">Hide dead</label></div>' +
-                    '<div class="form-check form-switch text-light mb-0 ms-3">' +
+                    '<div class="form-check form-switch mb-0">' +
                     '<input type="checkbox" class="form-check-input" id="favouritesOnly" ' +
                     'onchange="favouritesOnly = this.checked; table.draw(false);">' +
                     '<label class="form-check-label" for="favouritesOnly"><i class="bi bi-star-fill text-warning"></i> Favourites only</label></div>' +
-                    '<div class="form-check form-switch text-light mb-0 ms-3">' +
+                    '<div class="form-check form-switch mb-0">' +
                     '<input type="checkbox" class="form-check-input" id="hideInBlocks" ' +
                     'onchange="hideInBlocks = this.checked; table.draw(false);">' +
                     '<label class="form-check-label" for="hideInBlocks">Hide channels in blocks</label></div>'
@@ -531,6 +539,7 @@
                         text: '<i class="bi bi-save"></i> Save',
                         titleAttr: 'Save',
                         className: "btn btn-success",
+                        attr: { 'aria-label': 'Save' },
                         action: function () {
                             save();
                         }
@@ -539,6 +548,7 @@
                         text: '<i class="bi bi-arrow-counterclockwise"></i> Reset',
                         titleAttr: 'Reset',
                         className: "btn btn-danger",
+                        attr: { 'aria-label': 'Reset' },
                         action: function () {
                             if (confirm("Confirm Reset\nThis will clear all edits!") == true) {
                                 document.getElementById('reset').submit();

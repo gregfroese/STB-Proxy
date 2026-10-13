@@ -216,7 +216,7 @@
     function playButton(row) {
         var playing = currentChannel && channelKey(currentChannel) == channelKey(row);
         return '<button class="btn btn-success w-100 play-button' + (playing ? ' playing' : '') + '" title="Play" ' +
-            'onclick="selectChannel(this)" data-key="' + escapeAttr(channelKey(row)) + '" ' +
+            'aria-label="Play" onclick="selectChannel(this)" data-key="' + escapeAttr(channelKey(row)) + '" ' +
             'data-portal="' + escapeAttr(row.portal) + '" data-channelId="' + escapeAttr(row.channelId) + '">' +
             '<i class="bi bi-play-fill"></i></button>';
     }
@@ -231,20 +231,23 @@
     }
 
     function guideButton(row) {
-        return '<button class="btn btn-link p-0 text-info guide-button" title="Guide" onclick="showChannelGuide(this)" ' +
+        return '<button class="btn btn-link p-0 text-info guide-button" title="Guide" aria-label="Guide" ' +
+            'onclick="showChannelGuide(this)" ' +
             'data-portal="' + escapeAttr(row.portal) + '" data-channelId="' + escapeAttr(row.channelId) + '">' +
             '<i class="bi bi-card-list"></i></button>';
     }
 
     function deadToggle(row) {
         return '<button class="btn btn-link p-0 dead-toggle ' + (row.dead ? 'text-danger' : 'text-secondary') + '" ' +
-            'title="' + (row.dead ? 'Dead: click to mark working' : 'Mark dead') + '" onclick="deadClicked(this)" ' +
+            'title="' + (row.dead ? 'Dead: click to mark working' : 'Mark dead') + '" ' +
+            'aria-label="' + (row.dead ? 'Dead: click to mark working' : 'Mark dead') + '" onclick="deadClicked(this)" ' +
             'data-key="' + escapeAttr(channelKey(row)) + '" data-portal="' + escapeAttr(row.portal) + '" ' +
             'data-channelId="' + escapeAttr(row.channelId) + '"><i class="bi bi-slash-circle-fill"></i></button>';
     }
 
     function favouriteStar(row) {
-        return '<button class="btn btn-link text-warning p-0 fav-star" title="Favourite" onclick="starClicked(this)" ' +
+        return '<button class="btn btn-link text-warning p-0 fav-star" title="Favourite" aria-label="Favourite" ' +
+            'onclick="starClicked(this)" ' +
             'data-key="' + escapeAttr(channelKey(row)) + '" data-portal="' + escapeAttr(row.portal) + '" ' +
             'data-channelId="' + escapeAttr(row.channelId) + '">' +
             '<i class="bi ' + (row.favourite ? 'bi-star-fill' : 'bi-star') + '"></i></button>';
@@ -688,9 +691,10 @@
         }
         return '<span class="badge bg-danger ms-2" title="Recording since ' + escapeAttr(clock(rec.start)) + '">REC</span>' +
             '<button type="button" class="btn btn-link btn-sm p-0 ms-1 text-light" title="Watch the recording from the start" ' +
+            'aria-label="Watch the recording from the start" ' +
             'onclick="watchFromStart(this)"><i class="bi bi-skip-backward-fill"></i></button>' +
             '<button type="button" class="btn btn-link btn-sm p-0 ms-1 text-light" title="Watch live" ' +
-            'onclick="watchLive(this)"><i class="bi bi-play-fill"></i></button>';
+            'aria-label="Watch live" onclick="watchLive(this)"><i class="bi bi-play-fill"></i></button>';
     }
 
     function refreshRecordingSlots() {

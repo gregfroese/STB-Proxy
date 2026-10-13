@@ -534,6 +534,47 @@ i.bi {
     border-bottom: 1px solid var(--line);
 }
 
+/* --- Playlist Editor toolbar: DataTables layout rows as one panel -------- */
+/* #table_wrapper is the editor's DataTables output (the app's only table).
+   The rows above the grid — buttons + dead-filter switches, the filter bar,
+   and the bulk bar — read as one bordered toolbar band. The bulk row is hidden
+   until something is selected (`.bulk-row.d-none`, toggled by showSelection). */
+#table_wrapper > .row:has(~ .row.dt-layout-table) {
+    margin: 0;
+    padding: var(--sp-2);
+    background-color: var(--panel);
+    border: 1px solid var(--line);
+}
+
+#table_wrapper > .row:has(~ .row.dt-layout-table):not(:first-child) {
+    border-top: 0;
+}
+
+#table_wrapper > .row:first-child {
+    border-top-left-radius: var(--r-md);
+    border-top-right-radius: var(--r-md);
+}
+
+#table_wrapper > .row:has(+ .row.dt-layout-table),
+#table_wrapper > .row:has(+ .row.bulk-row.d-none) {
+    border-bottom-left-radius: var(--r-md);
+    border-bottom-right-radius: var(--r-md);
+}
+
+#table_wrapper > .row:has(~ .row.dt-layout-table) > [class*="dt-layout-"] {
+    padding: 0;
+}
+
+#table_wrapper .dt-buttons {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: var(--sp-1);
+}
+
+#table_wrapper .dead-filter {
+    margin-left: var(--sp-2);
+}
+
 /* --- forms and switches -------------------------------------------------- */
 
 .form-control,
@@ -612,6 +653,28 @@ i.bi {
     border-radius: var(--r-sm);
 }
 
+/* Default / secondary / outline-light: --panel2 with a --line border. Kept
+   before the semantic variants so a Button (which carries btn-secondary by
+   default) still takes its colour from .btn-success / .btn-danger / etc. */
+.btn-secondary,
+.btn-light,
+.btn-dark,
+.btn-outline-light,
+.btn-outline-secondary {
+    --bs-btn-color: var(--ink);
+    --bs-btn-bg: var(--panel2);
+    --bs-btn-border-color: var(--line);
+    --bs-btn-hover-color: var(--ink);
+    --bs-btn-hover-bg: color-mix(in srgb, var(--ink) 8%, var(--panel2));
+    --bs-btn-hover-border-color: var(--accent);
+    --bs-btn-active-color: var(--ink);
+    --bs-btn-active-bg: var(--panel2);
+    --bs-btn-active-border-color: var(--accent);
+    --bs-btn-disabled-color: var(--dim);
+    --bs-btn-disabled-bg: var(--panel2);
+    --bs-btn-disabled-border-color: var(--line);
+}
+
 /* Filled variants: semantic background, --on-accent text. */
 .btn-primary,
 .btn-info {
@@ -672,26 +735,6 @@ i.bi {
     --bs-btn-disabled-bg: var(--warn);
     --bs-btn-disabled-border-color: var(--warn);
     --bs-btn-disabled-color: var(--on-accent);
-}
-
-/* Default / secondary / outline-light: --panel2 with a --line border. */
-.btn-secondary,
-.btn-light,
-.btn-dark,
-.btn-outline-light,
-.btn-outline-secondary {
-    --bs-btn-color: var(--ink);
-    --bs-btn-bg: var(--panel2);
-    --bs-btn-border-color: var(--line);
-    --bs-btn-hover-color: var(--ink);
-    --bs-btn-hover-bg: color-mix(in srgb, var(--ink) 8%, var(--panel2));
-    --bs-btn-hover-border-color: var(--accent);
-    --bs-btn-active-color: var(--ink);
-    --bs-btn-active-bg: var(--panel2);
-    --bs-btn-active-border-color: var(--accent);
-    --bs-btn-disabled-color: var(--dim);
-    --bs-btn-disabled-bg: var(--panel2);
-    --bs-btn-disabled-border-color: var(--line);
 }
 
 /* Outline semantic variants: token border/colour, filled on hover. */
