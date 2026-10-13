@@ -13,7 +13,7 @@ STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/ST
 
 ### Active streams page
 
-- A new **Streams** page (nav **Streams**) lists every active stream: **who is watching** (the Account username, or the client IP for anonymous players), the client IP, the kind of viewer (client / recording / preview), the portal, MAC, channel and duration.
+- A new **Streams** page (nav **Streams**) lists every active stream: **who is watching** (the Account username, or the client IP for anonymous players), the client IP, the kind of viewer (client / recording / preview), the portal, MAC, channel and duration. Each stream has a **Stop** button that ends it and frees its tuner.
 - `/streaming` now includes the resolved `account` for each stream, so the Dashboard and the Streams page can name the viewer behind a shared connection (e.g. the web viewer's BFF).
 
 ## [1.8.0] - 2026-10-12

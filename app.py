@@ -3210,6 +3210,22 @@ def streams():
     return render_template("streams.html")
 
 
+@app.route("/streams/stop", methods=["POST"])
+@authorise
+def stopStream():
+    """Stop an active stream from the Streams page: kill its ffmpeg and drop its viewers,
+    freeing its tuner."""
+    portalId = request.form.get("portal")
+    channelId = request.form.get("channel")
+    with sharedStreamsLock:
+        shared = sharedStreams.get((portalId, channelId))
+    if shared is None:
+        return flask.jsonify({"error": "That stream is not running"}), 404
+    logger.info("Operator stopped Portal({}):Channel({})".format(portalId, channelId))
+    shared.end()
+    return flask.jsonify({"ok": True})
+
+
 @app.route("/log")
 @authorise
 def log():

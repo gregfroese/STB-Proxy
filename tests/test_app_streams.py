@@ -1,6 +1,7 @@
 import unittest
 
 from tests.support import PORTAL, loadApp, portalConfig
+from tests.test_app_tuners import TunerTestCase
 
 
 class StreamsPageTest(unittest.TestCase):
@@ -50,6 +51,21 @@ class SharedStreamAccountsTest(unittest.TestCase):
         self.assertEqual(stream.entry["viewers"], 2)
         self.assertEqual(stream.entry["kinds"], ["client", "preview"])
         self.assertEqual(stream.entry["accounts"], ["katie"])
+
+
+class StopStreamTest(TunerTestCase):
+    def test_stopping_a_stream_ends_it_and_frees_the_tuner(self):
+        self.play("2")
+        self.assertEqual(self.open(), ["2"])
+
+        response = self.client.post("/streams/stop", data={"portal": PORTAL, "channel": "2"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.open(), [])
+        self.assertEqual(self.app.occupied.get(PORTAL, []), [])
+
+    def test_stopping_an_unknown_stream_is_404(self):
+        response = self.client.post("/streams/stop", data={"portal": PORTAL, "channel": "9"})
+        self.assertEqual(response.status_code, 404)
 
 
 if __name__ == "__main__":

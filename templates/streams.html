@@ -60,8 +60,11 @@
                         '<div class="col"><div class="card text-dark bg-light h-100">' +
                         '<div class="card-header d-flex align-items-center">' +
                         '<i class="fa fa-user me-2"></i>' + esc(who) + ip +
-                        '<span class="ms-auto">' + kindBadges(s["kinds"]) + sharing + "</span>" +
-                        "</div>" +
+                        '<span class="ms-auto">' + kindBadges(s["kinds"]) + sharing +
+                        '<button class="btn btn-sm btn-outline-danger ms-2" data-stop data-portal="' +
+                        esc(portal) + '" data-channel="' + esc(s["channel id"]) +
+                        '" title="Stop this stream and free its tuner"><i class="fa fa-stop"></i></button>' +
+                        "</span></div>" +
                         '<div class="card-body"><table class="table table-sm mb-0">' +
                         row("fa-play", esc(s["channel name"])) +
                         row("fa-server", esc(s["portal name"])) +
@@ -81,6 +84,22 @@
 
     update();
     setInterval(update, 2000);
+
+    document.getElementById("streamOut").addEventListener("click", function (event) {
+        var button = event.target.closest("[data-stop]");
+        if (!button) return;
+        button.disabled = true;
+        fetch("/streams/stop", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+                portal: button.dataset.portal,
+                channel: button.dataset.channel,
+            }),
+        })
+            .then(update)
+            .catch(function () { button.disabled = false; });
+    });
 </script>
 
 {% endblock %}
