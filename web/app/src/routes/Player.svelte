@@ -79,7 +79,12 @@
   $effect(() => {
     const el = stageEl;
     if (!el) return;
-    const unmute = () => (muted = false);
+    // A tap on the video unmutes; a tap on a control (the mute button, chevrons,
+    // …) is that control's job, so ignore it here or the two fight each other.
+    const unmute = (event: PointerEvent) => {
+      if ((event.target as HTMLElement | null)?.closest("button")) return;
+      muted = false;
+    };
     el.addEventListener("pointerdown", unmute);
     return () => el.removeEventListener("pointerdown", unmute);
   });
