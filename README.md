@@ -139,6 +139,17 @@ A companion app for **Android TV and phones**, included in this project. The sam
 - **Android TV**: the same APK appears in the TV launcher (with a banner) and is driven by the remote; **Back** closes the guide, then leaves the player.
 - **Build it**: `cd android && ./gradlew assembleCompanion` (signed with a local keystore, `android/keystore.properties`) — it writes **`STB-Proxy-Companion-<version>.apk`** to `android/app/build/outputs/apk/companion/`. Sideload the APK on the phone, or fetch it on the TV with an app like Downloader.
 
+# Web viewer (desktop & phones)
+
+A browser client for STB-Proxy, included in this project under `web/`. It mirrors the companion app — sign in as an **account**, browse your channels grouped by **Block**, play one channel with now/next from your XMLTV guide, or watch a **Multiview** — for desktop and phone equally. It is a **BFF + SPA**: a small **FastAPI** server holds the account credentials server-side and proxies the proxy, and a **Svelte** single-page app is the browser app. Run it on its own public URL behind your reverse proxy; STB-Proxy itself stays off the internet, and the browser never learns its address.
+
+- **Login**: a username/password form (the proxy address is server config, not a field). The BFF validates the account against the proxy, then keeps a **server-side session** behind an `HttpOnly` cookie — the password never reaches the browser. Idle/absolute expiry, and sessions are re-checked against the proxy periodically.
+- **Picker**: channels grouped by Block — a rail on desktop, a strip on phone — with search across all Blocks and **All / ★ Favourites / ★ Block faves** filters (read-only, from `/api/lineup`).
+- **Player**: video with a now/next sidebar (desktop) or bottom sheet (phone). Channel up/down walks the Block the channel was launched from; **full screen** via the Fullscreen API.
+- **Multiview**: watch several at once — **Big + strip**, 2×1, 1×2, 2×2 or 3×3 on desktop; phones use 2×1 (landscape) or 1×2 (portrait). One tile is the audio source (🔊 AUDIO); each tile has **Pick / Swap / 🔊 / ✕**, and the tile picker carries the same Block rail and favourites filters as the main picker.
+- **Playback**: the BFF proxies the live TS and the browser plays it with **mpegts.js**. If a stream's H.264 confuses the browser's demuxer (some B-frame-heavy 1080p60 feeds), the player falls back to **HLS** — the BFF remuxes the channel with ffmpeg (a copy, or a re-encode if the bitstream itself is the problem) and plays it with hls.js.
+- **Build & deploy**: `web/deploy.sh` pulls, builds the SPA, installs the BFF requirements (including ffmpeg) and restarts the service. Config lives in a root-owned env file; `web/README.md` has the dev workflow, the systemd unit and every setting.
+
 # Recording
 
 - Set **Recordings folder** in Settings → Recording to a folder STB-Proxy can write to, such as a mounted share. Empty turns recording off.
@@ -184,6 +195,8 @@ Portals limit how many streams an account can play at once (often 1 or 2 per MAC
 Everything watching the same channel (Plex and Jellyfin, browser previews, or Jellyfin checking a channel just before playing it) shares one portal connection: STB-Proxy reads the channel once and sends it to all of them. A shared stream counts once against Streams Per MAC, and closes a few seconds after the last viewer leaves (at once when you switch a preview to another channel). The Dashboard shows how many are sharing each stream. Each player still buffers on its own, so the same channel can be a few seconds apart in Plex, Jellyfin and the browser.
 
 **Tuners** is also how many different channels STB-Proxy opens at once, across all portals. When they're all in use and something wants a new channel, STB-Proxy makes room by stopping a browser preview, oldest first: Plex, Jellyfin and other players come before previews. A preview never stops anything, and a stream that a player is also watching is never stopped. If nothing can make room, the request gets "All tuners are busy" (HTTP 503) and a preview says **No free tuner**.
+
+The **Streams** page (in the menu) lists every active stream — who is watching (the account, or the client IP for anonymous players), the client IP, the kind (client / recording / preview), the portal, MAC, channel and how long it has run — with a **Stop** button to end one and free its tuner. The Dashboard's Streaming cards show the same.
 
 # Plex sync
 
