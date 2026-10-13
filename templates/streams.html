@@ -23,9 +23,9 @@
 
     function kindBadges(kinds) {
         var labels = { client: "client", recording: "recording", preview: "preview" };
-        var colours = { client: "bg-success", recording: "bg-danger", preview: "bg-warning text-dark" };
+        var colours = { client: "bg-success", recording: "bg-danger", preview: "bg-warning" };
         return (kinds || []).map(function (k) {
-            return '<span class="badge ' + (colours[k] || "bg-secondary") + ' ms-1">' + (labels[k] || k) + "</span>";
+            return '<span class="badge dot ' + (colours[k] || "bg-secondary") + ' ms-1">' + (labels[k] || k) + "</span>";
         }).join("");
     }
 
@@ -52,12 +52,12 @@
                     var who = s["account"] ? s["account"] : s["client"];
                     var ip = s["account"] ? " (" + esc(s["client"]) + ")" : "";
                     var sharing = s["viewers"] > 1
-                        ? ' <span class="badge bg-info text-dark ms-1" title="Players sharing this portal connection">' +
+                        ? ' <span class="badge dot bg-info ms-1" title="Players sharing this portal connection">' +
                           s["viewers"] + " viewers</span>"
                         : "";
 
                     cards.push(
-                        '<div class="col"><div class="card text-dark bg-light h-100">' +
+                        '<div class="col"><div class="card h-100">' +
                         '<div class="card-header d-flex align-items-center">' +
                         '<i class="bi bi-person-fill me-2"></i>' + esc(who) + ip +
                         '<span class="ms-auto">' + kindBadges(s["kinds"]) + sharing +

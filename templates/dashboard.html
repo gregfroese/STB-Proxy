@@ -10,19 +10,13 @@
     <hr>
     <p class="small text-body-secondary">Whether anything else is using your MACs: another STB-Proxy, an app, or a box. Updated
         whenever STB-Proxy logs in to the portal; <b>Check now</b> asks straight away.</p>
-    <div class="row row-cols-auto" id="accountOut"></div>
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3" id="accountOut"></div>
 
     <br>
 
     <h4>Streaming</h4>
     <hr>
-    <div class="container-fluid">
-
-        <div class="row row-cols-auto" id="streamOut">
-
-        </div>
-
-    </div>
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3" id="streamOut"></div>
 
     <br>
     <br>
@@ -59,7 +53,7 @@
     }
 
     function macCard(portal, m) {
-        var html = '<div class="col mb-3"><div class="card bg-dark border-secondary text-light" style="min-width: 300px;">' +
+        var html = '<div class="col"><div class="card h-100">' +
             '<div class="card-header">' + esc(portal) + ' <span class="text-body-secondary">MAC &hellip;' + esc(m.mac.slice(-5)) + '</span></div>' +
             '<div class="card-body small">';
         if (!m.checked) {
@@ -158,9 +152,9 @@
                         // Storing HTML code block in a variable
                         var codeBlock = codeBlock +
                             '<div class="col">' +
-                            '<div class="card text-dark bg-light mb-3">' +
+                            '<div class="card h-100">' +
                             '<div class="card-header"><i class="me-2 bi bi-person-fill"></i>' + client +
-                            (stream["viewers"] > 1 ? ' <span class="badge bg-info text-dark ms-1" title="Players sharing this one portal connection">' +
+                            (stream["viewers"] > 1 ? ' <span class="badge bg-info ms-1" title="Players sharing this one portal connection">' +
                                 stream["viewers"] + ' viewers</span>' : '') + '</div>' +
                             '<div class="card-body">' +
                             '<table class="table table-sm">' +

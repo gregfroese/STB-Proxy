@@ -41,6 +41,9 @@ class TemplateScriptTest(unittest.TestCase):
     def test_dashboard_script_is_valid_javascript(self):
         self.assertValidJavaScript("dashboard.html")
 
+    def test_streams_script_is_valid_javascript(self):
+        self.assertValidJavaScript("streams.html")
+
     def test_guide_script_is_valid_javascript(self):
         self.assertValidJavaScript("guide.html")
 
@@ -286,6 +289,62 @@ class MultiviewCompositionTest(unittest.TestCase):
             record = f.read()
         self.assertNotIn("bg-dark", record)
         self.assertNotIn("text-light", record)
+
+
+class DashboardStreamsCompositionTest(unittest.TestCase):
+    """Ticket 09: Dashboard and Streams compose from the shared card grid,
+    token cards, the log panel and the badge component."""
+
+    GRID = "row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3"
+
+    def setUp(self):
+        with open(os.path.join(ROOT, "templates", "dashboard.html")) as f:
+            self.dashboard = f.read()
+        with open(os.path.join(ROOT, "templates", "streams.html")) as f:
+            self.streams = f.read()
+
+    def test_both_pages_use_the_shared_card_grid(self):
+        self.assertIn(self.GRID, self.streams)
+        # Dashboard uses it for both the account cards and the streaming cards.
+        self.assertEqual(self.dashboard.count(self.GRID), 2)
+
+    def test_cards_drop_the_deprecated_colour_variants(self):
+        for name, html in (("dashboard.html", self.dashboard), ("streams.html", self.streams)):
+            for variant in ("bg-dark", "bg-light", "text-dark", "border-secondary"):
+                self.assertNotIn(variant, html, name)
+
+    def test_streams_has_zero_page_local_css(self):
+        self.assertNotIn("<style", self.streams)
+
+    def test_cards_are_token_cards(self):
+        # Both pages build cards as HTML strings with the canonical card.
+        self.assertIn('<div class="card h-100">', self.streams)
+        self.assertIn('<div class="card h-100">', self.dashboard)
+
+    def test_badges_use_the_component_not_an_override(self):
+        # Semantic colour via tint + border + dot; no hand-set text colour.
+        self.assertIn("badge dot ", self.streams)
+        self.assertIn("badge bg-info ms-1", self.dashboard)
+        self.assertIn("badge dot bg-info ms-1", self.streams)
+
+    def test_dashboard_log_is_the_token_log_panel(self):
+        self.assertIn('class="log-panel"', self.dashboard)
+        self.assertIn('id="autoscroll"', self.dashboard)
+
+    def test_poll_cadences_are_unchanged(self):
+        # Account 60s, log 2s, dashboard streaming 1s, Streams page 2s.
+        self.assertIn("setInterval(loadAccount, 60000);", self.dashboard)
+        self.assertIn("}(), 2000);", self.dashboard)
+        self.assertIn("}(), 1000);", self.dashboard)
+        self.assertIn("setInterval(update, 2000);", self.streams)
+
+    def test_streams_stop_button_is_kept(self):
+        self.assertIn("data-stop", self.streams)
+        self.assertIn("/streams/stop", self.streams)
+
+    def test_dashboard_account_check_is_kept(self):
+        self.assertIn('id="checkAccount"', self.dashboard)
+        self.assertIn("/account/check", self.dashboard)
 
 
 if __name__ == "__main__":
