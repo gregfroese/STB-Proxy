@@ -117,12 +117,12 @@
             <button type="button" class="btn btn-outline-light layout-button" data-layout="4" onclick="setLayout('4')" title="2 &times; 2">4</button>
             <button type="button" class="btn btn-outline-light layout-button" data-layout="9" onclick="setLayout('9')" title="3 &times; 3">9</button>
             <button type="button" class="btn btn-outline-light layout-button" data-layout="big" onclick="setLayout('big')"
-                title="One big, three small" aria-label="One big, three small"><i class="fa fa-th-large"></i></button>
+                title="One big, three small" aria-label="One big, three small"><i class="bi bi-grid"></i></button>
         </div>
-        <span class="small text-muted me-auto my-1">{{ tuners }} tuner{{ "s" if tuners != 1 }}: tiles on the same channel, or on a channel Plex is watching, share one.
+        <span class="small text-body-secondary me-auto my-1">{{ tuners }} tuner{{ "s" if tuners != 1 }}: tiles on the same channel, or on a channel Plex is watching, share one.
             <span id="soundHint" class="text-warning">Click a tile for sound.</span></span>
         <button type="button" class="btn btn-sm btn-outline-light my-1" onclick="toggleFullWindow()"
-            title="Full window (F)" aria-label="Full window"><i class="fa fa-expand"></i></button>
+            title="Full window (F)" aria-label="Full window"><i class="bi bi-fullscreen"></i></button>
     </div>
     <div id="mvError" class="alert alert-danger d-none">Couldn't load channels from the portals. <a href="/multiview">Reload</a> to try again.</div>
     <div id="multiviewGrid" data-layout="4">
@@ -139,16 +139,16 @@
             </div>
             <div class="modal-body">
                 <ul class="nav nav-pills nav-fill mb-2" id="pickerTabs">
-                    <li class="nav-item"><button type="button" class="nav-link" data-tab="search" onclick="pickerTab('search')"><i class="fa fa-search"></i> Search</button></li>
-                    <li class="nav-item"><button type="button" class="nav-link" data-tab="favourites" onclick="pickerTab('favourites')"><i class="fa fa-star text-warning"></i> Favourites</button></li>
-                    <li class="nav-item"><button type="button" class="nav-link" data-tab="blocks" onclick="pickerTab('blocks')"><i class="fa fa-th-large"></i> Blocks</button></li>
+                    <li class="nav-item"><button type="button" class="nav-link" data-tab="search" onclick="pickerTab('search')"><i class="bi bi-search"></i> Search</button></li>
+                    <li class="nav-item"><button type="button" class="nav-link" data-tab="favourites" onclick="pickerTab('favourites')"><i class="bi bi-star-fill text-warning"></i> Favourites</button></li>
+                    <li class="nav-item"><button type="button" class="nav-link" data-tab="blocks" onclick="pickerTab('blocks')"><i class="bi bi-grid"></i> Blocks</button></li>
                 </ul>
                 <div id="pickerBlockBar" class="d-flex align-items-center mb-2 d-none">
-                    <button type="button" class="btn btn-sm btn-outline-light me-2" onclick="pickerBack()"><i class="fa fa-chevron-left"></i> Blocks</button>
+                    <button type="button" class="btn btn-sm btn-outline-light me-2" onclick="pickerBack()"><i class="bi bi-chevron-left"></i> Blocks</button>
                     <span class="fw-bold text-truncate me-2" id="pickerBlockName"></span>
                     <div class="form-check form-switch ms-auto mb-0">
                         <input class="form-check-input" type="checkbox" id="pickerFavouritesOnly" onchange="pickerFavouritesToggled(this)">
-                        <label class="form-check-label text-nowrap" for="pickerFavouritesOnly">Favourites only <i class="fa fa-bookmark text-info"></i></label>
+                        <label class="form-check-label text-nowrap" for="pickerFavouritesOnly">Favourites only <i class="bi bi-bookmark-fill text-info"></i></label>
                     </div>
                 </div>
                 <input type="search" class="form-control mb-2" id="pickerQuery" placeholder="Channel name or number" autocomplete="off">
@@ -269,13 +269,13 @@
                 '<img class="channel-logo d-none" alt="" onerror="this.classList.add(\'d-none\')">' +
                 '<div class="text-truncate me-auto"><div class="fw-bold text-truncate tile-name"></div>' +
                 '<div class="small text-truncate tile-now"></div></div>' +
-                '<button type="button" class="btn btn-sm btn-outline-light tile-record d-none" title="Record" aria-label="Record"><i class="fa fa-circle text-danger"></i></button>' +
-                '<button type="button" class="btn btn-sm btn-outline-light tile-from-start d-none" title="Watch the recording from the start" aria-label="Watch the recording from the start"><i class="fa fa-step-backward"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-record d-none" title="Record" aria-label="Record"><i class="bi bi-circle-fill text-danger"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-from-start d-none" title="Watch the recording from the start" aria-label="Watch the recording from the start"><i class="bi bi-skip-backward-fill"></i></button>' +
                 '<button type="button" class="btn btn-sm btn-outline-danger tile-live d-none" title="Back to live" aria-label="Back to live">Live</button>' +
-                '<button type="button" class="btn btn-sm btn-outline-light tile-audio" title="Sound from this tile" aria-label="Sound from this tile"><i class="fa fa-volume-off"></i></button>' +
-                '<button type="button" class="btn btn-sm btn-outline-light tile-big" title="Make big" aria-label="Make big"><i class="fa fa-arrows-alt"></i></button>' +
-                '<button type="button" class="btn btn-sm btn-outline-light tile-swap" title="Change channel" aria-label="Change channel"><i class="fa fa-exchange"></i></button>' +
-                '<button type="button" class="btn btn-sm btn-outline-light tile-close" title="Close" aria-label="Close"><i class="fa fa-times"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-audio" title="Sound from this tile" aria-label="Sound from this tile"><i class="bi bi-volume-mute-fill"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-big" title="Make big" aria-label="Make big"><i class="bi bi-arrows-angle-expand"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-swap" title="Change channel" aria-label="Change channel"><i class="bi bi-arrow-left-right"></i></button>' +
+                '<button type="button" class="btn btn-sm btn-outline-light tile-close" title="Close" aria-label="Close"><i class="bi bi-x-lg"></i></button>' +
                 '</div>' +
                 '<div class="tile-progress"><div></div></div>' +
                 '<div class="tile-message d-none"></div>';
@@ -371,7 +371,7 @@
         var bigButton = t.el.querySelector(".tile-big");
         bigButton.title = back ? "Back to " + LAYOUT_NAMES[state.beforeBig.layout] : "Make big";
         bigButton.setAttribute("aria-label", bigButton.title);
-        bigButton.querySelector("i").className = "fa " + (back ? "fa-compress" : "fa-arrows-alt");
+        bigButton.querySelector("i").className = "bi " + (back ? "bi-arrows-angle-contract" : "bi-arrows-angle-expand");
         var logo = t.el.querySelector(".channel-logo");
         logo.classList.toggle("d-none", !(row && row.logo));
         if (row && row.logo) {
@@ -382,9 +382,9 @@
             t.el.querySelector(".tile-now").textContent = "";
             t.el.querySelector(".tile-progress div").style.width = "0";
             showMessage(i, '<button type="button" class="btn btn-outline-light" onclick="openPicker(' + i + ')">' +
-                '<i class="fa fa-plus"></i> Add channel</button>');
+                '<i class="bi bi-plus-lg"></i> Add channel</button>');
         } else if (!channels) {
-            showMessage(i, '<i class="fa fa-spinner fa-spin"></i>');
+            showMessage(i, '<i class="bi bi-arrow-repeat bi-spin"></i>');
         } else if (!row) {
             showMessage(i, 'This channel isn\'t on an enabled portal any more.' +
                 '<button type="button" class="btn btn-sm btn-outline-light mt-2" onclick="closeTile(' + i + ')">Remove</button>');
@@ -536,7 +536,7 @@
             var selected = i == state.audio && !!state.tiles[i];
             t.video.muted = !(soundUnlocked && selected);
             t.el.classList.toggle("has-audio", selected);
-            t.el.querySelector(".tile-audio i").className = "fa " + (selected && soundUnlocked ? "fa-volume-up" : "fa-volume-off");
+            t.el.querySelector(".tile-audio i").className = "bi " + (selected && soundUnlocked ? "bi-volume-up-fill" : "bi-volume-mute-fill");
         });
     }
 
@@ -569,7 +569,7 @@
         button.classList.toggle("btn-outline-light", !recording);
         button.title = recording ? "Recording: click to stop" : "Record";
         button.setAttribute("aria-label", button.title);
-        button.querySelector("i").className = "fa " + (recording ? "fa-stop" : "fa-circle text-danger");
+        button.querySelector("i").className = "bi " + (recording ? "bi-stop-fill" : "bi-circle-fill text-danger");
         tiles[i].el.querySelector(".tile-from-start").classList.toggle("d-none", !recording || !!tiles[i].watching);
         tiles[i].el.querySelector(".tile-live").classList.toggle("d-none", !tiles[i].watching);
     }
@@ -715,7 +715,7 @@
         document.getElementById("pickerFavouritesOnly").checked = inBlock && pickerView.favouritesOnly;
         document.getElementById("pickerQuery").placeholder = PLACEHOLDERS[inBlock ? "block" : pickerView.tab];
         if (!channels) {
-            results.innerHTML = '<p class="text-muted mb-0"><i class="fa fa-spinner fa-spin"></i> Loading channels...</p>';
+            results.innerHTML = '<p class="text-body-secondary mb-0"><i class="bi bi-arrow-repeat bi-spin"></i> Loading channels...</p>';
             loadChannels().done(renderPicker);
             return;
         }
@@ -730,9 +730,9 @@
             pickerBlocks = multiview.blockChoices(channels, enabledBlocks, parseChannelQuery(text, "prefix"));
             results.innerHTML = pickerBlocks.length ? pickerBlocks.map(function (block, k) {
                 return '<button type="button" class="list-group-item list-group-item-action bg-dark text-light d-flex align-items-center" onclick="openBlock(' + k + ')">' +
-                    '<i class="fa fa-th-large me-2"></i><span class="me-auto">' + escapeAttr(block.name) + '</span>' +
-                    '<span class="badge bg-secondary">' + block.channels + '</span><i class="fa fa-chevron-right ms-2"></i></button>';
-            }).join("") : '<p class="text-muted mb-0">' +
+                    '<i class="bi bi-grid me-2"></i><span class="me-auto">' + escapeAttr(block.name) + '</span>' +
+                    '<span class="badge bg-secondary">' + block.channels + '</span><i class="bi bi-chevron-right ms-2"></i></button>';
+            }).join("") : '<p class="text-body-secondary mb-0">' +
                 (text ? "No blocks match." : "No blocks are on. Switch some on in Blocks.") + '</p>';
             return;
         }
@@ -750,7 +750,7 @@
             var none = pickerView.tab == "favourites" && !text
                 ? 'No favourites yet. Star channels in the preview, the Playlist Editor or Blocks.'
                 : "No channels match.";
-            results.innerHTML = '<p class="text-muted mb-0">' + none + '</p>';
+            results.innerHTML = '<p class="text-body-secondary mb-0">' + none + '</p>';
             return;
         }
         var block = inBlock ? pickerView.block : null;
@@ -759,12 +759,12 @@
             var mark = block ? multiview.isBlockFavouriteIn(block)(row) : false;
             return '<div role="button" class="list-group-item list-group-item-action bg-dark text-light d-flex align-items-center" onclick="pick(' + k + ')">' +
                 (block ? '<button type="button" class="btn btn-link text-info p-0 me-2" title="' + (mark ? "Favourite in this block" : "Make it a favourite in this block") + '" ' +
-                    'onclick="event.stopPropagation(); toggleBlockFav(' + k + ')"><i class="fa ' + (mark ? 'fa-bookmark' : 'fa-bookmark-o') + '"></i></button>' : '') +
+                    'onclick="event.stopPropagation(); toggleBlockFav(' + k + ')"><i class="bi ' + (mark ? 'bi-bookmark-fill' : 'bi-bookmark') + '"></i></button>' : '') +
                 (row.logo ? '<img class="channel-logo" loading="lazy" alt="" src="' + escapeAttr(row.logo) + '" onerror="this.style.visibility=\'hidden\'">'
                     : '<span class="channel-logo d-inline-block" style="background: none;"></span>') +
-                '<span class="ms-2 me-2 text-muted">' + escapeAttr(row.customChannelNumber || row.channelNumber) + '</span>' +
+                '<span class="ms-2 me-2 text-body-secondary">' + escapeAttr(row.customChannelNumber || row.channelNumber) + '</span>' +
                 '<span class="me-auto">' + escapeAttr(multiview.channelName(row)) + '</span>' +
-                (row.favourite ? '<i class="fa fa-star text-warning ms-1"></i>' : '') +
+                (row.favourite ? '<i class="bi bi-star-fill text-warning ms-1"></i>' : '') +
                 (row.dead ? '<span class="badge bg-danger ms-1">dead</span>' : '') +
                 (row.available ? '' : '<span class="badge bg-secondary ms-1">not in lineup</span>') +
                 '</div>';

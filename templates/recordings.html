@@ -15,23 +15,23 @@
 <div class="container text-light p-lg-5">
     <div class="d-flex align-items-center flex-wrap mb-2">
         <h4 class="mb-0 me-3">Recordings</h4>
-        <span class="small text-muted" id="freeSpace"></span>
+        <span class="small text-body-secondary" id="freeSpace"></span>
     </div>
 
     {% if not folder %}
     <div class="alert alert-secondary">Recording is off. Choose a recordings folder in <a href="/settings">Settings</a>,
-        then record from a Multiview tile or the preview player (<i class="fa fa-circle text-danger"></i>).</div>
+        then record from a Multiview tile or the preview player (<i class="bi bi-circle-fill text-danger"></i>).</div>
     {% endif %}
     <div id="listError" class="alert alert-danger d-none">Couldn't load the recordings. Retrying...</div>
 
     <ul class="nav nav-tabs mb-3" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#nowTab" type="button" role="tab">
-                <i class="fa fa-circle text-danger"></i> Recording now <span class="badge bg-secondary" id="nowCount">0</span></button>
+                <i class="bi bi-circle-fill text-danger"></i> Recording now <span class="badge bg-secondary" id="nowCount">0</span></button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" data-bs-toggle="tab" data-bs-target="#doneTab" type="button" role="tab">
-                <i class="fa fa-film"></i> Recorded <span class="badge bg-secondary" id="doneCount">0</span></button>
+                <i class="bi bi-film"></i> Recorded <span class="badge bg-secondary" id="doneCount">0</span></button>
         </li>
     </ul>
 
@@ -96,23 +96,23 @@
                     (r.stop ? when(r.stop) : "Stopped by hand") +
                     (r.waiting ? '<div class="small text-warning">' + escapeAttr(r.error || "Waiting for the channel") + '</div>' : ''),
                     '<span class="text-nowrap">' +
-                    '<button type="button" class="btn btn-sm btn-outline-light me-1" title="Watch from the start" onclick="watchFromStart(\'' + r.id + '\')"><i class="fa fa-step-backward"></i></button>' +
-                    '<button type="button" class="btn btn-sm btn-outline-light me-1" title="Watch live" onclick="watchLive(\'' + r.id + '\')"><i class="fa fa-play"></i></button>' +
-                    (r.stopping || r.finishing ? '<span class="text-muted"><i class="fa fa-spinner fa-spin"></i> Finishing...</span>'
-                        : '<button type="button" class="btn btn-sm btn-danger" onclick="stopRecording(\'' + r.id + '\')"><i class="fa fa-stop"></i> Stop</button>') +
+                    '<button type="button" class="btn btn-sm btn-outline-light me-1" title="Watch from the start" onclick="watchFromStart(\'' + r.id + '\')"><i class="bi bi-skip-backward-fill"></i></button>' +
+                    '<button type="button" class="btn btn-sm btn-outline-light me-1" title="Watch live" onclick="watchLive(\'' + r.id + '\')"><i class="bi bi-play-fill"></i></button>' +
+                    (r.stopping || r.finishing ? '<span class="text-body-secondary"><i class="bi bi-arrow-repeat bi-spin"></i> Finishing...</span>'
+                        : '<button type="button" class="btn btn-sm btn-danger" onclick="stopRecording(\'' + r.id + '\')"><i class="bi bi-stop-fill"></i> Stop</button>') +
                     '</span>'];
-            })) : '<p class="text-muted">Nothing is recording. Record from a Multiview tile or the preview player (<i class="fa fa-circle text-danger"></i>).</p>';
+            })) : '<p class="text-body-secondary">Nothing is recording. Record from a Multiview tile or the preview player (<i class="bi bi-circle-fill text-danger"></i>).</p>';
         document.getElementById("doneList").innerHTML = done.length ? table(
             ["Title", "Recorded", "Length", "Size", "", ""],
             done.map(function (r) {
                 var badge = r.status == "done" ? "" : '<span class="badge ' + (r.status == "partial" ? "bg-warning text-dark" : "bg-danger") + ' ms-1">' +
                     r.status + (r.gaps.length ? ": " + r.gaps.length + " gap" + (r.gaps.length > 1 ? "s" : "") : "") + '</span>';
-                return [escapeAttr(r.title) + badge + (r.error ? '<div class="small text-muted">' + escapeAttr(r.error) + '</div>' : ''),
+                return [escapeAttr(r.title) + badge + (r.error ? '<div class="small text-body-secondary">' + escapeAttr(r.error) + '</div>' : ''),
                     when(r.start), stbRecordings.formatDuration((r.ended || r.start) - r.start), stbRecordings.formatSize(r.size),
-                    r.file ? '<button type="button" class="btn btn-sm btn-success me-1" onclick="playRecording(\'' + r.id + '\')"><i class="fa fa-play"></i></button>' +
-                        '<a class="btn btn-sm btn-outline-light" title="Download" href="/recordings/' + r.id + '/file?download=1"><i class="fa fa-download"></i></a>' : '',
-                    '<button type="button" class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteRecording(\'' + r.id + '\')"><i class="fa fa-trash"></i></button>'];
-            })) : '<p class="text-muted">No recordings yet.</p>';
+                    r.file ? '<button type="button" class="btn btn-sm btn-success me-1" onclick="playRecording(\'' + r.id + '\')"><i class="bi bi-play-fill"></i></button>' +
+                        '<a class="btn btn-sm btn-outline-light" title="Download" href="/recordings/' + r.id + '/file?download=1"><i class="bi bi-download"></i></a>' : '',
+                    '<button type="button" class="btn btn-sm btn-outline-danger" title="Delete" onclick="deleteRecording(\'' + r.id + '\')"><i class="bi bi-trash-fill"></i></button>'];
+            })) : '<p class="text-body-secondary">No recordings yet.</p>';
     }
 
     function table(headings, rows) {

@@ -33,7 +33,7 @@
             button.textContent = option.label;
             button.addEventListener("click", function () {
                 box.querySelectorAll("button").forEach(function (b) { b.disabled = true; });  // one start at a time
-                status.className = "small mt-2 text-muted";
+                status.className = "small mt-2 text-body-secondary";
                 status.textContent = "Starting...";
                 $.ajax({
                     url: "/recordings/start", method: "POST", contentType: "application/json",

@@ -1,30 +1,28 @@
 <!DOCTYPE html>
-<html>
+<html data-bs-theme="dark">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <head>
     <title>STB Proxy</title>
     <link rel="shortcut icon" type="image/png" href="../static/tv.png" />
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-    <link rel="stylesheet" type="text/css"
-        href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.0.1/css/bootstrap.min.css" />
-    <link rel="stylesheet" type="text/css"
-        href="https://cdn.datatables.net/v/bs5/jq-3.6.0/dt-1.11.3/b-2.0.1/datatables.min.css" />
-    <script type="text/javascript"
-        src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/5.0.1/js/bootstrap.bundle.min.js"></script>
-    <script type="text/javascript"
-        src="https://cdn.datatables.net/v/bs5/jq-3.6.0/dt-1.11.3/b-2.0.1/datatables.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/datatables/datatables.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='theme.css') }}">
+    <script src="{{ url_for('static', filename='vendor/jquery/jquery.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/bootstrap/bootstrap.bundle.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='vendor/datatables/datatables.min.js') }}"></script>
 </head>
 
-<body class="bg-dark">
-    <nav class="navbar navbar-expand-lg navbar-light bg-light mb-3 mb-lg-3 mt-lg-5 mx-lg-5">
+<body>
+    <nav class="navbar navbar-expand-lg bg-light mb-3 mb-lg-3 mt-lg-5 mx-lg-5">
         <div class="container-fluid">
             <a class="navbar-brand" target="_blank" href="https://github.com/Chris230291/STB-Proxy">
                 <img src="../static/tv.png" alt="" width="24" class="d-inline-block align-text-top">
                 STB Proxy
             </a>
-            <a class="small text-muted text-decoration-none me-auto me-lg-3" href="/changelog" title="What's new">v{{ version }}</a>
+            <a class="small text-body-secondary text-decoration-none me-auto me-lg-3" href="/changelog" title="What's new">v{{ version }}</a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
                 data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false"
                 aria-label="Toggle navigation">
@@ -33,41 +31,41 @@
             <div class="collapse navbar-collapse" id="navbarSupportedContent">
                 <ul class="navbar-nav me-auto mb-2 mb-lg-0">
                     <li class="nav-item">
-                        <a class="nav-link" href="/portals"><i class="fa fa-server"></i> Portals</a>
+                        <a class="nav-link" href="/portals"><i class="bi bi-server"></i> Portals</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/editor"><i class="fa fa-list"></i> Playlist Editor</a>
+                        <a class="nav-link" href="/editor"><i class="bi bi-list-ul"></i> Playlist Editor</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/blocks"><i class="fa fa-th-large"></i> Blocks</a>
+                        <a class="nav-link" href="/blocks"><i class="bi bi-grid"></i> Blocks</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/accounts"><i class="fa fa-users"></i> Accounts</a>
+                        <a class="nav-link" href="/accounts"><i class="bi bi-people-fill"></i> Accounts</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/guide"><i class="fa fa-search"></i> Guide</a>
+                        <a class="nav-link" href="/guide"><i class="bi bi-search"></i> Guide</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/multiview"><i class="fa fa-th"></i> Multiview</a>
+                        <a class="nav-link" href="/multiview"><i class="bi bi-grid-3x3-gap"></i> Multiview</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/recordings"><i class="fa fa-circle text-danger"></i> Recordings</a>
+                        <a class="nav-link" href="/recordings"><i class="bi bi-circle-fill text-danger"></i> Recordings</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/settings"><i class="fa fa-sliders"></i> Settings</a>
+                        <a class="nav-link" href="/settings"><i class="bi bi-sliders"></i> Settings</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/dashboard"><i class="fa fa-dashboard"></i> Dashboard</a>
+                        <a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="/streams"><i class="fa fa-signal"></i> Streams</a>
+                        <a class="nav-link" href="/streams"><i class="bi bi-broadcast"></i> Streams</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" target="_blank" href="/playlist"><i class="fa fa-file-video-o"></i>
+                        <a class="nav-link" target="_blank" href="/playlist"><i class="bi bi-file-earmark-play"></i>
                             Playlist</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" target="_blank" href="/xmltv"><i class="fa fa-file-code-o"></i> XMLTV</a>
+                        <a class="nav-link" target="_blank" href="/xmltv"><i class="bi bi-file-earmark-code"></i> XMLTV</a>
                     </li>
                 </ul>
             </div>

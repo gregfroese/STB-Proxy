@@ -5,7 +5,7 @@
     <div class="d-flex align-items-center">
         <h4 class="mb-0">Active streams</h4>
         <span class="badge bg-secondary ms-2" id="streamCount">0</span>
-        <div class="ms-auto small text-muted">Tuners in use, who is watching, and from where.</div>
+        <div class="ms-auto small text-body-secondary">Tuners in use, who is watching, and from where.</div>
     </div>
     <hr>
     <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3" id="streamOut"></div>
@@ -30,7 +30,7 @@
     }
 
     function row(icon, value) {
-        return '<tr><td class="pe-2"><i class="fa ' + icon + '"></i></td>' +
+        return '<tr><td class="pe-2"><i class="bi ' + icon + '"></i></td>' +
             '<td><p class="card-text text-nowrap mb-0">' + value + "</p></td></tr>";
     }
 
@@ -59,17 +59,17 @@
                     cards.push(
                         '<div class="col"><div class="card text-dark bg-light h-100">' +
                         '<div class="card-header d-flex align-items-center">' +
-                        '<i class="fa fa-user me-2"></i>' + esc(who) + ip +
+                        '<i class="bi bi-person-fill me-2"></i>' + esc(who) + ip +
                         '<span class="ms-auto">' + kindBadges(s["kinds"]) + sharing +
                         '<button class="btn btn-sm btn-outline-danger ms-2" data-stop data-portal="' +
                         esc(portal) + '" data-channel="' + esc(s["channel id"]) +
-                        '" title="Stop this stream and free its tuner"><i class="fa fa-stop"></i></button>' +
+                        '" title="Stop this stream and free its tuner"><i class="bi bi-stop-fill"></i></button>' +
                         "</span></div>" +
                         '<div class="card-body"><table class="table table-sm mb-0">' +
-                        row("fa-play", esc(s["channel name"])) +
-                        row("fa-server", esc(s["portal name"])) +
-                        row("fa-lock", esc((s["mac"] || "").toUpperCase())) +
-                        row("fa-clock-o", duration(s["start time"])) +
+                        row("bi-play-fill", esc(s["channel name"])) +
+                        row("bi-server", esc(s["portal name"])) +
+                        row("bi-lock-fill", esc((s["mac"] || "").toUpperCase())) +
+                        row("bi-clock", duration(s["start time"])) +
                         "</table></div></div></div>"
                     );
                 }
@@ -78,7 +78,7 @@
             document.getElementById("streamCount").textContent = total;
             document.getElementById("streamOut").innerHTML = cards.length
                 ? cards.join("")
-                : '<div class="col"><p class="text-muted">No active streams.</p></div>';
+                : '<div class="col"><p class="text-body-secondary">No active streams.</p></div>';
         });
     }
 

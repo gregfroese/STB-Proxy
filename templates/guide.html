@@ -16,7 +16,7 @@
     <div class="d-flex align-items-center mb-3">
         <h4 class="mb-0">Guide</h4>
         <button type="button" class="btn btn-outline-light btn-sm ms-auto" id="reloadGuide" onclick="runSearch(true)"
-            title="Fetch the guide from the portals again"><i class="fa fa-refresh"></i> Reload guide</button>
+            title="Fetch the guide from the portals again"><i class="bi bi-arrow-clockwise"></i> Reload guide</button>
     </div>
 
     <input type="search" class="form-control form-control-lg" id="query" placeholder="Search programmes, e.g. oilers"
@@ -47,7 +47,7 @@
         </div>
         <div class="form-check form-switch me-4">
             <input type="checkbox" class="form-check-input guide-filter" id="favouritesOnly">
-            <label class="form-check-label" for="favouritesOnly"><i class="fa fa-star text-warning"></i> Favourites</label>
+            <label class="form-check-label" for="favouritesOnly"><i class="bi bi-star-fill text-warning"></i> Favourites</label>
         </div>
         <div class="form-check form-switch me-4">
             <input type="checkbox" class="form-check-input guide-filter" id="hideDead" checked>
@@ -55,7 +55,7 @@
         </div>
     </div>
 
-    <p id="guideStatus" class="text-muted small mt-2 mb-2">Search the next 24 hours on every channel, or switch on a filter
+    <p id="guideStatus" class="text-body-secondary small mt-2 mb-2">Search the next 24 hours on every channel, or switch on a filter
         to browse.</p>
     <div id="results" class="table-responsive channel-list"></div>
 
@@ -119,7 +119,7 @@
 
     function setStatus(html, className) {
         var status = document.getElementById('guideStatus');
-        status.className = 'small mt-2 mb-2 ' + (className || 'text-muted');
+        status.className = 'small mt-2 mb-2 ' + (className || 'text-body-secondary');
         status.innerHTML = html;
     }
 
@@ -139,7 +139,7 @@
         }
         var seq = ++searchSeq;
         if (!quiet) {
-            setStatus('<i class="fa fa-spinner fa-spin"></i> ' + (refresh || !loadedOnce
+            setStatus('<i class="bi bi-arrow-repeat bi-spin"></i> ' + (refresh || !loadedOnce
                 ? 'Loading the guide from the portal. This takes about 15 seconds...'
                 : 'Searching...'));
         }
@@ -181,7 +181,7 @@
 
     function formatWhen(row, now) {
         if (row.start <= now) {
-            return '<span class="badge bg-success">On now</span><div class="small text-muted">until ' +
+            return '<span class="badge bg-success">On now</span><div class="small text-body-secondary">until ' +
                 formatTime(row.stop) + '</div>';
         }
         var day = new Date(row.start * 1000);
@@ -192,7 +192,7 @@
             : day.toDateString() == tomorrow.toDateString() ? 'Tomorrow'
                 : day.toLocaleDateString([], { weekday: 'short' });
         return escapeAttr(label + ' ' + formatTime(row.start)) +
-            '<div class="small text-muted">until ' + formatTime(row.stop) + '</div>';
+            '<div class="small text-body-secondary">until ' + formatTime(row.stop) + '</div>';
     }
 
     function showResults(res, searched) {
@@ -234,12 +234,12 @@
                 ' <span class="ms-1">' + deadToggle(channel) + '</span></td>' +
                 '<td class="text-nowrap">' + formatWhen(r, now) + '</td>' +
                 '<td><div class="fw-bold">' + escapeAttr(r.title) + '</div>' +
-                (r.desc ? '<div class="small text-muted programme-desc">' + escapeAttr(r.desc) + '</div>' : '') + '</td>' +
+                (r.desc ? '<div class="small text-body-secondary programme-desc">' + escapeAttr(r.desc) + '</div>' : '') + '</td>' +
                 '<td class="text-nowrap"><div class="d-flex align-items-center">' + logoImage(channel) + '<div class="ms-2">' +
                 escapeAttr(channel.channelNumber) + ' ' +
                 escapeAttr(channel.customChannelName || channel.channelName) + deadBadge(channel) +
                 (channel.available ? ' <span class="badge bg-secondary">in lineup</span>' : '') +
-                '<div class="small text-muted">' + escapeAttr(channel.portalName) + '</div></div></div></td></tr>';
+                '<div class="small text-body-secondary">' + escapeAttr(channel.portalName) + '</div></div></div></td></tr>';
         });
         document.getElementById('results').innerHTML = html + '</tbody></table>';
     }

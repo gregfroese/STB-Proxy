@@ -8,11 +8,11 @@
     <input class="form-check-input" type="checkbox" id="{{ p }}DeviceLocked" onchange="deviceToggled('{{ p }}')">
     <label class="form-check-label" for="{{ p }}DeviceLocked">The portal only accepts my MAC from one box</label>
 </div>
-<span class="text-muted">Leave this off unless the portal refuses a MAC that works on your box or in STB Emulator.</span>
+<span class="text-body-secondary">Leave this off unless the portal refuses a MAC that works on your box or in STB Emulator.</span>
 <div class="small text-danger d-none" id="{{ p }}DeviceMixed">These MACs have different device details. To change them, edit
     devices.json next to config.json.</div>
 <div class="border rounded p-2 mt-2 d-none" id="{{ p }}DeviceFields" oninput="deviceEdited('{{ p }}')">
-    <p class="small text-muted mb-2">Copy these from the box the MAC belongs to. In STB Emulator they're under
+    <p class="small text-body-secondary mb-2">Copy these from the box the MAC belongs to. In STB Emulator they're under
         Settings &rarr; Profiles &rarr; your profile &rarr; STB configuration. On a MAG box the serial number is in
         Settings &rarr; System information.<br>
         <strong>Start with just the model and serial number</strong>: many portals only check those. If the portal
@@ -48,11 +48,11 @@
         <summary class="small">Advanced</summary>
         <textarea name="device extra" data-device-field="extra" class="form-control form-control-sm font-monospace mt-1" rows="5"
             placeholder='{"headers": {"User-Agent": "..."}, "profile": {"hw_version": "..."}}'></textarea>
-        <span class="small text-muted">Anything else the portal checks, as JSON with any of cookies, headers, handshake and
+        <span class="small text-body-secondary">Anything else the portal checks, as JSON with any of cookies, headers, handshake and
             profile. They're sent with the box's requests as they are. Some portals need values captured from the box's
             own login (for example signatures that change per request).</span>
     </details>
-    <p class="small text-muted mb-0 mt-2">Saved to devices.json next to config.json, for every MAC above.</p>
+    <p class="small text-body-secondary mb-0 mt-2">Saved to devices.json next to config.json, for every MAC above.</p>
 </div>
 {% endmacro %}
 
@@ -60,8 +60,8 @@
 <div class="container-fluid p-lg-5">
 
     <div>
-        <button class="btn btn-success btn-block" title="Add Portal" data-bs-toggle="modal"
-            data-bs-target="#modalAdd"><i class="fa fa-plus"></i> Add Portal</button>
+        <button class="btn btn-success w-100" title="Add Portal" data-bs-toggle="modal"
+            data-bs-target="#modalAdd"><i class="bi bi-plus-lg"></i> Add Portal</button>
     </div>
 
     <br>
@@ -82,8 +82,8 @@
                     data-streamsPerMac="{{ portals[portal]['streams per mac'] }}"
                     data-logos="{{ portals[portal].logos }}" data-bs-toggle="modal"
                     data-bs-target="#modalEdit">
-                    <i class="me-2 fa fa-server"{{ "hidden" if portals[portal].enabled =='false' }}></i>
-                    <i class="me-2 fa fa-ban"{{ "hidden" if portals[portal].enabled =='true' }}></i>
+                    <i class="me-2 bi bi-server"{{ "hidden" if portals[portal].enabled =='false' }}></i>
+                    <i class="me-2 bi bi-slash-circle-fill"{{ "hidden" if portals[portal].enabled =='true' }}></i>
                     {{ portals[portal].name }}
                 </div>
                 <div class="card-body">
@@ -98,7 +98,7 @@
                         {% endfor %}
                     </table>
                     {% set refresh = logoRefreshes.get(portal) %}
-                    <div class="small {{ 'text-danger' if refresh and not refresh.ok else 'text-muted' }}"
+                    <div class="small {{ 'text-danger' if refresh and not refresh.ok else 'text-body-secondary' }}"
                         data-logo-status="{{ portal }}" data-running="{{ 'true' if refresh and refresh.running else 'false' }}"
                         {{ "hidden" if not refresh }}>
                         {% if refresh %}Logos{{ "" if refresh.running else " (" ~ refresh.time ~ ")" }}: {{ refresh.message }}{% endif %}
@@ -129,13 +129,13 @@
 
                     <h6>Name:</h6>
                     <input type="text" name="name" class="form-control flex-fill" title="Name" required>
-                    <span class="text-muted">Give this portal a name.</span>
+                    <span class="text-body-secondary">Give this portal a name.</span>
 
                     <br><br>
 
                     <h6>URL:</h6>
                     <input type="text" name="url" class="form-control flex-fill" title="URL" required>
-                    <span class="text-muted">The portal address your box or STB Emulator uses, e.g.
+                    <span class="text-body-secondary">The portal address your box or STB Emulator uses, e.g.
                         http://example.com:8080/c/. STB-Proxy finds the API address behind it and tells you which one
                         it used.</span>
 
@@ -143,20 +143,20 @@
 
                     <h6>Proxy:</h6>
                     <input type="text" name="proxy" class="form-control flex-fill" title="Proxy">
-                    <span class="text-muted">STB-Proxy supports HTML proxies only.</span>
+                    <span class="text-body-secondary">STB-Proxy supports HTML proxies only.</span>
 
                     <br><br>
 
                     <h6>MACs:</h6>
                     <input type="text" name="macs" class="form-control flex-fill" title="MACs" required>
-                    <span class="text-muted">Enter a comma separated list of MAC addresses.</span>
+                    <span class="text-body-secondary">Enter a comma separated list of MAC addresses.</span>
 
                     <br><br>
 
                     <h6>Streams Per MAC:</h6>
                     <input type="number" name="streams per mac" class="form-control flex-fill" title="Streams Per Mac"
                         min="0" value="1" required>
-                    <span class="text-muted">How many streams does each MAC allow. 0 = unlimited.</span>
+                    <span class="text-body-secondary">How many streams does each MAC allow. 0 = unlimited.</span>
 
                     <br><br>
 
@@ -166,7 +166,7 @@
                         <option value="{{ value }}">{{ label }}</option>
                         {% endfor %}
                     </select>
-                    <span class="text-muted">Where channel logos come from: the portal, or looked up by channel name in the
+                    <span class="text-body-secondary">Where channel logos come from: the portal, or looked up by channel name in the
                         <a href="https://github.com/iptv-org/database" target="_blank">iptv-org</a> database. A logo
                         you set in the Playlist Editor always wins.</span>
 
@@ -178,7 +178,7 @@
 
                     <div class="modal-footer">
                         <button class="btn btn-secondary" title="Cancel" data-bs-dismiss="modal">Cancel</button>
-                        <button class="btn btn-success btn-block" title="Add">Add</button>
+                        <button class="btn btn-success w-100" title="Add">Add</button>
                     </div>
 
                 </form>
@@ -208,13 +208,13 @@
 
                     <h6>Name:</h6>
                     <input type="text" name="name" id="editName" class="form-control flex-fill" title="Name" required>
-                    <span class="text-muted">Give this portal a name.</span>
+                    <span class="text-body-secondary">Give this portal a name.</span>
 
                     <br><br>
 
                     <h6>URL:</h6>
                     <input type="text" name="url" id="editUrl" class="form-control flex-fill" title="URL" required>
-                    <span class="text-muted">The portal address your box or STB Emulator uses, e.g.
+                    <span class="text-body-secondary">The portal address your box or STB Emulator uses, e.g.
                         http://example.com:8080/c/. STB-Proxy finds the API address behind it and tells you which one
                         it used.</span>
 
@@ -222,21 +222,21 @@
 
                     <h6>Proxy:</h6>
                     <input type="text" name="proxy" id="editProxy" class="form-control flex-fill" title="Proxy">
-                    <span class="text-muted">STB-Proxy supports HTML proxies only.</span>
+                    <span class="text-body-secondary">STB-Proxy supports HTML proxies only.</span>
 
                     <br><br>
 
                     <h6>MACs:</h6>
                     <input type="text" name="macs" id="editMacs" class="form-control flex-fill" title="MACs" required
                         oninput="macsEdited('edit')">
-                    <span class="text-muted">Enter a comma separated list of MAC addresses.</span>
+                    <span class="text-body-secondary">Enter a comma separated list of MAC addresses.</span>
 
                     <br><br>
 
                     <h6>Streams Per MAC:</h6>
                     <input type="number" name="streams per mac" id="editStreamsPerMac" class="form-control flex-fill"
                         title="Streams Per MAC" min="0" required>
-                    <span class="text-muted">How many streams does each MAC allow. 0 = unlimited.</span>
+                    <span class="text-body-secondary">How many streams does each MAC allow. 0 = unlimited.</span>
 
                     <br><br>
 
@@ -247,8 +247,8 @@
                         {% endfor %}
                     </select>
                     <button type="button" class="btn btn-sm btn-outline-success my-2" title="Refresh logos"
-                        onclick="refreshLogos()"><i class="fa fa-refresh"></i> Refresh logos</button><br>
-                    <span class="text-muted">Where channel logos come from: the portal, or looked up by channel name in the
+                        onclick="refreshLogos()"><i class="bi bi-arrow-clockwise"></i> Refresh logos</button><br>
+                    <span class="text-body-secondary">Where channel logos come from: the portal, or looked up by channel name in the
                         <a href="https://github.com/iptv-org/database" target="_blank">iptv-org</a> database. A logo
                         you set in the Playlist Editor always wins. <b>Refresh logos</b> uses this choice and loads
                         the portal's channel list and the iptv-org logos afresh, matches them again, then updates
@@ -422,7 +422,7 @@
                 running = running || refresh.running;
                 el.hidden = false;
                 el.classList.toggle('text-danger', !refresh.ok);
-                el.classList.toggle('text-muted', refresh.ok);
+                el.classList.toggle('text-body-secondary', refresh.ok);
                 el.textContent = 'Logos' + (refresh.running ? '' : ' (' + refresh.time + ')') + ': ' + refresh.message;
             });
             if (running) {

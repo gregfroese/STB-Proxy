@@ -2,7 +2,7 @@
 {% block content %}
 
 <style>
-    #accountOut .text-muted {
+    #accountOut .text-body-secondary {
         color: #adb5bd !important;
     }
 </style>
@@ -11,10 +11,10 @@
     <div class="d-flex align-items-center">
         <h4 class="mb-0">Account activity</h4>
         <button type="button" class="btn btn-outline-light btn-sm ms-auto" id="checkAccount" onclick="checkAccount()"
-            title="Ask the portal now (one request per MAC)"><i class="fa fa-refresh"></i> Check now</button>
+            title="Ask the portal now (one request per MAC)"><i class="bi bi-arrow-clockwise"></i> Check now</button>
     </div>
     <hr>
-    <p class="small text-muted">Whether anything else is using your MACs: another STB-Proxy, an app, or a box. Updated
+    <p class="small text-body-secondary">Whether anything else is using your MACs: another STB-Proxy, an app, or a box. Updated
         whenever STB-Proxy logs in to the portal; <b>Check now</b> asks straight away.</p>
     <div class="row row-cols-auto" id="accountOut"></div>
 
@@ -66,26 +66,26 @@
 
     function macCard(portal, m) {
         var html = '<div class="col mb-3"><div class="card bg-dark border-secondary text-light" style="min-width: 300px;">' +
-            '<div class="card-header">' + esc(portal) + ' <span class="text-muted">MAC &hellip;' + esc(m.mac.slice(-5)) + '</span></div>' +
+            '<div class="card-header">' + esc(portal) + ' <span class="text-body-secondary">MAC &hellip;' + esc(m.mac.slice(-5)) + '</span></div>' +
             '<div class="card-body small">';
         if (!m.checked) {
-            return html + '<span class="text-muted">Not checked yet. Press Check now.</span></div></div></div>';
+            return html + '<span class="text-body-secondary">Not checked yet. Press Check now.</span></div></div></div>';
         }
         var others = m.otherLogins.length;
         html += others
-            ? '<div class="text-warning mb-2"><i class="fa fa-exclamation-triangle"></i> Something else logged in with this MAC ' +
+            ? '<div class="text-warning mb-2"><i class="bi bi-exclamation-triangle-fill"></i> Something else logged in with this MAC ' +
               (others == 1 ? 'once' : others + ' times') + ' in the last 24 h, most recently ' + esc(ago(m.otherLogins[others - 1])) +
               ' (' + esc(when(m.otherLogins[others - 1])) + ').</div>'
-            : '<div class="text-success mb-2"><i class="fa fa-check"></i> No other logins with this MAC since ' + esc(when(m.watchingSince)) + '.</div>';
+            : '<div class="text-success mb-2"><i class="bi bi-check-lg"></i> No other logins with this MAC since ' + esc(when(m.watchingSince)) + '.</div>';
         html += m.boxOn
-            ? '<div class="text-warning mb-2"><i class="fa fa-television"></i> A box or emulator is on: it checked in ' + esc(ago(m.boxCheckIn)) + '.</div>'
-            : '<div class="mb-2"><i class="fa fa-television"></i> No box or emulator on' +
+            ? '<div class="text-warning mb-2"><i class="bi bi-tv"></i> A box or emulator is on: it checked in ' + esc(ago(m.boxCheckIn)) + '.</div>'
+            : '<div class="mb-2"><i class="bi bi-tv"></i> No box or emulator on' +
               (m.boxCheckIn ? ' (last checked in ' + esc(when(m.boxCheckIn)) + ')' : '') + '.</div>';
         if (m.boxWatching) {
-            html += '<div class="text-muted mb-2">A box last watched ' + (m.boxWatchingType ? esc(m.boxWatchingType) + ': ' : '') +
+            html += '<div class="text-body-secondary mb-2">A box last watched ' + (m.boxWatchingType ? esc(m.boxWatchingType) + ': ' : '') +
                 '<b>' + esc(m.boxWatching) + '</b>' + (m.boxWatchingSince ? ' from ' + esc(when(m.boxWatchingSince)) : '') + '.</div>';
         }
-        return html + '<div class="text-muted">Checked ' + esc(ago(m.checked)) + '.</div></div></div></div>';
+        return html + '<div class="text-body-secondary">Checked ' + esc(ago(m.checked)) + '.</div></div></div></div>';
     }
 
     function showAccount(portals) {
@@ -93,7 +93,7 @@
         portals.forEach(function (p) {
             p.macs.forEach(function (m) { html += macCard(p.portal, m); });
         });
-        document.getElementById('accountOut').innerHTML = html || '<span class="text-muted">No enabled portals.</span>';
+        document.getElementById('accountOut').innerHTML = html || '<span class="text-body-secondary">No enabled portals.</span>';
     }
 
     function loadAccount() {
@@ -165,14 +165,14 @@
                         var codeBlock = codeBlock +
                             '<div class="col">' +
                             '<div class="card text-dark bg-light mb-3">' +
-                            '<div class="card-header"><i class="me-2 fa fa-user"></i>' + client +
+                            '<div class="card-header"><i class="me-2 bi bi-person-fill"></i>' + client +
                             (stream["viewers"] > 1 ? ' <span class="badge bg-info text-dark ms-1" title="Players sharing this one portal connection">' +
                                 stream["viewers"] + ' viewers</span>' : '') + '</div>' +
                             '<div class="card-body">' +
                             '<table class="table table-sm">' +
                             '<tr>' +
                             '<td>' +
-                            '<i class="fa fa-play"></i>' +
+                            '<i class="bi bi-play-fill"></i>' +
                             '</td>' +
                             '<td>' +
                             '<p class="card-text text-nowrap">' + channel + '</p>' +
@@ -180,7 +180,7 @@
                             '</tr>' +
                             '<tr>' +
                             '<td>' +
-                            '<i class="fa fa-server"></i>' +
+                            '<i class="bi bi-server"></i>' +
                             '</td>' +
                             '<td>' +
                             '<p class="card-text text-nowrap">' + portal + '</p>' +
@@ -188,14 +188,14 @@
                             '</tr>' +
                             '<tr>' +
                             '<td>' +
-                            '<i class="fa fa-lock"></i>' +
+                            '<i class="bi bi-lock-fill"></i>' +
                             '</td>' +
                             '<td>' +
                             '<p class="card-text text-nowrap">' + mac + '</p>' +
                             '</td>' +
                             '<tr>' +
                             '<td>' +
-                            '<i class="fa fa-clock-o"></i>' +
+                            '<i class="bi bi-clock"></i>' +
                             '</td>' +
                             '<td>' +
                             '<p class="card-text text-nowrap">' + dur + '</p>' +

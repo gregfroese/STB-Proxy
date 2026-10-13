@@ -241,7 +241,7 @@
         });
         document.getElementById('bulkAdd').disabled = true;
         document.getElementById('bulkRemove').disabled = true;
-        status.className = 'small text-muted';
+        status.className = 'small text-body-secondary';
         status.textContent = 'Saving...';
         $.ajax({
             url: '/channels/blocks', method: 'POST', contentType: 'application/json',
@@ -490,7 +490,7 @@
                     '<div class="form-check form-switch text-light mb-0 ms-3">' +
                     '<input type="checkbox" class="form-check-input" id="favouritesOnly" ' +
                     'onchange="favouritesOnly = this.checked; table.draw(false);">' +
-                    '<label class="form-check-label" for="favouritesOnly"><i class="fa fa-star text-warning"></i> Favourites only</label></div>' +
+                    '<label class="form-check-label" for="favouritesOnly"><i class="bi bi-star-fill text-warning"></i> Favourites only</label></div>' +
                     '<div class="form-check form-switch text-light mb-0 ms-3">' +
                     '<input type="checkbox" class="form-check-input" id="hideInBlocks" ' +
                     'onchange="hideInBlocks = this.checked; table.draw(false);">' +
@@ -519,7 +519,7 @@
             buttons: {
                 buttons: [
                     {
-                        text: '<i class="fa fa-save"></i> Save',
+                        text: '<i class="bi bi-save"></i> Save',
                         titleAttr: 'Save',
                         className: "btn btn-success",
                         action: function () {
@@ -527,7 +527,7 @@
                         }
                     },
                     {
-                        text: '<i class="fa fa-undo"></i> Reset',
+                        text: '<i class="bi bi-arrow-counterclockwise"></i> Reset',
                         titleAttr: 'Reset',
                         className: "btn btn-danger",
                         action: function () {
@@ -689,4 +689,4 @@
     });
 
 </script>
-{% endblock %}
+{% endblock %}

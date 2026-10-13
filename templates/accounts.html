@@ -7,7 +7,7 @@
         <h4 class="mb-0">Accounts</h4>
     </div>
 
-    <p class="text-muted">
+    <p class="text-body-secondary">
         Viewer logins for the feeds. An account sees public channels plus the channels of the
         blocks you assign it, including STB-Proxy-only blocks. The operator login and the API
         token are unchanged; accounts are for players only.
@@ -40,7 +40,7 @@
                     </div>
                 </div>
                 <div class="col-md-1">
-                    <button class="btn btn-success w-100" title="Add account"><i class="fa fa-plus"></i> Add</button>
+                    <button class="btn btn-success w-100" title="Add account"><i class="bi bi-plus-lg"></i> Add</button>
                 </div>
             </form>
         </div>
@@ -78,7 +78,7 @@
                             <option value="{{ name }}" {{ "selected" if name in account.blocks }}>{{ name }}{% if name in hiddenBlocks %} (STB-Proxy only){% endif %}{% if name in offBlocks %} — off{% endif %}</option>
                             {% endfor %}
                         </select>
-                        <button class="btn btn-sm btn-outline-light" title="Save blocks"><i class="fa fa-save"></i></button>
+                        <button class="btn btn-sm btn-outline-light" title="Save blocks"><i class="bi bi-save"></i></button>
                     </form>
                 </td>
                 <td class="text-nowrap">
@@ -86,13 +86,13 @@
                         <input type="hidden" name="username" value="{{ account.username }}">
                         <input type="password" class="form-control form-control-sm" name="password"
                             autocomplete="new-password" placeholder="New password" required style="width: 10rem;">
-                        <button class="btn btn-sm btn-outline-light" title="Reset password"><i class="fa fa-key"></i></button>
+                        <button class="btn btn-sm btn-outline-light" title="Reset password"><i class="bi bi-key-fill"></i></button>
                     </form>
                     <form action="/accounts/delete" method="post" class="d-inline">
                         <input type="hidden" name="username" value="{{ account.username }}">
                         <button class="btn btn-sm btn-outline-danger" title="Delete {{ account.username }}"
                             onclick="return confirm('Delete the account {{ account.username }}?')">
-                            <i class="fa fa-trash"></i></button>
+                            <i class="bi bi-trash-fill"></i></button>
                     </form>
                 </td>
             </tr>

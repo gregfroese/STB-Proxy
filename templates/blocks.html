@@ -18,11 +18,11 @@
         <h4 class="mb-0">Blocks</h4>
         <form action="/blocks/sync" method="post" class="ms-auto">
             <button class="btn btn-primary" {{ "disabled" if not (plexConfigured or jellyfinConfigured) }}
-                title="Update Plex and Jellyfin with the current lineup"><i class="fa fa-refresh"></i> Sync now</button>
+                title="Update Plex and Jellyfin with the current lineup"><i class="bi bi-arrow-clockwise"></i> Sync now</button>
         </form>
     </div>
 
-    <p class="text-muted mb-1">
+    <p class="text-body-secondary mb-1">
         {% if not plexConfigured and not jellyfinConfigured %}
         Plex and Jellyfin updates are off. Add either in Settings.
         {% endif %}
@@ -40,11 +40,11 @@
     <ul class="nav nav-tabs mb-3" role="tablist">
         <li class="nav-item" role="presentation">
             <button class="nav-link active" id="blocksTabButton" data-bs-toggle="tab" data-bs-target="#blocksTab"
-                type="button" role="tab"><i class="fa fa-th-large"></i> Blocks</button>
+                type="button" role="tab"><i class="bi bi-grid"></i> Blocks</button>
         </li>
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="favouritesTabButton" data-bs-toggle="tab" data-bs-target="#favouritesTab"
-                type="button" role="tab"><i class="fa fa-star text-warning"></i> Favourites
+                type="button" role="tab"><i class="bi bi-star-fill text-warning"></i> Favourites
                 <span class="badge bg-secondary" id="favouriteCount">{{ favourites }}</span></button>
         </li>
     </ul>
@@ -88,21 +88,21 @@
                                 <input type="hidden" name="name" value="{{ block.name }}">
                                 <input type="hidden" name="direction" value="up">
                                 <button class="btn btn-sm btn-outline-light" title="Move up"
-                                    aria-label="Move {{ block.name }} up" {{ "disabled" if loop.first }}><i class="fa fa-arrow-up"></i></button>
+                                    aria-label="Move {{ block.name }} up" {{ "disabled" if loop.first }}><i class="bi bi-arrow-up"></i></button>
                             </form>
                             <form action="/blocks/move" method="post" class="d-inline">
                                 <input type="hidden" name="name" value="{{ block.name }}">
                                 <input type="hidden" name="direction" value="down">
                                 <button class="btn btn-sm btn-outline-light" title="Move down"
-                                    aria-label="Move {{ block.name }} down" {{ "disabled" if loop.last }}><i class="fa fa-arrow-down"></i></button>
+                                    aria-label="Move {{ block.name }} down" {{ "disabled" if loop.last }}><i class="bi bi-arrow-down"></i></button>
                             </form>
                             <button type="button" class="btn btn-sm btn-outline-light" data-block="{{ block.name }}"
-                                onclick="toggleBlockChannels(this)"><i class="fa fa-chevron-down"></i> View</button>
+                                onclick="toggleBlockChannels(this)"><i class="bi bi-chevron-down"></i> View</button>
                             <form action="/blocks/rename" method="post" class="d-inline">
                                 <input type="hidden" name="name" value="{{ block.name }}">
                                 <input type="hidden" name="newName">
                                 <button type="button" class="btn btn-sm btn-outline-light" title="Rename" aria-label="Rename {{ block.name }}"
-                                    onclick="renameBlock(this)"><i class="fa fa-pencil"></i></button>
+                                    onclick="renameBlock(this)"><i class="bi bi-pencil-fill"></i></button>
                             </form>
                             <form action="/blocks/hide" method="post" class="d-inline">
                                 <input type="hidden" name="name" value="{{ block.name }}">
@@ -110,7 +110,7 @@
                                 <button class="btn btn-sm btn-outline-light"
                                     aria-label="{{ 'Share ' ~ block.name ~ ' with the API, Plex and Jellyfin' if block.hidden else 'Keep ' ~ block.name ~ ' in STB-Proxy only' }}"
                                     title="{{ 'Share with the API, Plex and Jellyfin again' if block.hidden else 'Keep this block in STB-Proxy only (not the API, Plex or Jellyfin)' }}">
-                                    <i class="fa {{ 'fa-eye' if block.hidden else 'fa-eye-slash' }}"></i></button>
+                                    <i class="bi {{ 'bi-eye-fill' if block.hidden else 'bi-eye-slash-fill' }}"></i></button>
                             </form>
                         </td>
                     </tr>
@@ -120,17 +120,17 @@
                     {% endfor %}
                 </tbody>
             </table>
-            <p id="updating" class="text-muted d-none"><i class="fa fa-spinner fa-spin"></i> Updating Plex...</p>
+            <p id="updating" class="text-body-secondary d-none"><i class="bi bi-arrow-repeat bi-spin"></i> Updating Plex...</p>
             {% else %}
             <p>No blocks yet. Preview a channel and add it to a new block, or type block names in the Playlist
                 Editor's Block column and save.</p>
             {% endif %}
-            <p id="newBlocks" class="text-muted d-none">New blocks were added. <a href="/blocks">Reload</a> to see them.</p>
+            <p id="newBlocks" class="text-body-secondary d-none">New blocks were added. <a href="/blocks">Reload</a> to see them.</p>
 
             <div class="card bg-secondary mt-3">
                 <div class="card-body">
                     <h6 class="card-title">Default blocks (unauthenticated clients)</h6>
-                    <p class="text-muted mb-2">
+                    <p class="text-body-secondary mb-2">
                         Scope the channels offered to clients that present no credentials: public
                         channels plus the channels of these blocks. Leave empty to serve the full
                         lineup.
@@ -144,7 +144,7 @@
                             </select>
                         </div>
                         <div class="col-md-2">
-                            <button class="btn btn-primary w-100" title="Save default blocks"><i class="fa fa-save"></i> Save</button>
+                            <button class="btn btn-primary w-100" title="Save default blocks"><i class="bi bi-save"></i> Save</button>
                         </div>
                     </form>
                 </div>
@@ -242,11 +242,11 @@
     }
 
     function renderInto(container, pick, empty, showBlock) {
-        container.innerHTML = '<p class="text-muted m-2"><i class="fa fa-spinner fa-spin"></i> Loading channels...</p>';
+        container.innerHTML = '<p class="text-body-secondary m-2"><i class="bi bi-arrow-repeat bi-spin"></i> Loading channels...</p>';
         loadChannels()
             .done(function () {
                 var rows = channels.filter(pick);
-                container.innerHTML = rows.length ? channelTable(rows, showBlock) : '<p class="text-muted m-2">' + empty + '</p>';
+                container.innerHTML = rows.length ? channelTable(rows, showBlock) : '<p class="text-body-secondary m-2">' + empty + '</p>';
             })
             .fail(function () {
                 container.innerHTML = '<p class="text-danger m-2">Couldn\'t load channels from the portals. Try again.</p>';
@@ -258,15 +258,15 @@
     function renderBlock(container) {
         var name = container.getAttribute('data-block');
         var only = !!blockFavouritesOnly[name];
-        container.innerHTML = '<p class="text-muted m-2"><i class="fa fa-spinner fa-spin"></i> Loading channels...</p>';
+        container.innerHTML = '<p class="text-body-secondary m-2"><i class="bi bi-arrow-repeat bi-spin"></i> Loading channels...</p>';
         loadChannels()
             .done(function () {
                 var rows = multiview.blockChannels(channels, name, only ? multiview.isBlockFavouriteIn(name) : null);
                 container.innerHTML = '<div class="form-check form-switch m-2"><label class="form-check-label">' +
                     '<input class="form-check-input" type="checkbox" onchange="toggleBlockFavouritesOnly(this)"' + (only ? ' checked' : '') + '> ' +
-                    'Favourites only <i class="fa fa-bookmark text-info"></i></label></div>' +
-                    (rows.length ? channelTable(rows, false, name) : '<p class="text-muted m-2">' + (only
-                        ? 'No favourites in this block yet. Click <i class="fa fa-bookmark-o text-info"></i> next to a channel to add it.'
+                    'Favourites only <i class="bi bi-bookmark-fill text-info"></i></label></div>' +
+                    (rows.length ? channelTable(rows, false, name) : '<p class="text-body-secondary m-2">' + (only
+                        ? 'No favourites in this block yet. Click <i class="bi bi-bookmark text-info"></i> next to a channel to add it.'
                         : "None of this block's channels are on an enabled portal.") + '</p>');
             })
             .fail(function () {
@@ -291,7 +291,7 @@
 
     function renderFavourites() {
         renderInto(document.getElementById('favouriteChannels'), function (row) { return row.favourite; },
-            'No favourites yet. Click <i class="fa fa-star-o"></i> next to a channel in a block, in the Playlist Editor or in the preview.', true);
+            'No favourites yet. Click <i class="bi bi-star"></i> next to a channel in a block, in the Playlist Editor or in the preview.', true);
     }
 
     function toggleBlockChannels(button) {
@@ -299,7 +299,7 @@
         var row = container.parentElement;
         var opening = row.classList.contains('d-none');
         row.classList.toggle('d-none', !opening);
-        button.innerHTML = opening ? '<i class="fa fa-chevron-up"></i> Hide' : '<i class="fa fa-chevron-down"></i> View';
+        button.innerHTML = opening ? '<i class="bi bi-chevron-up"></i> Hide' : '<i class="bi bi-chevron-down"></i> View';
         if (opening) {
             renderBlock(container);
         }

@@ -51,5 +51,19 @@ class NoPersonalDetailsTest(unittest.TestCase):
         self.assertEqual(found, {})
 
 
+class VendoredAssetsTest(unittest.TestCase):
+    def test_shared_shell_vendored_refs_resolve(self):
+        # The offline guarantee: every vendored asset the shared shell names exists on disk.
+        with open(os.path.join(ROOT, "templates", "base.html")) as f:
+            html = f.read()
+        refs = re.findall(r"filename=['\"](vendor/[^'\"]+)['\"]", html)
+        self.assertTrue(refs, "base.html should reference vendored assets")
+        for ref in refs:
+            self.assertTrue(
+                os.path.exists(os.path.join(ROOT, "static", ref)),
+                "%s does not resolve under static/" % ref,
+            )
+
+
 if __name__ == "__main__":
     unittest.main()
