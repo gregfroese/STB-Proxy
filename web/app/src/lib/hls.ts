@@ -25,6 +25,18 @@ interface AttachOptions {
   onPlaying?: () => void;
 }
 
+function loadPolicy(retries: number) {
+  const retry = { maxNumRetry: retries, retryDelayMs: 500, maxRetryDelayMs: 2000 };
+  return {
+    default: {
+      maxTimeToFirstByteMs: 10000,
+      maxLoadTimeMs: 20000,
+      timeoutRetry: retry,
+      errorRetry: retry,
+    },
+  };
+}
+
 export function attachHls(options: AttachOptions): HlsHandle | null {
   if (!Hls.isSupported()) return null;
 
@@ -37,9 +49,9 @@ export function attachHls(options: AttachOptions): HlsHandle | null {
     liveSyncDurationCount: 3,
     // Give up quickly if the stream ends (e.g. the operator stopped it) rather
     // than retrying a dead playlist for a long time.
-    manifestLoadPolicy: { default: { maxNumRetry: 1, retryDelayMs: 500, maxRetryDelayMs: 1000 } },
-    playlistLoadPolicy: { default: { maxNumRetry: 2, retryDelayMs: 500, maxRetryDelayMs: 2000 } },
-    fragLoadPolicy: { default: { maxNumRetry: 2, retryDelayMs: 500, maxRetryDelayMs: 2000 } },
+    manifestLoadPolicy: loadPolicy(1),
+    playlistLoadPolicy: loadPolicy(2),
+    fragLoadPolicy: loadPolicy(2),
   });
 
   const playMedia = () => {
