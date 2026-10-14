@@ -1,10 +1,27 @@
 <!DOCTYPE html>
-<html data-bs-theme="dark" lang="en">
+<html data-bs-theme="dark" style="color-scheme: dark" lang="en">
 
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>STB Proxy</title>
+    <script>
+        // Apply the theme before first paint: a stored manual choice wins, else
+        // follow the OS, else dark. There is no "system" value — clearing the
+        // localStorage key returns to following the OS.
+        (function () {
+            var stored = null;
+            try {
+                stored = localStorage.getItem("theme");
+            } catch (e) { }
+            var theme = stored === "light" || stored === "dark"
+                ? stored
+                : (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+            var root = document.documentElement;
+            root.setAttribute("data-bs-theme", theme);
+            root.style.colorScheme = theme;
+        })();
+    </script>
     <link rel="shortcut icon" type="image/png" href="../static/tv.png" />
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap/bootstrap.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.min.css') }}">
@@ -65,6 +82,11 @@
                     <i class="bi bi-file-earmark-code"></i>
                 </a>
             </div>
+
+            <button class="iconbtn" id="themeToggle" type="button" title="Toggle light / dark"
+                aria-label="Switch to light theme">
+                <i class="bi bi-sun-fill" aria-hidden="true"></i>
+            </button>
 
             <button class="hamburger" type="button" aria-label="Toggle navigation" aria-controls="navSheet"
                 aria-expanded="false" onclick="toggleSheet(this)">
@@ -143,6 +165,36 @@
                 event.preventDefault();
             }
         });
+
+        // theme toggle: reflects the theme applied in <head>, flips it on click,
+        // and persists the manual choice under localStorage["theme"].
+        function currentTheme() {
+            return document.documentElement.getAttribute("data-bs-theme") === "light" ? "light" : "dark";
+        }
+
+        function applyTheme(theme) {
+            document.documentElement.setAttribute("data-bs-theme", theme);
+            document.documentElement.style.colorScheme = theme;
+            var button = document.getElementById("themeToggle");
+            if (!button) {
+                return;
+            }
+            var icon = button.querySelector("i");
+            if (icon) {
+                icon.className = theme === "light" ? "bi bi-moon-stars-fill" : "bi bi-sun-fill";
+            }
+            button.setAttribute("aria-label", theme === "light" ? "Switch to dark theme" : "Switch to light theme");
+        }
+
+        $("#themeToggle").on("click", function () {
+            var next = currentTheme() === "light" ? "dark" : "light";
+            try {
+                localStorage.setItem("theme", next);
+            } catch (e) { }
+            applyTheme(next);
+        });
+
+        applyTheme(currentTheme());
     </script>
 </body>
 

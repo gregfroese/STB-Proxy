@@ -2,8 +2,9 @@
 
 This is a presentation-only change, so the test locks down the accessibility
 contract by reading the token values straight out of static/theme.css and
-computing the contrast ratios. Dark tokens are required; the light block is
-covered as soon as ticket 13 adds it (the test detects it and skips if absent).
+computing the contrast ratios. Both the dark and the light token blocks are
+required (the light block arrived with ticket 13); every pairing below is
+asserted in both modes.
 """
 
 import os
@@ -76,10 +77,10 @@ class TokenContrastTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.css = read(os.path.join("static", "theme.css"))
-        cls.modes = {"dark": parse_block(cls.css, '[data-bs-theme="dark"]')}
-        light = parse_block(cls.css, '[data-bs-theme="light"]')
-        if light:
-            cls.modes["light"] = light
+        cls.modes = {
+            "dark": parse_block(cls.css, '[data-bs-theme="dark"]'),
+            "light": parse_block(cls.css, '[data-bs-theme="light"]'),
+        }
 
     def tokens(self, mode):
         block = self.modes[mode]

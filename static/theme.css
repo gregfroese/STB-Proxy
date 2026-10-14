@@ -23,6 +23,7 @@
     --bad: #f85149;
 
     /* Component-only tokens */
+    --hi: #ffffff22;
     --scrim: rgba(0, 0, 0, .62);
     --logo-mat: var(--ink);
 
@@ -70,6 +71,40 @@
     --border-info: color-mix(in srgb, var(--accent) 40%, transparent);
 
     color-scheme: dark;
+}
+
+/* Light mode (ticket 13). The light ladder inverts the dark one: the page is
+   the tinted surface and cards are white; --panel2 (raised) is darker than
+   --panel because there is nothing lighter than white. --focus/--star are the
+   only tokens whose light value is a different hue family (amber darkened so
+   the ring reads on light). */
+[data-bs-theme="light"] {
+    --bg: #f6f8fa;
+    --bg-glow: 214, 222, 232;
+    --panel: #ffffff;
+    --panel2: #eef1f4;
+    --line: #d0d7de;
+    --line-strong: #7a8794;
+    --ink: #1f2328;
+    --dim: #59636e;
+    --accent: #0969da;
+    --on-accent: #ffffff;
+    --focus: #b07800;
+    --star: #b07800;
+    --ok: #1a7f37;
+    --warn: #9a6700;
+    --bad: #cf222e;
+
+    /* Component-only tokens — the ones that assumed dark flip. */
+    --hi: #00000014;
+    --scrim: rgba(31, 35, 40, .35);
+    --logo-mat: var(--panel);
+
+    /* Elevation */
+    --shadow: 0 1px 2px rgba(31, 35, 40, .06);
+    --shadow-lg: 0 24px 60px rgba(31, 35, 40, .22);
+
+    color-scheme: light;
 }
 
 /* ---------------------------------------------------------------- base ---- */
@@ -155,6 +190,7 @@ i.bi {
 .bar {
     background: color-mix(in srgb, var(--panel) 92%, transparent);
     border-bottom: 1px solid var(--line);
+    box-shadow: inset 0 1px 0 var(--hi);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
 }
