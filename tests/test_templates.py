@@ -38,6 +38,9 @@ class TemplateScriptTest(unittest.TestCase):
     def test_portals_script_is_valid_javascript(self):
         self.assertValidJavaScript("portals.html")
 
+    def test_settings_script_is_valid_javascript(self):
+        self.assertValidJavaScript("settings.html")
+
     def test_dashboard_script_is_valid_javascript(self):
         self.assertValidJavaScript("dashboard.html")
 
@@ -468,6 +471,92 @@ class BlocksAccountsCompositionTest(unittest.TestCase):
         for action in ("/accounts/create", "/accounts/toggle", "/accounts/update",
                        "/accounts/password", "/accounts/delete"):
             self.assertIn(action, self.accounts)
+
+
+class PortalsSettingsChangelogCompositionTest(unittest.TestCase):
+    """Ticket 12: Portals and Settings compose from the shared card grid, token
+    cards and forms; the Changelog is bare, capped, token-styled prose."""
+
+    GRID = "row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3"
+
+    def setUp(self):
+        with open(os.path.join(ROOT, "templates", "portals.html")) as f:
+            self.portals = f.read()
+        with open(os.path.join(ROOT, "templates", "settings.html")) as f:
+            self.settings = f.read()
+        with open(os.path.join(ROOT, "templates", "changelog.html")) as f:
+            self.changelog = f.read()
+        with open(os.path.join(ROOT, "static", "theme.css")) as f:
+            self.theme = f.read()
+
+    def test_portals_use_the_shared_card_grid(self):
+        self.assertIn(self.GRID, self.portals)
+        for variant in ("bg-dark", "bg-light", "bg-secondary", "text-dark", "text-light", "border-secondary"):
+            self.assertNotIn(variant, self.portals, variant)
+
+    def test_portal_tiles_keep_the_whole_card_click_target(self):
+        self.assertIn("stretched-link", self.portals)
+        self.assertIn('data-bs-target="#modalEdit"', self.portals)
+        self.assertIn("card h-100 card-link", self.portals)
+        self.assertIn(".card-link:hover", self.theme)  # token hover affordance
+
+    def test_portals_keep_two_modals_and_restyle_them(self):
+        self.assertIn('id="modalAdd"', self.portals)
+        self.assertIn('id="modalEdit"', self.portals)
+        self.assertEqual(self.portals.count("modal-content"), 2)
+        self.assertIn("btn-close btn-close-white", self.portals)
+
+    def test_portal_fields_are_token_form_groups(self):
+        self.assertNotIn("<br><br>", self.portals)
+        self.assertIn('class="form-label"', self.portals)
+        self.assertIn('class="form-text"', self.portals)
+
+    def test_portals_have_the_empty_state(self):
+        self.assertIn('class="empty-state"', self.portals)
+        self.assertIn("No portals yet", self.portals)
+
+    def test_portals_behaviour_is_unchanged(self):
+        for action in ("/portal/add", "/portal/update", "/portal/remove", "/portal/logos"):
+            self.assertIn(action, self.portals)
+        for name in ("deviceToggled", "macsEdited", "loadDevice", "refreshLogos", "retestSave", "followLogoRefreshes"):
+            self.assertIn(name, self.portals)
+
+    def test_settings_sections_are_cards_with_a_single_external_form(self):
+        self.assertIn('<form id="save" action="/settings/save" method="post"></form>', self.settings)
+        self.assertEqual(self.settings.count('<button form="save"'), 1)  # the lone Save, now in the bar
+        for header in ("Streaming", "Playlist", "Security", "HDHomeRun", "Recording", "Plex", "Jellyfin",
+                       "Integrations"):
+            self.assertIn('<div class="card-header">%s</div>' % header, self.settings, header)
+        self.assertNotIn("<h4>", self.settings)
+
+    def test_settings_stray_columns_are_wrapped_in_rows(self):
+        self.assertIn('class="row g-3"', self.settings)
+        self.assertNotIn("p-sm-3", self.settings)  # the old section wrapper is gone
+        self.assertNotIn("<br><br>", self.settings)
+
+    def test_settings_save_is_in_a_sticky_action_bar(self):
+        self.assertRegex(self.settings, r'<div class="sticky-actions">\s*<button form="save"')
+        self.assertIn(".sticky-actions {", self.theme)
+        self.assertIn("position: sticky;", self.theme)
+
+    def test_settings_icon_buttons_are_labelled(self):
+        for label in ('aria-label="Reset FFMpeg command"', 'aria-label="Reset FFMpeg timeout"',
+                      'aria-label="Reset HDHomeRun name"', 'aria-label="Reset HDHomeRun tuners"'):
+            self.assertIn(label, self.settings, label)
+
+    def test_settings_behaviour_is_unchanged(self):
+        for action in ("/settings/save", "/settings/jellyfin-setup", "/settings/api-token"):
+            self.assertIn(action, self.settings)
+        for name in ("copyApiToken", "resetDefault"):
+            self.assertIn(name, self.settings)
+
+    def test_changelog_is_bare_capped_prose(self):
+        self.assertIn('class="page changelog"', self.changelog)
+        self.assertNotIn("<style", self.changelog)
+        self.assertIn(".changelog { max-width: 70ch; }", self.theme)
+        self.assertIn(".changelog h4 {", self.theme)
+        self.assertIn("border-bottom: 1px solid var(--line);", self.theme)
+        self.assertIn(".changelog code { color: var(--warn); }", self.theme)
 
 
 if __name__ == "__main__":

@@ -2,79 +2,79 @@
 {% block content %}
 
 {% macro deviceSection(p) %}
-<h6>Device lock:</h6>
-<input type="hidden" name="device state" id="{{ p }}DeviceState" value="keep">
-<div class="form-check form-switch">
-    <input class="form-check-input" type="checkbox" id="{{ p }}DeviceLocked" onchange="deviceToggled('{{ p }}')">
-    <label class="form-check-label" for="{{ p }}DeviceLocked">The portal only accepts my MAC from one box</label>
-</div>
-<span class="text-body-secondary">Leave this off unless the portal refuses a MAC that works on your box or in STB Emulator.</span>
-<div class="small text-danger d-none" id="{{ p }}DeviceMixed">These MACs have different device details. To change them, edit
-    devices.json next to config.json.</div>
-<div class="border rounded p-2 mt-2 d-none" id="{{ p }}DeviceFields" oninput="deviceEdited('{{ p }}')">
-    <p class="small text-body-secondary mb-2">Copy these from the box the MAC belongs to. In STB Emulator they're under
-        Settings &rarr; Profiles &rarr; your profile &rarr; STB configuration. On a MAG box the serial number is in
-        Settings &rarr; System information.<br>
-        <strong>Start with just the model and serial number</strong>: many portals only check those. If the portal
-        still refuses the MAC, add the device IDs and signature. Try one change at a time: some portals briefly
-        refuse logins after several in a row.</p>
-    <div class="row g-2">
-        <div class="col-6">
-            <label class="form-label small mb-0">Model</label>
-            <input type="text" name="device model" data-device-field="model" class="form-control form-control-sm" placeholder="MAG250">
-        </div>
-        <div class="col-6">
-            <label class="form-label small mb-0">Serial number</label>
-            <input type="text" name="device serial" data-device-field="serial" class="form-control form-control-sm">
-        </div>
-        <div class="col-6">
-            <label class="form-label small mb-0">Device ID</label>
-            <input type="text" name="device device id" data-device-field="device id" class="form-control form-control-sm">
-        </div>
-        <div class="col-6">
-            <label class="form-label small mb-0">Device ID 2</label>
-            <input type="text" name="device device id2" data-device-field="device id2" class="form-control form-control-sm">
-        </div>
-        <div class="col-8">
-            <label class="form-label small mb-0">Signature</label>
-            <input type="text" name="device signature" data-device-field="signature" class="form-control form-control-sm">
-        </div>
-        <div class="col-4">
-            <label class="form-label small mb-0">Time zone</label>
-            <input type="text" name="device timezone" data-device-field="timezone" class="form-control form-control-sm" placeholder="America/Edmonton">
-        </div>
+<div class="mb-3">
+    <div class="form-label">Device lock</div>
+    <input type="hidden" name="device state" id="{{ p }}DeviceState" value="keep">
+    <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" id="{{ p }}DeviceLocked" onchange="deviceToggled('{{ p }}')">
+        <label class="form-check-label" for="{{ p }}DeviceLocked">The portal only accepts my MAC from one box</label>
     </div>
-    <details class="mt-2">
-        <summary class="small">Advanced</summary>
-        <textarea name="device extra" data-device-field="extra" class="form-control form-control-sm font-monospace mt-1" rows="5"
-            placeholder='{"headers": {"User-Agent": "..."}, "profile": {"hw_version": "..."}}'></textarea>
-        <span class="small text-body-secondary">Anything else the portal checks, as JSON with any of cookies, headers, handshake and
-            profile. They're sent with the box's requests as they are. Some portals need values captured from the box's
-            own login (for example signatures that change per request).</span>
-    </details>
-    <p class="small text-body-secondary mb-0 mt-2">Saved to devices.json next to config.json, for every MAC above.</p>
+    <div class="form-text">Leave this off unless the portal refuses a MAC that works on your box or in STB Emulator.</div>
+    <div class="small text-danger d-none" id="{{ p }}DeviceMixed">These MACs have different device details. To change them, edit
+        devices.json next to config.json.</div>
+    <div class="border rounded p-2 mt-2 d-none" id="{{ p }}DeviceFields" oninput="deviceEdited('{{ p }}')">
+        <p class="small text-body-secondary mb-2">Copy these from the box the MAC belongs to. In STB Emulator they're under
+            Settings &rarr; Profiles &rarr; your profile &rarr; STB configuration. On a MAG box the serial number is in
+            Settings &rarr; System information.<br>
+            <strong>Start with just the model and serial number</strong>: many portals only check those. If the portal
+            still refuses the MAC, add the device IDs and signature. Try one change at a time: some portals briefly
+            refuse logins after several in a row.</p>
+        <div class="row g-2">
+            <div class="col-6">
+                <label class="form-label small mb-0">Model</label>
+                <input type="text" name="device model" data-device-field="model" class="form-control form-control-sm" placeholder="MAG250">
+            </div>
+            <div class="col-6">
+                <label class="form-label small mb-0">Serial number</label>
+                <input type="text" name="device serial" data-device-field="serial" class="form-control form-control-sm">
+            </div>
+            <div class="col-6">
+                <label class="form-label small mb-0">Device ID</label>
+                <input type="text" name="device device id" data-device-field="device id" class="form-control form-control-sm">
+            </div>
+            <div class="col-6">
+                <label class="form-label small mb-0">Device ID 2</label>
+                <input type="text" name="device device id2" data-device-field="device id2" class="form-control form-control-sm">
+            </div>
+            <div class="col-8">
+                <label class="form-label small mb-0">Signature</label>
+                <input type="text" name="device signature" data-device-field="signature" class="form-control form-control-sm">
+            </div>
+            <div class="col-4">
+                <label class="form-label small mb-0">Time zone</label>
+                <input type="text" name="device timezone" data-device-field="timezone" class="form-control form-control-sm" placeholder="America/Edmonton">
+            </div>
+        </div>
+        <details class="mt-2">
+            <summary class="small">Advanced</summary>
+            <textarea name="device extra" data-device-field="extra" class="form-control form-control-sm font-monospace mt-1" rows="5"
+                placeholder='{"headers": {"User-Agent": "..."}, "profile": {"hw_version": "..."}}'></textarea>
+            <span class="small text-body-secondary">Anything else the portal checks, as JSON with any of cookies, headers, handshake and
+                profile. They're sent with the box's requests as they are. Some portals need values captured from the box's
+                own login (for example signatures that change per request).</span>
+        </details>
+        <p class="small text-body-secondary mb-0 mt-2">Saved to devices.json next to config.json, for every MAC above.</p>
+    </div>
 </div>
 {% endmacro %}
 
 
 <div class="page">
 
-    <div>
-        <button class="btn btn-success w-100" title="Add Portal" data-bs-toggle="modal"
+    <div class="d-flex align-items-center mb-3">
+        <h4 class="mb-0">Portals</h4>
+        <button class="btn btn-success ms-auto" title="Add Portal" data-bs-toggle="modal"
             data-bs-target="#modalAdd"><i class="bi bi-plus-lg"></i> Add Portal</button>
     </div>
 
-    <br>
+    {% if portals %}
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3" id="streamOut">
 
-    <div class="row row-cols-auto" id="streamOut">
-
-
-        {% if portals is not none %}
         {% for portal in portals %}
 
         <div class="col">
 
-            <div class="card text-dark bg-light mb-3">
+            <div class="card h-100 card-link">
                 <div class="card-header btn text-start stretched-link" data-id="{{ portal }}"
                     data-enabled="{{ portals[portal].enabled }}" data-name="{{ portals[portal].name }}"
                     data-url="{{ portals[portal].url }}" data-proxy="{{ portals[portal].proxy }}"
@@ -87,7 +87,7 @@
                     {{ portals[portal].name }}
                 </div>
                 <div class="card-body">
-                    <table class="table table-sm mt-2">
+                    <table class="table table-sm mb-0">
                         {% for key, value in portals[portal].macs.items() %}
                         <tr>
                             <td><span>{{key.upper()}}</span></td>
@@ -98,7 +98,7 @@
                         {% endfor %}
                     </table>
                     {% set refresh = logoRefreshes.get(portal) %}
-                    <div class="small {{ 'text-danger' if refresh and not refresh.ok else 'text-body-secondary' }}"
+                    <div class="small mt-2 {{ 'text-danger' if refresh and not refresh.ok else 'text-body-secondary' }}"
                         data-logo-status="{{ portal }}" data-running="{{ 'true' if refresh and refresh.running else 'false' }}"
                         {{ "hidden" if not refresh }}>
                         {% if refresh %}Logos{{ "" if refresh.running else " (" ~ refresh.time ~ ")" }}: {{ refresh.message }}{% endif %}
@@ -109,178 +109,176 @@
         </div>
 
         {% endfor %}
-        {% endif %}
 
     </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="bi bi-server"></i>
+        <span>No portals yet. Add one to get started.</span>
+    </div>
+    {% endif %}
 
 </div>
 
 
 <!-- Add Modal -->
-<div class="modal fade text-dark" id="modalAdd" tabindex="-1">
+<div class="modal fade" id="modalAdd" tabindex="-1" aria-labelledby="addTitle">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Add Portal</h5>
-            </div>
-            <div class="modal-body">
+            <form action="/portal/add" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="addTitle">Add Portal</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
 
-                <form action="/portal/add" method="post">
+                    <div class="mb-3">
+                        <label class="form-label" for="addName">Name</label>
+                        <input type="text" name="name" id="addName" class="form-control" title="Name" required>
+                        <div class="form-text">Give this portal a name.</div>
+                    </div>
 
-                    <h6>Name:</h6>
-                    <input type="text" name="name" class="form-control flex-fill" title="Name" required>
-                    <span class="text-body-secondary">Give this portal a name.</span>
+                    <div class="mb-3">
+                        <label class="form-label" for="addUrl">URL</label>
+                        <input type="text" name="url" id="addUrl" class="form-control" title="URL" required>
+                        <div class="form-text">The portal address your box or STB Emulator uses, e.g.
+                            http://example.com:8080/c/. STB-Proxy finds the API address behind it and tells you which one
+                            it used.</div>
+                    </div>
 
-                    <br><br>
+                    <div class="mb-3">
+                        <label class="form-label" for="addProxy">Proxy</label>
+                        <input type="text" name="proxy" id="addProxy" class="form-control" title="Proxy">
+                        <div class="form-text">STB-Proxy supports HTML proxies only.</div>
+                    </div>
 
-                    <h6>URL:</h6>
-                    <input type="text" name="url" class="form-control flex-fill" title="URL" required>
-                    <span class="text-body-secondary">The portal address your box or STB Emulator uses, e.g.
-                        http://example.com:8080/c/. STB-Proxy finds the API address behind it and tells you which one
-                        it used.</span>
+                    <div class="mb-3">
+                        <label class="form-label" for="addMacs">MACs</label>
+                        <input type="text" name="macs" id="addMacs" class="form-control" title="MACs" required>
+                        <div class="form-text">Enter a comma separated list of MAC addresses.</div>
+                    </div>
 
-                    <br><br>
+                    <div class="mb-3">
+                        <label class="form-label" for="addStreamsPerMac">Streams per MAC</label>
+                        <input type="number" name="streams per mac" id="addStreamsPerMac" class="form-control"
+                            title="Streams Per Mac" min="0" value="1" required>
+                        <div class="form-text">How many streams does each MAC allow. 0 = unlimited.</div>
+                    </div>
 
-                    <h6>Proxy:</h6>
-                    <input type="text" name="proxy" class="form-control flex-fill" title="Proxy">
-                    <span class="text-body-secondary">STB-Proxy supports HTML proxies only.</span>
-
-                    <br><br>
-
-                    <h6>MACs:</h6>
-                    <input type="text" name="macs" class="form-control flex-fill" title="MACs" required>
-                    <span class="text-body-secondary">Enter a comma separated list of MAC addresses.</span>
-
-                    <br><br>
-
-                    <h6>Streams Per MAC:</h6>
-                    <input type="number" name="streams per mac" class="form-control flex-fill" title="Streams Per Mac"
-                        min="0" value="1" required>
-                    <span class="text-body-secondary">How many streams does each MAC allow. 0 = unlimited.</span>
-
-                    <br><br>
-
-                    <h6>Channel logos:</h6>
-                    <select name="logos" class="form-select" title="Channel logos">
-                        {% for value, label in logoSources.items() %}
-                        <option value="{{ value }}">{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                    <span class="text-body-secondary">Where channel logos come from: the portal, or looked up by channel name in the
-                        <a href="https://github.com/iptv-org/database" target="_blank">iptv-org</a> database. A logo
-                        you set in the Playlist Editor always wins.</span>
-
-                    <br><br>
+                    <div class="mb-3">
+                        <label class="form-label" for="addLogos">Channel logos</label>
+                        <select name="logos" id="addLogos" class="form-select" title="Channel logos">
+                            {% for value, label in logoSources.items() %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">Where channel logos come from: the portal, or looked up by channel name in the
+                            <a href="https://github.com/iptv-org/database" target="_blank">iptv-org</a> database. A logo
+                            you set in the Playlist Editor always wins.</div>
+                    </div>
 
                     {{ deviceSection("add") }}
 
-                    <br><br>
-
-                    <div class="modal-footer">
-                        <button class="btn btn-secondary" title="Cancel" data-bs-dismiss="modal">Cancel</button>
-                        <button class="btn btn-success w-100" title="Add">Add</button>
-                    </div>
-
-                </form>
-
-            </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" title="Cancel" data-bs-dismiss="modal">Cancel</button>
+                    <button class="btn btn-success" title="Add">Add</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
 
 <!-- Edit Modal -->
-<div class="modal fade text-dark" id="modalEdit" tabindex="-1">
+<div class="modal fade" id="modalEdit" tabindex="-1" aria-labelledby="editTitle">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Edit Portal</h5>
-                <div class="form-check form-switch ms-auto">
-                    <input type="checkbox" form="update" class="checkbox form-check-input" name="enabled" id="editEnabled"
-                        value="true">
+            <form id="update" action="/portal/update" method="post">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="editTitle">Edit Portal</h5>
+                    <div class="form-check form-switch ms-auto">
+                        <input type="checkbox" form="update" class="form-check-input" name="enabled" id="editEnabled"
+                            value="true">
+                        <label class="form-check-label" for="editEnabled">Enabled</label>
+                    </div>
+                    <button type="button" class="btn-close btn-close-white ms-2" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-            </div>
-            <div class="modal-body">
-
-                <form id="update" action="/portal/update" method="post">
+                <div class="modal-body">
 
                     <input name="id" id="editId" hidden>
                     <input type="checkbox" name="retest" id="retest" value="true" hidden>
 
-                    <h6>Name:</h6>
-                    <input type="text" name="name" id="editName" class="form-control flex-fill" title="Name" required>
-                    <span class="text-body-secondary">Give this portal a name.</span>
+                    <div class="mb-3">
+                        <label class="form-label" for="editName">Name</label>
+                        <input type="text" name="name" id="editName" class="form-control" title="Name" required>
+                        <div class="form-text">Give this portal a name.</div>
+                    </div>
 
-                    <br><br>
+                    <div class="mb-3">
+                        <label class="form-label" for="editUrl">URL</label>
+                        <input type="text" name="url" id="editUrl" class="form-control" title="URL" required>
+                        <div class="form-text">The portal address your box or STB Emulator uses, e.g.
+                            http://example.com:8080/c/. STB-Proxy finds the API address behind it and tells you which one
+                            it used.</div>
+                    </div>
 
-                    <h6>URL:</h6>
-                    <input type="text" name="url" id="editUrl" class="form-control flex-fill" title="URL" required>
-                    <span class="text-body-secondary">The portal address your box or STB Emulator uses, e.g.
-                        http://example.com:8080/c/. STB-Proxy finds the API address behind it and tells you which one
-                        it used.</span>
+                    <div class="mb-3">
+                        <label class="form-label" for="editProxy">Proxy</label>
+                        <input type="text" name="proxy" id="editProxy" class="form-control" title="Proxy">
+                        <div class="form-text">STB-Proxy supports HTML proxies only.</div>
+                    </div>
 
-                    <br><br>
+                    <div class="mb-3">
+                        <label class="form-label" for="editMacs">MACs</label>
+                        <input type="text" name="macs" id="editMacs" class="form-control" title="MACs" required
+                            oninput="macsEdited('edit')">
+                        <div class="form-text">Enter a comma separated list of MAC addresses.</div>
+                    </div>
 
-                    <h6>Proxy:</h6>
-                    <input type="text" name="proxy" id="editProxy" class="form-control flex-fill" title="Proxy">
-                    <span class="text-body-secondary">STB-Proxy supports HTML proxies only.</span>
+                    <div class="mb-3">
+                        <label class="form-label" for="editStreamsPerMac">Streams per MAC</label>
+                        <input type="number" name="streams per mac" id="editStreamsPerMac" class="form-control"
+                            title="Streams Per MAC" min="0" required>
+                        <div class="form-text">How many streams does each MAC allow. 0 = unlimited.</div>
+                    </div>
 
-                    <br><br>
-
-                    <h6>MACs:</h6>
-                    <input type="text" name="macs" id="editMacs" class="form-control flex-fill" title="MACs" required
-                        oninput="macsEdited('edit')">
-                    <span class="text-body-secondary">Enter a comma separated list of MAC addresses.</span>
-
-                    <br><br>
-
-                    <h6>Streams Per MAC:</h6>
-                    <input type="number" name="streams per mac" id="editStreamsPerMac" class="form-control flex-fill"
-                        title="Streams Per MAC" min="0" required>
-                    <span class="text-body-secondary">How many streams does each MAC allow. 0 = unlimited.</span>
-
-                    <br><br>
-
-                    <h6>Channel logos:</h6>
-                    <select name="logos" id="editLogos" class="form-select" title="Channel logos">
-                        {% for value, label in logoSources.items() %}
-                        <option value="{{ value }}">{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                    <button type="button" class="btn btn-sm btn-outline-success my-2" title="Refresh logos"
-                        onclick="refreshLogos()"><i class="bi bi-arrow-clockwise"></i> Refresh logos</button><br>
-                    <span class="text-body-secondary">Where channel logos come from: the portal, or looked up by channel name in the
-                        <a href="https://github.com/iptv-org/database" target="_blank">iptv-org</a> database. A logo
-                        you set in the Playlist Editor always wins. <b>Refresh logos</b> uses this choice and loads
-                        the portal's channel list and the iptv-org logos afresh, matches them again, then updates
-                        Plex and Jellyfin.</span>
-
-                    <br><br>
+                    <div class="mb-3">
+                        <label class="form-label" for="editLogos">Channel logos</label>
+                        <select name="logos" id="editLogos" class="form-select" title="Channel logos">
+                            {% for value, label in logoSources.items() %}
+                            <option value="{{ value }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn btn-sm btn-outline-success mt-2" title="Refresh logos"
+                            onclick="refreshLogos()"><i class="bi bi-arrow-clockwise"></i> Refresh logos</button>
+                        <div class="form-text">Where channel logos come from: the portal, or looked up by channel name in the
+                            <a href="https://github.com/iptv-org/database" target="_blank">iptv-org</a> database. A logo
+                            you set in the Playlist Editor always wins. <b>Refresh logos</b> uses this choice and loads
+                            the portal's channel list and the iptv-org logos afresh, matches them again, then updates
+                            Plex and Jellyfin.</div>
+                    </div>
 
                     {{ deviceSection("edit") }}
 
-                    <br><br>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-danger me-auto" title="Delete" form="delete"
+                        id="deleteName">Delete</button>
+                    <button type="button" class="btn btn-secondary" title="Cancel" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" title="Retest" onclick="retestSave()">Retest</button>
+                    <button class="btn btn-success" title="Save">Save</button>
+                </div>
+            </form>
 
-                    <div class="modal-footer">
-                        <button class="btn btn-danger me-auto" title="Delete" form="delete"
-                            id="deleteName">Delete</button>
-                        <button class="btn btn-secondary" title="Cancel" data-bs-dismiss="modal">Cancel</button>
-                        <button type="button" class="btn btn-success" title="Retest" onclick="retestSave()">Retest</button>
-                        <button class="btn btn-success" title="Save">Save</button>
-                    </div>
+            <form id="refreshLogos" action="/portal/logos" method="post" hidden>
+                <input name="id" id="refreshLogosId">
+                <input name="logos" id="refreshLogosSource">
+            </form>
 
-                </form>
-
-                <form id="refreshLogos" action="/portal/logos" method="post" hidden>
-                    <input name="id" id="refreshLogosId">
-                    <input name="logos" id="refreshLogosSource">
-                </form>
-
-                <form id="delete" action="/portal/remove" method="post" onsubmit="return confirm('Confirm Delete');"
-                    hidden>
-                    <input type="text" name="deleteId" id="deleteId" value="">
-                </form>
-
-            </div>
+            <form id="delete" action="/portal/remove" method="post" onsubmit="return confirm('Confirm Delete');"
+                hidden>
+                <input type="text" name="deleteId" id="deleteId" value="">
+            </form>
         </div>
     </div>
 </div>

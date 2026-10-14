@@ -3,299 +3,321 @@
 
 <div class="page">
 
-    <div class="d-flex align-items-center">
-        <button form="save" class="btn btn-success w-100" title="Save"><i class="bi bi-save"></i> Save</button>
+    <div class="d-flex align-items-center mb-3">
+        <h4 class="mb-0">Settings</h4>
         <span class="ms-auto text-body-secondary">STB-Proxy {{ version }} &middot; <a href="/changelog">Changelog</a></span>
     </div>
-    <br>
 
     <form id="save" action="/settings/save" method="post"></form>
 
     <input form="save" type="text" name="hdhr id" id="hdhr id" class="form-control" value="{{ settings['hdhr id'] }}" hidden>
 
-    <h4>Streaming</h4>
-    <hr>
-    <div class="p-sm-3">
+    <div class="card mb-3">
+        <div class="card-header">Streaming</div>
+        <div class="card-body">
+            <div class="row g-3">
 
-        <h6>Streaming Method:</h6>
-        <div class="col-md-2">
-            <select class="form-select" title="Streaming Method" form="save" id="stream method" name="stream method"
-                required>
-                <option {{ "selected" if settings['stream method']=="ffmpeg" }} value="ffmpeg">FFMpeg</option>
-                <option {{ "selected" if settings['stream method']=="redirect" }} value="redirect">Redirect</option>
-            </select>
-        </div>
-        <span class="text-body-secondary">FFMpeg is required to keep track of accounts and ensure only x users per MAC.</span>
+                <div class="col-md-4">
+                    <label class="form-label" for="stream method">Streaming method</label>
+                    <select class="form-select" title="Streaming Method" form="save" id="stream method" name="stream method"
+                        required>
+                        <option {{ "selected" if settings['stream method']=="ffmpeg" }} value="ffmpeg">FFMpeg</option>
+                        <option {{ "selected" if settings['stream method']=="redirect" }} value="redirect">Redirect</option>
+                    </select>
+                    <div class="form-text">FFMpeg is required to keep track of accounts and ensure only x users per MAC.</div>
+                </div>
 
-        <br><br>
+                <div class="col-md-8">
+                    <label class="form-label" for="ffmpeg command">FFMpeg command</label>
+                    <div class="input-group flex-nowrap">
+                        <input form="save" type="text" name="ffmpeg command" id="ffmpeg command" class="form-control"
+                            value="{{ settings['ffmpeg command'] }}" required>
+                        <button class="btn btn-danger" title="Reset" aria-label="Reset FFMpeg command"><i
+                                class="bi bi-arrow-counterclockwise" onclick="resetDefault(this)"
+                                data-input="ffmpeg command" data-default="{{ defaultSettings['ffmpeg command'] }}"></i></button>
+                    </div>
+                    <div class="form-text">Edit with caution! Check FFmpeg documentation for help.<br>'&lt;proxy&gt;',
+                        '&lt;url&gt;', and '&lt;timeout&gt;' are the available variables.</div>
+                </div>
 
-        <h6>FFMpeg Command:</h6>
-        <div class="col-md-12">
-            <div class="input-group flex-nowrap">
-                <input form="save" type="text" name="ffmpeg command" id="ffmpeg command" class="form-control"
-                    value="{{ settings['ffmpeg command'] }}" required>
-                <button class="btn btn-danger w-100" title="Reset"><i class="bi bi-arrow-counterclockwise"
-                        onclick="resetDefault(this)" data-input="ffmpeg command"
-                        data-default="{{ defaultSettings['ffmpeg command'] }}"></i></button>
+                <div class="col-md-4">
+                    <label class="form-label" for="ffmpeg timeout">FFMpeg timeout</label>
+                    <div class="input-group flex-nowrap">
+                        <input form="save" type="number" name="ffmpeg timeout" id="ffmpeg timeout" class="form-control"
+                            value="{{ settings['ffmpeg timeout'] }}" required>
+                        <button class="btn btn-danger" title="Reset" aria-label="Reset FFMpeg timeout"><i
+                                class="bi bi-arrow-counterclockwise" onclick="resetDefault(this)"
+                                data-input="ffmpeg timeout" data-default="{{ defaultSettings['ffmpeg timeout'] }}"></i></button>
+                    </div>
+                    <div class="form-text">Seconds to wait for a stream before giving up.</div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input form="save" type="checkbox" class="form-check-input" id="test streams" name="test streams"
+                            value="true" {{ "checked" if settings['test streams']=='true' }}>
+                        <label class="form-check-label" for="test streams">Test streams</label>
+                    </div>
+                    <div class="form-text">This is required for the fallback system to work.</div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input form="save" type="checkbox" class="form-check-input" id="try all macs" name="try all macs"
+                            value="true" {{ "checked" if settings['try all macs']=='true' }}>
+                        <label class="form-check-label" for="try all macs">Try all MAC's</label>
+                    </div>
+                    <div class="form-text">Try all MAC's before looking for a fallback.</div>
+                </div>
+
             </div>
         </div>
-        <span class="text-body-secondary">Edit with caution! Check FFmpeg documentation for help.<br>'&lt;proxy&gt;',
-            '&lt;url&gt;', and '&lt;timeout&gt;' are the available variables.</span>
+    </div>
 
-        <br><br>
+    <div class="card mb-3">
+        <div class="card-header">Playlist</div>
+        <div class="card-body">
+            <div class="row g-3">
 
-        <h6>FFMpeg Timeout:</h6>
-        <div class="col-md-2">
-            <div class="input-group flex-nowrap">
-                <input form="save" type="number" name="ffmpeg timeout" id="ffmpeg timeout" class="form-control"
-                    value="{{ settings['ffmpeg timeout'] }}" required>
-                <button class="btn btn-danger w-100" title="Reset"><i class="bi bi-arrow-counterclockwise"
-                        onclick="resetDefault(this)" data-input="ffmpeg timeout" data-default="{{ defaultSettings['ffmpeg timeout'] }}"></i></button>
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input form="save" type="checkbox" class="form-check-input" id="use channel genres"
+                            name="use channel genres" value="true" {{ "checked" if settings['use channel genres']=='true' }}>
+                        <label class="form-check-label" for="use channel genres">Use channel genres</label>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input form="save" type="checkbox" class="form-check-input" id="use channel numbers"
+                            name="use channel numbers" value="true" {{ "checked" if settings['use channel numbers']=='true' }}>
+                        <label class="form-check-label" for="use channel numbers">Use channel numbers</label>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input form="save" type="checkbox" class="form-check-input" id="sort playlist by channel genre"
+                            name="sort playlist by channel genre" value="true" {{ "checked" if settings['sort playlist by channel genre']=='true' }}>
+                        <label class="form-check-label" for="sort playlist by channel genre">Sort by genre</label>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input form="save" type="checkbox" class="form-check-input" id="sort playlist by channel number"
+                            name="sort playlist by channel number" value="true" {{ "checked" if settings['sort playlist by channel number']=='true' }}>
+                        <label class="form-check-label" for="sort playlist by channel number">Sort by number</label>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input form="save" type="checkbox" class="form-check-input" id="sort playlist by channel name"
+                            name="sort playlist by channel name" value="true" {{ "checked" if settings['sort playlist by channel name']=='true' }}>
+                        <label class="form-check-label" for="sort playlist by channel name">Sort by name</label>
+                    </div>
+                </div>
+
+                <div class="col-12">
+                    <div class="form-text">Sorting options stack and are applied: Genre &gt; Number &gt; Name.<br>Without any
+                        sorting the channels are listed as the server lists them.</div>
+                </div>
+
+                <div class="col-12">
+                    <div class="form-label">Channel logos</div>
+                    <div class="form-text">Chosen for each portal: <a href="/portals">Portals</a>, open a portal, <b>Channel
+                        logos</b>. A logo you set in the Playlist Editor always wins.</div>
+                </div>
+
             </div>
         </div>
-        <span class="text-body-secondary">Seconds to wait for a stream before giving up.</span>
+    </div>
 
-        <br><br>
+    <div class="card mb-3">
+        <div class="card-header">Security</div>
+        <div class="card-body">
+            <div class="row g-3">
 
-        <h6>Test Streams:</h6>
-        <div class="col-md-2">
-            <div class="form-check form-switch">
-                <input form="save" type="checkbox" class="checkbox form-check-input" name="test streams" value="true" {{ "checked" if settings['test streams']=='true' }}>
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input form="save" type="checkbox" class="form-check-input" id="enable security" name="enable security"
+                            value="true" {{ "checked" if settings['enable security']=='true' }}>
+                        <label class="form-check-label" for="enable security">Enable</label>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label" for="username">Username</label>
+                    <input form="save" type="text" name="username" id="username" class="form-control"
+                        value="{{ settings['username'] }}" title="Username" required>
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label" for="password">Password</label>
+                    <input form="save" type="password" name="password" id="password" class="form-control"
+                        value="{{ settings['password'] }}" title="Password" required>
+                </div>
+
+                <div class="col-12">
+                    <div class="form-text">Recommended if STB-Proxy is exposed to the internet or on a public network.</div>
+                </div>
+
             </div>
         </div>
-        <span class="text-body-secondary">This is required for the fallback system to work.</span>
+    </div>
 
-        <br><br>
+    <div class="card mb-3">
+        <div class="card-header">HDHomeRun</div>
+        <div class="card-body">
+            <div class="row g-3">
 
-        <h6>Try All MAC's:</h6>
-        <div class="col-md-2">
-            <div class="form-check form-switch">
-                <input form="save" type="checkbox" class="checkbox form-check-input" name="try all macs" value="true" {{ "checked" if settings['try all macs']=='true' }}>
+                <div class="col-md-4">
+                    <div class="form-check form-switch">
+                        <input form="save" type="checkbox" class="form-check-input" id="enable hdhr" name="enable hdhr"
+                            value="true" {{ "checked" if settings['enable hdhr']=='true' }}>
+                        <label class="form-check-label" for="enable hdhr">Enable</label>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label" for="hdhr name">Name</label>
+                    <div class="input-group flex-nowrap">
+                        <input form="save" type="text" name="hdhr name" id="hdhr name" class="form-control"
+                            value="{{ settings['hdhr name'] }}" required>
+                        <button class="btn btn-danger" title="Reset" aria-label="Reset HDHomeRun name"><i
+                                class="bi bi-arrow-counterclockwise" onclick="resetDefault(this)"
+                                data-input="hdhr name" data-default="{{ defaultSettings['hdhr name'] }}"></i></button>
+                    </div>
+                    <div class="form-text">Display name of the server in Plex DVR etc.</div>
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label" for="hdhr tuners">Tuners</label>
+                    <div class="input-group flex-nowrap">
+                        <input form="save" type="number" name="hdhr tuners" id="hdhr tuners" class="form-control"
+                            value="{{ settings['hdhr tuners'] }}" required>
+                        <button class="btn btn-danger" title="Reset" aria-label="Reset HDHomeRun tuners"><i
+                                class="bi bi-arrow-counterclockwise" onclick="resetDefault(this)"
+                                data-input="hdhr tuners" data-default="{{ defaultSettings['hdhr tuners'] }}"></i></button>
+                    </div>
+                    <div class="form-text">Max concurrent streams in Plex DVR etc.</div>
+                </div>
+
             </div>
         </div>
-        <span class="text-body-secondary">Try all MAC's before looking for a fallback.</span>
-
     </div>
 
-    <br>
+    <div class="card mb-3">
+        <div class="card-header">Recording</div>
+        <div class="card-body">
+            <div class="row g-3">
 
-    <h4>Playlist</h4>
-    <hr>
-    <div class="p-sm-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="recordings folder">Recordings folder</label>
+                    <input form="save" type="text" name="recordings folder" id="recordings folder" class="form-control"
+                        value="{{ settings['recordings folder'] }}" placeholder="/mnt/recordings">
+                    <div class="form-text">Where recordings are saved: a folder STB-Proxy can write to, such as a mounted share.
+                        Empty turns recording off. Starting a recording needs 1 GB free there, and a recording stops when
+                        less than 300 MB is left.</div>
+                </div>
 
-        <h6>Use channel genres:</h6>
-        <div class="form-check form-switch">
-            <input form="save" type="checkbox" class="checkbox form-check-input" name="use channel genres" value="true" {{ "checked" if settings['use channel genres']=='true' }}>
-        </div>
-
-        <br>
-
-        <h6>Use channel numbers:</h6>
-        <div class="form-check form-switch">
-            <input form="save" type="checkbox" class="checkbox form-check-input" name="use channel numbers" value="true" {{ "checked" if settings['use channel numbers']=='true' }}>
-        </div>
-
-        <br>
-
-        <h6>Sort by genre:</h6>
-        <div class="form-check form-switch">
-            <input form="save" type="checkbox" class="checkbox form-check-input" name="sort playlist by channel genre" value="true" {{ "checked" if settings['sort playlist by channel genre']=='true' }}>
-        </div>
-
-        <br>
-
-        <h6>Sort by number:</h6>
-        <div class="form-check form-switch">
-            <input form="save" type="checkbox" class="checkbox form-check-input" name="sort playlist by channel number" value="true" {{ "checked" if settings['sort playlist by channel number']=='true' }}>
-        </div>
-
-        <br>
-
-        <h6>Sort by name:</h6>
-        <div class="form-check form-switch">
-            <input form="save" type="checkbox" class="checkbox form-check-input" name="sort playlist by channel name" value="true" {{ "checked" if settings['sort playlist by channel name']=='true' }}>
-        </div>
-        <span class="text-body-secondary">Sorting options stack and are applied: Genre > Number > Name.<br>Without any sorting
-            the channels are listed as the server lists them.</span>
-
-        <br><br>
-
-        <h6>Channel logos:</h6>
-        <span class="text-body-secondary">Chosen for each portal: <a href="/portals">Portals</a>, open a portal, <b>Channel
-            logos</b>. A logo you set in the Playlist Editor always wins.</span>
-
-    </div>
-
-    <br>
-
-    <h4>Security</h4>
-    <hr>
-    <div class="p-sm-3">
-
-        <h6>Enable:</h6>
-        <div class="form-check form-switch">
-            <input form="save" type="checkbox" class="checkbox form-check-input" name="enable security" value="true" {{ "checked" if settings['enable security']=='true' }}>
-        </div>
-
-        <br>
-
-        <h6>Username:</h6>
-        <div class="col-md-4">
-            <input form="save" type="text" name="username" id="username" class="form-control"
-                value="{{ settings['username'] }}" title="Username" required>
-        </div>
-
-        <br>
-
-        <h6>Password:</h6>
-        <div class="col-md-4">
-            <input form="save" type="password" name="password" id="password" class="form-control"
-                value="{{ settings['password'] }}" title="Password" required>
-        </div>
-        <span class="text-body-secondary">Recommended if STB-Proxy is exposed to the internet or on a public network.</span>
-
-    </div>
-
-    <br>
-
-    <h4>HDHomeRun</h4>
-    <hr>
-    <div class="p-sm-3">
-
-        <h6>Enable:</h6>
-        <div class="form-check form-switch">
-            <input form="save" type="checkbox" class="checkbox form-check-input" name="enable hdhr" value="true" {{ "checked" if settings['enable hdhr']=='true' }}>
-        </div>
-
-        <br>
-
-        <h6>Name:</h6>
-        <div class="col-md-4">
-            <div class="input-group flex-nowrap">
-                <input form="save" type="text" name="hdhr name" id="hdhr name" class="form-control"
-                    value="{{ settings['hdhr name'] }}" required>
-                <button class="btn btn-danger w-100" title="Reset"><i class="bi bi-arrow-counterclockwise"
-                        onclick="resetDefault(this)" data-input="hdhr name" data-default="{{ defaultSettings['hdhr name'] }}"></i></button>
             </div>
         </div>
-        <span class="text-body-secondary">Display name of the server in Plex DVR etc.</span>
+    </div>
 
-        <br>
-        <br>
+    <div class="card mb-3">
+        <div class="card-header">Plex</div>
+        <div class="card-body">
+            <div class="row g-3">
 
-        <h6>Tuners:</h6>
-        <div class="col-md-2">
-            <div class="input-group flex-nowrap">
-                <input form="save" type="number" name="hdhr tuners" id="hdhr tuners" class="form-control"
-                    value="{{ settings['hdhr tuners'] }}" required>
-                <button class="btn btn-danger w-100" title="Reset"><i class="bi bi-arrow-counterclockwise"
-                        onclick="resetDefault(this)" data-input="hdhr tuners" data-default="{{ defaultSettings['hdhr tuners'] }}"></i></button>
+                <div class="col-md-6">
+                    <label class="form-label" for="plex url">Plex address</label>
+                    <input form="save" type="text" name="plex url" id="plex url" class="form-control"
+                        placeholder="http://192.168.1.10:32400" value="{{ settings['plex url'] }}">
+                    <div class="form-text">Lets block switches and dead marks update the Plex DVR. Leave blank to turn this
+                        off.</div>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label" for="plex token">Plex token</label>
+                    <input form="save" type="password" name="plex token" id="plex token" class="form-control"
+                        autocomplete="off"
+                        placeholder="{{ 'Saved, leave blank to keep' if settings['plex token'] else 'Not set' }}">
+                    <div class="form-check mt-2">
+                        <input form="save" type="checkbox" class="form-check-input" name="clear plex token"
+                            id="clear plex token" value="true">
+                        <label class="form-check-label" for="clear plex token">Clear token</label>
+                    </div>
+                </div>
+
             </div>
         </div>
-        <span class="text-body-secondary">Max concurrent streams in Plex DVR etc.</span>
-
     </div>
 
-    <br>
+    <div class="card mb-3">
+        <div class="card-header">Jellyfin</div>
+        <div class="card-body">
+            <div class="row g-3">
 
-    <h4>Recording</h4>
-    <hr>
-    <div class="p-sm-3">
+                <div class="col-md-6">
+                    <label class="form-label" for="jellyfin url">Jellyfin address</label>
+                    <input form="save" type="text" name="jellyfin url" id="jellyfin url" class="form-control"
+                        placeholder="http://192.168.1.10:8096" value="{{ settings['jellyfin url'] }}">
+                    <div class="form-text">Lets block switches and dead marks update Jellyfin's Live TV. Leave blank to turn
+                        this off.</div>
+                </div>
 
-        <h6>Recordings folder:</h6>
-        <div class="col-md-6">
-            <input form="save" type="text" name="recordings folder" id="recordings folder" class="form-control"
-                value="{{ settings['recordings folder'] }}" placeholder="/mnt/recordings">
+                <div class="col-md-6">
+                    <label class="form-label" for="jellyfin api key">Jellyfin API key</label>
+                    <input form="save" type="password" name="jellyfin api key" id="jellyfin api key" class="form-control"
+                        autocomplete="off"
+                        placeholder="{{ 'Saved, leave blank to keep' if settings['jellyfin api key'] else 'Not set' }}">
+                    <div class="form-check mt-2">
+                        <input form="save" type="checkbox" class="form-check-input" name="clear jellyfin api key"
+                            id="clear jellyfin api key" value="true">
+                        <label class="form-check-label" for="clear jellyfin api key">Clear key</label>
+                    </div>
+                    <div class="form-text">Make one in Jellyfin under Dashboard &rarr; API Keys.</div>
+                </div>
+
+                <div class="col-12">
+                    <button type="submit" form="jellyfinSetup" class="btn btn-outline-light" {{ "disabled" if not (settings['jellyfin url'] and settings['jellyfin api key']) }}>
+                        Set up Jellyfin Live TV</button>
+                    <div class="form-text mt-1">Adds STB-Proxy to Jellyfin as a tuner (the playlist) and a guide (the XMLTV), if it
+                        isn't there already. Save the address and key first.</div>
+                    <form id="jellyfinSetup" action="/settings/jellyfin-setup" method="post"></form>
+                </div>
+
+            </div>
         </div>
-        <span class="text-body-secondary">Where recordings are saved: a folder STB-Proxy can write to, such as a mounted share. Empty turns recording off. Starting a recording needs 1 GB free there, and a recording stops when less than 300 MB is left.</span>
-
     </div>
 
-    <br>
+    <div class="card mb-3">
+        <div class="card-header">Integrations</div>
+        <div class="card-body">
+            <div class="row g-3">
 
-    <h4>Plex</h4>
-    <hr>
-    <div class="p-sm-3">
+                <div class="col-lg-8">
+                    <label class="form-label" for="apiToken">API token</label>
+                    <div class="input-group">
+                        <input type="text" class="form-control font-monospace" id="apiToken" value="{{ settings['api token'] }}" readonly>
+                        <button type="button" class="btn btn-outline-light" onclick="copyApiToken(this)">Copy</button>
+                        <button type="submit" form="newApiToken" class="btn btn-outline-danger">New token</button>
+                    </div>
+                    <div class="form-text">For Home Assistant and other integrations using the <code>/api/</code> endpoints: send it as
+                        <code>Authorization: Bearer &lt;token&gt;</code>. <b>New token</b> stops the old one working. See the README for
+                        examples.</div>
+                    <form id="newApiToken" action="/settings/api-token" method="post"
+                        onsubmit="return confirm('Make a new API token? Anything using the old one will stop working until you update it.');"></form>
+                </div>
 
-        <h6>Plex address:</h6>
-        <div class="col-md-4">
-            <input form="save" type="text" name="plex url" id="plex url" class="form-control"
-                placeholder="http://192.168.1.10:32400" value="{{ settings['plex url'] }}">
+            </div>
         </div>
-        <span class="text-body-secondary">Lets block switches and dead marks update the Plex DVR. Leave blank to turn this off.</span>
-
-        <br>
-        <br>
-
-        <h6>Plex token:</h6>
-        <div class="col-md-4">
-            <input form="save" type="password" name="plex token" id="plex token" class="form-control"
-                autocomplete="off"
-                placeholder="{{ 'Saved, leave blank to keep' if settings['plex token'] else 'Not set' }}">
-        </div>
-        <div class="form-check mt-1">
-            <input form="save" type="checkbox" class="form-check-input" name="clear plex token" id="clear plex token" value="true">
-            <label class="form-check-label" for="clear plex token">Clear token</label>
-        </div>
-
     </div>
 
-    <br>
-
-    <h4>Jellyfin</h4>
-    <hr>
-    <div class="p-sm-3">
-
-        <h6>Jellyfin address:</h6>
-        <div class="col-md-4">
-            <input form="save" type="text" name="jellyfin url" class="form-control"
-                placeholder="http://192.168.1.10:8096" value="{{ settings['jellyfin url'] }}">
-        </div>
-        <span class="text-body-secondary">Lets block switches and dead marks update Jellyfin's Live TV. Leave blank to turn this off.</span>
-
-        <br>
-        <br>
-
-        <h6>Jellyfin API key:</h6>
-        <div class="col-md-4">
-            <input form="save" type="password" name="jellyfin api key" class="form-control" autocomplete="off"
-                placeholder="{{ 'Saved, leave blank to keep' if settings['jellyfin api key'] else 'Not set' }}">
-        </div>
-        <div class="form-check mt-1">
-            <input form="save" type="checkbox" class="form-check-input" name="clear jellyfin api key" id="clear jellyfin api key" value="true">
-            <label class="form-check-label" for="clear jellyfin api key">Clear key</label>
-        </div>
-        <span class="text-body-secondary">Make one in Jellyfin under Dashboard &rarr; API Keys.</span>
-
-        <br>
-        <br>
-
-        <button type="submit" form="jellyfinSetup" class="btn btn-outline-light" {{ "disabled" if not (settings['jellyfin url'] and settings['jellyfin api key']) }}>
-            Set up Jellyfin Live TV</button>
-        <div class="text-body-secondary mt-1">Adds STB-Proxy to Jellyfin as a tuner (the playlist) and a guide (the XMLTV), if it
-            isn't there already. Save the address and key first.</div>
-        <form id="jellyfinSetup" action="/settings/jellyfin-setup" method="post"></form>
-
-    </div>
-
-    <br>
-
-    <h4>Integrations</h4>
-    <hr>
-    <div class="p-sm-3">
-
-        <h6>API token:</h6>
-        <div class="input-group" style="max-width: 560px;">
-            <input type="text" class="form-control font-monospace" id="apiToken" value="{{ settings['api token'] }}" readonly>
-            <button type="button" class="btn btn-outline-light" onclick="copyApiToken(this)">Copy</button>
-            <button type="submit" form="newApiToken" class="btn btn-outline-danger">New token</button>
-        </div>
-        <span class="text-body-secondary">For Home Assistant and other integrations using the <code>/api/</code> endpoints: send it as
-            <code>Authorization: Bearer &lt;token&gt;</code>. <b>New token</b> stops the old one working. See the README for
-            examples.</span>
-        <form id="newApiToken" action="/settings/api-token" method="post"
-            onsubmit="return confirm('Make a new API token? Anything using the old one will stop working until you update it.');"></form>
-
+    <div class="sticky-actions">
+        <button form="save" class="btn btn-success" title="Save"><i class="bi bi-save"></i> Save</button>
     </div>
 
 </div>

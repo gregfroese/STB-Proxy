@@ -1080,16 +1080,47 @@ i.bi {
     max-width: 40rem;
 }
 
-/* The changelog reads as a document. */
-.changelog h3 { margin-bottom: 1rem; }
+/* The changelog reads as a document: bare prose, capped for reading. */
+.changelog { max-width: 70ch; }
+.changelog h3 { margin-bottom: var(--sp-3); }
 .changelog h4 {
-    margin-top: 2rem;
-    padding-bottom: .5rem;
+    margin-top: var(--sp-4);
+    padding-bottom: var(--sp-1);
     border-bottom: 1px solid var(--line);
 }
-.changelog h5 { margin-top: 1.5rem; }
-.changelog li { margin-bottom: .35rem; }
+.changelog h5 { margin-top: var(--sp-3); }
+.changelog li { margin-bottom: var(--sp-1); }
 .changelog code { color: var(--warn); }
+
+/* A card whose whole surface opens something (Portals tiles). */
+.card-link {
+    transition: border-color .15s, box-shadow .15s;
+}
+
+.card-link:hover {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.card-link:hover .card-header {
+    color: var(--accent);
+}
+
+/* A page-level action bar that stays reachable down a long form (Settings). */
+.sticky-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+    margin-top: var(--sp-3);
+    padding: var(--sp-2) 0;
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border-top: 1px solid var(--line);
+}
 
 /* -------------------------------------------------------------- utility --- */
 
