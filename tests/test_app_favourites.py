@@ -65,7 +65,7 @@ class FavouriteChannelTest(unittest.TestCase):
         body = self.client.get("/blocks").get_data(as_text=True)
         self.assertIn('class="block-channels channel-list" data-block="NHL"', body)
         self.assertIn('id="favouritesTab"', body)
-        self.assertIn('<span class="badge bg-secondary" id="favouriteCount">1</span>', body)
+        self.assertIn('<span class="badge" id="favouriteCount">1</span>', body)
         self.assertIn('id="playerPanel"', body)
         self.assertIn('id="favouriteButton"', body)
 

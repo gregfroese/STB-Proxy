@@ -36,8 +36,6 @@
     --fs-md: 14px;
     --fs-lg: 15px;
     --fs-xl: 16px;
-    --fs-2xl: 18px;
-    --fs-h: 20px;
     --fw-normal: 400;
     --fw-semibold: 600;
     --fw-bold: 700;
@@ -292,8 +290,7 @@ i.bi {
 }
 
 /* One icon-button component: square 2rem, a 24x24 minimum hit target, --dim
-   brightening to --ink. `iconbtn` is the shell's alias for the same rule. */
-.icon-button,
+   brightening to --ink. */
 .iconbtn {
     display: inline-grid;
     place-items: center;
@@ -310,7 +307,6 @@ i.bi {
     text-decoration: none;
 }
 
-.icon-button:hover,
 .iconbtn:hover {
     color: var(--ink);
     background: color-mix(in srgb, var(--ink) 6%, transparent);
@@ -319,7 +315,7 @@ i.bi {
 .hamburger {
     display: none;
     background: transparent;
-    border: 1px solid var(--line);
+    border: 1px solid var(--line-strong);
     color: var(--ink);
     border-radius: var(--r-md);
     width: 34px;
@@ -519,23 +515,10 @@ i.bi {
 
 .card.border-secondary { border-color: var(--line) !important; }
 
-/* --- card grid (Streams' grid is the shared treatment: 1 / 2 / 3) -------- */
-
-.card-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--sp-3);
-}
-
-.card-grid > * { min-width: 0; }
-
-@media (min-width: 768px) {
-    .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-
-@media (min-width: 1200px) {
-    .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
+/* --- card grid ----------------------------------------------------------- */
+/* The shared card grid is the Bootstrap utility combo
+   `row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3` with a `.col` per card,
+   used verbatim on Streams, Dashboard and Portals. No page-local rule. */
 
 /* --- data tables (DataTables 2 output and plain HTML tables alike) ------- */
 
@@ -682,7 +665,7 @@ i.bi {
 .btn {
     --bs-btn-color: var(--ink);
     --bs-btn-bg: var(--panel2);
-    --bs-btn-border-color: var(--line);
+    --bs-btn-border-color: var(--line-strong);
     --bs-btn-hover-color: var(--ink);
     --bs-btn-hover-bg: color-mix(in srgb, var(--ink) 8%, var(--panel2));
     --bs-btn-hover-border-color: var(--accent);
@@ -691,7 +674,7 @@ i.bi {
     --bs-btn-active-border-color: var(--accent);
     --bs-btn-disabled-color: var(--dim);
     --bs-btn-disabled-bg: var(--panel2);
-    --bs-btn-disabled-border-color: var(--line);
+    --bs-btn-disabled-border-color: var(--line-strong);
     border-radius: var(--r-sm);
 }
 
@@ -705,7 +688,7 @@ i.bi {
 .btn-outline-secondary {
     --bs-btn-color: var(--ink);
     --bs-btn-bg: var(--panel2);
-    --bs-btn-border-color: var(--line);
+    --bs-btn-border-color: var(--line-strong);
     --bs-btn-hover-color: var(--ink);
     --bs-btn-hover-bg: color-mix(in srgb, var(--ink) 8%, var(--panel2));
     --bs-btn-hover-border-color: var(--accent);
@@ -714,7 +697,7 @@ i.bi {
     --bs-btn-active-border-color: var(--accent);
     --bs-btn-disabled-color: var(--dim);
     --bs-btn-disabled-bg: var(--panel2);
-    --bs-btn-disabled-border-color: var(--line);
+    --bs-btn-disabled-border-color: var(--line-strong);
 }
 
 /* Filled variants: semantic background, --on-accent text. */
@@ -981,7 +964,10 @@ i.bi {
 
 /* --- badges: --ink label, semantic colour in the fill + border + dot ----- */
 
+/* The label stays --ink; the semantic colour is carried by --badge-c, which
+   only the dot uses (the fill and border use the tints below). */
 .badge {
+    --badge-c: var(--dim);
     color: var(--ink) !important;
     background-color: color-mix(in srgb, var(--ink) 8%, transparent);
     border: 1px solid var(--line);
@@ -994,16 +980,17 @@ i.bi {
 .badge.bg-dark,
 .badge.bg-light,
 .badge.bg-black {
+    --badge-c: var(--dim);
     background-color: color-mix(in srgb, var(--ink) 8%, transparent) !important;
     border-color: var(--line);
     color: var(--ink) !important;
 }
 
-.badge.bg-success { background-color: var(--tint-ok) !important; border-color: var(--border-ok); }
-.badge.bg-warning { background-color: var(--tint-warn) !important; border-color: var(--border-warn); }
-.badge.bg-danger { background-color: var(--tint-bad) !important; border-color: var(--border-bad); }
+.badge.bg-success { --badge-c: var(--ok); background-color: var(--tint-ok) !important; border-color: var(--border-ok); }
+.badge.bg-warning { --badge-c: var(--warn); background-color: var(--tint-warn) !important; border-color: var(--border-warn); }
+.badge.bg-danger { --badge-c: var(--bad); background-color: var(--tint-bad) !important; border-color: var(--border-bad); }
 .badge.bg-info,
-.badge.bg-primary { background-color: var(--tint-accent) !important; border-color: var(--border-info); }
+.badge.bg-primary { --badge-c: var(--accent); background-color: var(--tint-accent) !important; border-color: var(--border-info); }
 
 .badge.text-dark,
 .badge.text-light { color: var(--ink) !important; }
@@ -1013,7 +1000,7 @@ i.bi {
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: currentColor;
+    background: var(--badge-c);
     margin-right: 5px;
 }
 
@@ -1039,8 +1026,6 @@ i.bi {
     border-color: var(--border-info);
 }
 
-.tag .more { color: var(--dim); }
-
 /* --- empty state (busy and error variants) ------------------------------- */
 
 .empty-state {
@@ -1058,12 +1043,6 @@ i.bi {
 }
 
 .empty-state i.bi { font-size: 28px; opacity: .8; }
-
-.empty-state .actions {
-    display: flex;
-    gap: var(--sp-1);
-    margin-top: var(--sp-1);
-}
 
 .empty-state.busy i.bi {
     animation: spin 1s linear infinite;

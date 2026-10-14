@@ -34,7 +34,7 @@
         <li class="nav-item" role="presentation">
             <button class="nav-link" id="favouritesTabButton" data-bs-toggle="tab" data-bs-target="#favouritesTab"
                 type="button" role="tab"><i class="bi bi-star-fill text-warning"></i> Favourites
-                <span class="badge bg-secondary" id="favouriteCount">{{ favourites }}</span></button>
+                <span class="badge" id="favouriteCount">{{ favourites }}</span></button>
         </li>
     </ul>
 
@@ -65,7 +65,7 @@
                         </td>
                         <td>
                             <span class="tag">{{ block.name }}</span>
-                            {% if block.hidden %}<span class="badge bg-secondary ms-1"
+                            {% if block.hidden %}<span class="badge ms-1"
                                 title="Not in the API, Plex or Jellyfin: its channels play only in STB-Proxy">STB-Proxy only</span>{% endif %}
                         </td>
                         <td>

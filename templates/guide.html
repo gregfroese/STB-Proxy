@@ -233,7 +233,7 @@
                 '<td class="text-nowrap"><div class="d-flex align-items-center">' + logoImage(channel) + '<div class="ms-2">' +
                 escapeAttr(channel.channelNumber) + ' ' +
                 escapeAttr(channel.customChannelName || channel.channelName) + deadBadge(channel) +
-                (channel.available ? ' <span class="badge bg-secondary">in lineup</span>' : '') +
+                (channel.available ? ' <span class="badge">in lineup</span>' : '') +
                 '<div class="small text-body-secondary">' + escapeAttr(channel.portalName) + '</div></div></div></td></tr>';
         });
         document.getElementById('results').innerHTML = html + '</tbody></table>';

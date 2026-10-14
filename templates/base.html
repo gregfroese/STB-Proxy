@@ -53,6 +53,14 @@
 {% set toastKind = {"success": "ok", "danger": "bad", "warning": "warn", "info": "info"} %}
 {% set toastIcon = {"ok": "bi-check-circle-fill", "warn": "bi-exclamation-triangle-fill", "bad": "bi-x-octagon-fill", "info": "bi-info-circle-fill"} %}
 
+{% macro navItems(items) %}
+{% for href, icon, label in items %}
+<a class="navlink" href="{{ href }}"{% if request.path == href %} aria-current="page"{% endif %}>
+    <i class="bi {{ icon }}"></i> {{ label }}
+</a>
+{% endfor %}
+{% endmacro %}
+
 <body>
     <a class="skip" href="#main">Skip to content</a>
 
@@ -66,11 +74,7 @@
             <nav class="nav" aria-label="Primary">
                 {% for group, items in navGroups %}
                 {% if not loop.first %}<span class="sep" aria-hidden="true"></span>{% endif %}
-                {% for href, icon, label in items %}
-                <a class="navlink" href="{{ href }}"{% if request.path == href %} aria-current="page"{% endif %}>
-                    <i class="bi {{ icon }}"></i> {{ label }}
-                </a>
-                {% endfor %}
+                {{ navItems(items) }}
                 {% endfor %}
             </nav>
 
@@ -97,11 +101,7 @@
         <div class="sheet" id="navSheet">
             {% for group, items in navGroups %}
             <div class="grp">{{ group }}</div>
-            {% for href, icon, label in items %}
-            <a class="navlink" href="{{ href }}"{% if request.path == href %} aria-current="page"{% endif %}>
-                <i class="bi {{ icon }}"></i> {{ label }}
-            </a>
-            {% endfor %}
+            {{ navItems(items) }}
             {% endfor %}
             <div class="grp">Feeds</div>
             <a class="navlink" href="/playlist" target="_blank"><i class="bi bi-file-earmark-play"></i> Playlist</a>

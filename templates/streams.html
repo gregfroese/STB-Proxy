@@ -4,7 +4,7 @@
 <div class="page--full">
     <div class="d-flex align-items-center">
         <h4 class="mb-0">Active streams</h4>
-        <span class="badge bg-secondary ms-2" id="streamCount">0</span>
+        <span class="badge ms-2" id="streamCount">0</span>
         <div class="ms-auto small text-body-secondary">Tuners in use, who is watching, and from where.</div>
     </div>
     <hr>
@@ -25,7 +25,7 @@
         var labels = { client: "client", recording: "recording", preview: "preview" };
         var colours = { client: "bg-success", recording: "bg-danger", preview: "bg-warning" };
         return (kinds || []).map(function (k) {
-            return '<span class="badge dot ' + (colours[k] || "bg-secondary") + ' ms-1">' + (labels[k] || k) + "</span>";
+            return '<span class="badge dot ' + (colours[k] || "") + ' ms-1">' + (labels[k] || k) + "</span>";
         }).join("");
     }
 

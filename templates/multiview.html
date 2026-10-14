@@ -724,7 +724,7 @@
             results.innerHTML = pickerBlocks.length ? pickerBlocks.map(function (block, k) {
                 return '<button type="button" class="list-group-item list-group-item-action d-flex align-items-center" onclick="openBlock(' + k + ')">' +
                     '<i class="bi bi-grid me-2"></i><span class="me-auto">' + escapeAttr(block.name) + '</span>' +
-                    '<span class="badge bg-secondary">' + block.channels + '</span><i class="bi bi-chevron-right ms-2"></i></button>';
+                    '<span class="badge">' + block.channels + '</span><i class="bi bi-chevron-right ms-2"></i></button>';
             }).join("") : '<p class="text-body-secondary mb-0">' +
                 (text ? "No blocks match." : "No blocks are on. Switch some on in Blocks.") + '</p>';
             return;
@@ -759,7 +759,7 @@
                 '<span class="me-auto">' + escapeAttr(multiview.channelName(row)) + '</span>' +
                 (row.favourite ? '<i class="bi bi-star-fill text-warning ms-1"></i>' : '') +
                 (row.dead ? '<span class="badge bg-danger ms-1">dead</span>' : '') +
-                (row.available ? '' : '<span class="badge bg-secondary ms-1">not in lineup</span>') +
+                (row.available ? '' : '<span class="badge ms-1">not in lineup</span>') +
                 '</div>';
         }).join("");
     }

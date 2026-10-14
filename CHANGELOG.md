@@ -2,6 +2,15 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.10.0] - 2026-10-13
+
+### Changed
+
+- **Operator UI modernisation**: the whole Operator UI is restyled on a vendored front-end stack — **Bootstrap 5.3.8**, **Bootstrap Icons 1.13.2**, **jQuery 3.7.1** and **DataTables 2.3.8 + Buttons** (no CDN) — behind a single **token theme** (`static/theme.css`) and a **shared shell** (grouped top bar, skip link, bottom-right toasts, hamburger sheet).
+- **Canonical components**: token cards, tables, forms and switches, buttons (including labelled icon buttons), tabs, modals, notices, badges and empty states, plus the shared card grid, composed across every page.
+- **Page restyle**: Dashboard, Streams, Recordings, Multiview, Playlist Editor, Guide, Blocks, Portals, Accounts, Settings and Changelog are rebuilt from those components.
+- **Light mode**: a `data-bs-theme` switch with a sun/moon toggle and a no-FOUC inline script, alongside the default dark theme.
+
 ## [1.9.0] - 2026-10-13
 
 ### Web viewer
