@@ -4,9 +4,9 @@
 
 **Blocked by:** 06.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Dashboard's account and streaming cards use the shared card grid and token cards.
-- [ ] The log renders as the token log panel; autoscroll still works.
-- [ ] Streams renders as the shared card grid with no page-local CSS.
-- [ ] All polling intervals are unchanged.
+- [x] Dashboard's account and streaming cards use the shared card grid and token cards.
+- [x] The log renders as the token log panel; autoscroll still works.
+- [x] Streams renders as the shared card grid with no page-local CSS.
+- [x] All polling intervals are unchanged.

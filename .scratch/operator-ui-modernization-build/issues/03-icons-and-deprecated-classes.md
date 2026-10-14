@@ -4,9 +4,9 @@
 
 **Blocked by:** 01 (vendored Bootstrap Icons).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] No `fa-*` classes remain anywhere in `templates/` or `static/`; icons render as `bi-*`.
-- [ ] No `navbar-light` or `btn-block` remains; `text-muted` is gone.
-- [ ] Full-width buttons still span their container.
-- [ ] The source-string template tests are updated and green.
+- [x] No `fa-*` classes remain anywhere in `templates/` or `static/`; icons render as `bi-*`.
+- [x] No `navbar-light` or `btn-block` remains; `text-muted` is gone.
+- [x] Full-width buttons still span their container.
+- [x] The source-string template tests are updated and green.

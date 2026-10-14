@@ -4,9 +4,9 @@
 
 **Blocked by:** 02, 06.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The toolbar is one panel; the filter, bulk and dead-filter rows render as specified.
-- [ ] The grid is token-styled; the Block cell is a token text input.
-- [ ] Icon buttons carry `aria-label`s.
-- [ ] Editing, filtering and bulk actions behave exactly as before.
+- [x] The toolbar is one panel; the filter, bulk and dead-filter rows render as specified.
+- [x] The grid is token-styled; the Block cell is a token text input.
+- [x] Icon buttons carry `aria-label`s.
+- [x] Editing, filtering and bulk actions behave exactly as before.

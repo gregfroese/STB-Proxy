@@ -4,10 +4,10 @@
 
 **Blocked by:** 06.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Block membership renders as a capped pill stack with a `+M` overflow whose title lists the rest.
-- [ ] The row accordion still expands and collapses.
-- [ ] The Accounts admin table is tokenised; add-account is a token card.
-- [ ] Both pages use the shared empty state; icon actions carry `aria-label`s.
-- [ ] Behaviour is unchanged.
+- [x] Block membership renders as a capped pill stack with a `+M` overflow whose title lists the rest.
+- [x] The row accordion still expands and collapses.
+- [x] The Accounts admin table is tokenised; add-account is a token card.
+- [x] Both pages use the shared empty state; icon actions carry `aria-label`s.
+- [x] Behaviour is unchanged.

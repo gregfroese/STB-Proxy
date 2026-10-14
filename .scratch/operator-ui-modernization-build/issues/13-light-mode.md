@@ -4,9 +4,9 @@
 
 **Blocked by:** 05.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] First load follows the OS preference, falling back to dark.
-- [ ] The sun/moon toggle switches theme and persists across reloads; clearing storage returns to the OS preference.
-- [ ] No flash of the wrong theme on load; native scrollbars/controls follow `color-scheme`.
-- [ ] The light token set meets WCAG AA; the computed-contrast test covers both modes.
+- [x] First load follows the OS preference, falling back to dark.
+- [x] The sun/moon toggle switches theme and persists across reloads; clearing storage returns to the OS preference.
+- [x] No flash of the wrong theme on load; native scrollbars/controls follow `color-scheme`.
+- [x] The light token set meets WCAG AA; the computed-contrast test covers both modes.

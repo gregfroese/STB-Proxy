@@ -4,10 +4,10 @@
 
 **Blocked by:** 01 (vendored DataTables 2).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The filter bar, bulk bar and dead-filter render in the same visual order as before.
-- [ ] Search, length menu, info and pager all work.
-- [ ] Row selection, bulk add/remove and dead filtering behave exactly as before.
-- [ ] No DataTables-1 class names remain in templates or static.
-- [ ] The editor is fully usable; the existing test suite is green.
+- [x] The filter bar, bulk bar and dead-filter render in the same visual order as before.
+- [x] Search, length menu, info and pager all work.
+- [x] Row selection, bulk add/remove and dead filtering behave exactly as before.
+- [x] No DataTables-1 class names remain in templates or static.
+- [x] The editor is fully usable; the existing test suite is green.

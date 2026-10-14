@@ -4,9 +4,9 @@
 
 **Blocked by:** 06.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Portals renders as the shared card grid; both modals are token-styled; the empty state appears.
-- [ ] Settings' sections are cards; Save is reachable via a sticky bar; no stray `col-md-*`.
-- [ ] Changelog prose is capped at ~70ch and token-styled.
-- [ ] Behaviour is unchanged.
+- [x] Portals renders as the shared card grid; both modals are token-styled; the empty state appears.
+- [x] Settings' sections are cards; Save is reachable via a sticky bar; no stray `col-md-*`.
+- [x] Changelog prose is capped at ~70ch and token-styled.
+- [x] Behaviour is unchanged.

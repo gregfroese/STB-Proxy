@@ -4,9 +4,9 @@
 
 **Blocked by:** 05.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Every listed component renders from tokens; no page-local dark overrides or hardcoded hexes remain.
-- [ ] Interactive boundaries use `--line-strong`; badge labels use `--ink`; the focus ring is AA-visible.
-- [ ] The card grid is available as the shared treatment.
-- [ ] The computed-contrast test passes.
+- [x] Every listed component renders from tokens; no page-local dark overrides or hardcoded hexes remain.
+- [x] Interactive boundaries use `--line-strong`; badge labels use `--ink`; the focus ring is AA-visible.
+- [x] The card grid is available as the shared treatment.
+- [x] The computed-contrast test passes.

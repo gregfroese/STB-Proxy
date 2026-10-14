@@ -4,9 +4,9 @@
 
 **Blocked by:** 01.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `static/theme.css` exists, is referenced by the shell, and defines the full token set.
-- [ ] A test asserts the token set is present.
-- [ ] The page background, text and fonts adopt the tokens; the top radial glow renders.
-- [ ] Semantic tints are `color-mix`-derived (no hand-baked tint hexes).
+- [x] `static/theme.css` exists, is referenced by the shell, and defines the full token set.
+- [x] A test asserts the token set is present.
+- [x] The page background, text and fonts adopt the tokens; the top radial glow renders.
+- [x] Semantic tints are `color-mix`-derived (no hand-baked tint hexes).

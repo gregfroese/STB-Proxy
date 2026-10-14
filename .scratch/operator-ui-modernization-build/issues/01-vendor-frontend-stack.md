@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] No CDN tags remain; every stylesheet, script and icon font loads from `static/vendor/`.
-- [ ] The Bootstrap Icons font resolves (the `fonts/` directory sits beside the CSS).
-- [ ] `data-bs-theme="dark"` is set on `<html>` and the app renders dark.
-- [ ] A test asserts every `vendor/…` reference resolves to a file on disk.
-- [ ] With the network disconnected, every page renders styled, with icons.
+- [x] No CDN tags remain; every stylesheet, script and icon font loads from `static/vendor/`.
+- [x] The Bootstrap Icons font resolves (the `fonts/` directory sits beside the CSS).
+- [x] `data-bs-theme="dark"` is set on `<html>` and the app renders dark.
+- [x] A test asserts every `vendor/…` reference resolves to a file on disk.
+- [x] With the network disconnected, every page renders styled, with icons.

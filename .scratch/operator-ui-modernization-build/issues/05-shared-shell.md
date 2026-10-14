@@ -4,12 +4,12 @@
 
 **Blocked by:** 04.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The nav is grouped as specified, with feed icon buttons and the changelog version chip.
-- [ ] The active page carries `aria-current="page"` and a filled pill.
-- [ ] A skip link lands on `#main`; one global focus ring shows on every focusable control.
-- [ ] Flash messages render as dismissible bottom-right toasts.
-- [ ] One container (plus full-bleed variant) replaces the old per-page padding; the floated navbar is gone.
-- [ ] Below 992px the nav collapses behind a hamburger sheet.
-- [ ] Source-string tests are updated and green.
+- [x] The nav is grouped as specified, with feed icon buttons and the changelog version chip.
+- [x] The active page carries `aria-current="page"` and a filled pill.
+- [x] A skip link lands on `#main`; one global focus ring shows on every focusable control.
+- [x] Flash messages render as dismissible bottom-right toasts.
+- [x] One container (plus full-bleed variant) replaces the old per-page padding; the floated navbar is gone.
+- [x] Below 992px the nav collapses behind a hamburger sheet.
+- [x] Source-string tests are updated and green.

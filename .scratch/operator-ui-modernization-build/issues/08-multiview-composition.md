@@ -4,9 +4,9 @@
 
 **Blocked by:** 06.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] All five layouts, the drag divider, fullscreen and the ≤576px mobile stack still work.
-- [ ] Tile chrome, progress bar and messages render from tokens; the playing ring uses `--focus`/`--star`.
-- [ ] The grid height uses `dvh` (with a fallback) and sizes correctly on mobile browsers.
-- [ ] The picker and record modals are token-styled.
+- [x] All five layouts, the drag divider, fullscreen and the ≤576px mobile stack still work.
+- [x] Tile chrome, progress bar and messages render from tokens; the playing ring uses `--focus`/`--star`.
+- [x] The grid height uses `dvh` (with a fallback) and sizes correctly on mobile browsers.
+- [x] The picker and record modals are token-styled.
