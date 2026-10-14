@@ -13,7 +13,7 @@
         token are unchanged; accounts are for players only.
     </p>
 
-    <div class="card bg-secondary mb-4">
+    <div class="card mb-4">
         <div class="card-body">
             <h6 class="card-title">Add an account</h6>
             <form action="/accounts/create" method="post" class="row g-2 align-items-end">
@@ -47,7 +47,7 @@
     </div>
 
     {% if accounts %}
-    <table class="table table-dark table-striped align-middle">
+    <table class="table table-striped align-middle">
         <thead>
             <tr>
                 <th style="width: 0%;">On</th>
@@ -78,7 +78,8 @@
                             <option value="{{ name }}" {{ "selected" if name in account.blocks }}>{{ name }}{% if name in hiddenBlocks %} (STB-Proxy only){% endif %}{% if name in offBlocks %} — off{% endif %}</option>
                             {% endfor %}
                         </select>
-                        <button class="btn btn-sm btn-outline-light" title="Save blocks"><i class="bi bi-save"></i></button>
+                        <button class="btn btn-sm btn-outline-light" title="Save blocks"
+                            aria-label="Save blocks for {{ account.username }}"><i class="bi bi-save"></i></button>
                     </form>
                 </td>
                 <td class="text-nowrap">
@@ -86,11 +87,13 @@
                         <input type="hidden" name="username" value="{{ account.username }}">
                         <input type="password" class="form-control form-control-sm" name="password"
                             autocomplete="new-password" placeholder="New password" required style="width: 10rem;">
-                        <button class="btn btn-sm btn-outline-light" title="Reset password"><i class="bi bi-key-fill"></i></button>
+                        <button class="btn btn-sm btn-outline-light" title="Reset password"
+                            aria-label="Reset the password for {{ account.username }}"><i class="bi bi-key-fill"></i></button>
                     </form>
                     <form action="/accounts/delete" method="post" class="d-inline">
                         <input type="hidden" name="username" value="{{ account.username }}">
                         <button class="btn btn-sm btn-outline-danger" title="Delete {{ account.username }}"
+                            aria-label="Delete {{ account.username }}"
                             onclick="return confirm('Delete the account {{ account.username }}?')">
                             <i class="bi bi-trash-fill"></i></button>
                     </form>
@@ -100,7 +103,10 @@
         </tbody>
     </table>
     {% else %}
-    <p>No accounts yet. Add one above to scope a player to a set of blocks.</p>
+    <div class="empty-state">
+        <i class="bi bi-people"></i>
+        <span>No accounts yet. Add one above to scope a player to a set of blocks.</span>
+    </div>
     {% endif %}
 
 </div>

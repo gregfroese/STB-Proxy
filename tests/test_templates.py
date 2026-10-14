@@ -409,5 +409,66 @@ class GuideRecordingsCompositionTest(unittest.TestCase):
             self.assertIn(name, self.recordings)
 
 
+class BlocksAccountsCompositionTest(unittest.TestCase):
+    """Ticket 11: Blocks and Accounts compose from the token table, the capped
+    .tag pill stack, the shared empty state and labelled icon actions."""
+
+    def setUp(self):
+        with open(os.path.join(ROOT, "templates", "blocks.html")) as f:
+            self.blocks = f.read()
+        with open(os.path.join(ROOT, "templates", "accounts.html")) as f:
+            self.accounts = f.read()
+
+    def test_tables_are_token_tables(self):
+        self.assertIn('<table class="table table-striped align-middle">', self.blocks)
+        self.assertIn('<table class="table table-striped align-middle">', self.accounts)
+        self.assertNotIn("table-dark", self.blocks)
+        self.assertNotIn("table-dark", self.accounts)
+
+    def test_block_membership_is_a_capped_tag_pill_stack(self):
+        # Built in the JS that emits the channel table: three shown, the rest in +M.
+        self.assertIn("function blockPills(blocks)", self.blocks)
+        self.assertIn("blocks.slice(0, 3)", self.blocks)
+        self.assertIn("blocks.slice(3)", self.blocks)
+        self.assertIn('class="tag extra" title="', self.blocks)
+        self.assertIn("blockPills(row.blocks)", self.blocks)
+
+    def test_block_name_cell_is_a_tag_pill(self):
+        self.assertIn('<span class="tag">{{ block.name }}</span>', self.blocks)
+
+    def test_both_pages_use_the_shared_empty_state(self):
+        self.assertIn('class="empty-state"', self.blocks)
+        self.assertIn('class="empty-state"', self.accounts)
+        self.assertIn("No blocks yet", self.blocks)
+        self.assertIn("No accounts yet", self.accounts)
+
+    def test_cards_are_token_cards(self):
+        self.assertIn('<div class="card mt-3">', self.blocks)  # Default blocks
+        self.assertIn('<div class="card mb-4">', self.accounts)  # Add an account
+        self.assertNotIn("card bg-secondary", self.blocks)
+        self.assertNotIn("card bg-secondary", self.accounts)
+
+    def test_blocks_actions_are_labelled_icon_buttons(self):
+        for label in ('aria-label="Move {{ block.name }} up"',
+                      'aria-label="Move {{ block.name }} down"',
+                      'aria-label="View channels in {{ block.name }}"',
+                      'aria-label="Rename {{ block.name }}"'):
+            self.assertIn(label, self.blocks, label)
+
+    def test_accounts_actions_are_labelled_icon_buttons(self):
+        for label in ('aria-label="Save blocks for {{ account.username }}"',
+                      'aria-label="Reset the password for {{ account.username }}"',
+                      'aria-label="Delete {{ account.username }}"'):
+            self.assertIn(label, self.accounts, label)
+
+    def test_behaviour_is_unchanged(self):
+        for name in ("switchBlock", "renameBlock", "toggleBlockChannels", "blockFavouritesChanged",
+                     "multiview.blockChannels("):
+            self.assertIn(name, self.blocks)
+        for action in ("/accounts/create", "/accounts/toggle", "/accounts/update",
+                       "/accounts/password", "/accounts/delete"):
+            self.assertIn(action, self.accounts)
+
+
 if __name__ == "__main__":
     unittest.main()
