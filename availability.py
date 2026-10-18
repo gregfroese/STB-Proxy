@@ -72,6 +72,22 @@ def renameBlock(portals, old, new):
                 channelBlocks[channelId] = parseBlockNames(",".join(new if n == old else n for n in names))
 
 
+def removeBlock(portals, name):
+    """Take name out of every channel's block list, in place.
+
+    A block exists only while a channel references it, so this empties and removes it;
+    channels that keep other blocks (or are enabled on their own) are left alone.
+    """
+    for portal in portals.values():
+        channelBlocks = portal.get("channel blocks", {})
+        for channelId, value in list(channelBlocks.items()):
+            names = [n for n in channelBlockNames(value) if n != name]
+            if names:
+                channelBlocks[channelId] = names
+            else:
+                channelBlocks.pop(channelId, None)
+
+
 def orderedNames(names, order):
     """[names] in the operator's [order] first, then the rest alphabetically."""
     names = list(names)

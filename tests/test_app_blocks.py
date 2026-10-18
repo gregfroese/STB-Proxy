@@ -27,6 +27,7 @@ class BlocksPageTest(unittest.TestCase):
         self.assertIn('data-block="NHL">2</span> channels', body)
         self.assertIn('class="block-dead-count">1</span> dead', body)
         self.assertIn("Sync now", body)
+        self.assertIn('action="/blocks/remove"', body)
 
     def test_block_names_are_escaped(self):
         body = self.client.get("/blocks").get_data(as_text=True)
@@ -98,6 +99,45 @@ class BlocksPageTest(unittest.TestCase):
             "channels": [{"portal": PORTAL, "channelId": "2"}, {"portal": PORTAL, "channelId": "3"}],
             "block": "NHL", "action": "remove"})
         self.assertEqual(self.app.getHiddenBlocks(), [])
+
+    def test_remove_block_takes_out_channels_and_prunes_state(self):
+        self.app.getBlocks()["NHL"] = "true"
+        self.app.config["hidden blocks"] = ["NHL"]
+        self.app.config["block order"] = ["NHL"]
+        self.app.config["default blocks"] = ["NHL"]
+        self.app.getBlockFavourites()["NHL"] = {PORTAL: ["2"]}
+        self.app.getSavedFilters()["editor"] = {"Hockey": {"block": "NHL"}}
+        self.app.getAccounts().append({"username": "k", "hash": "", "blocks": ["NHL"], "enabled": True})
+
+        response = self.client.post("/blocks/remove", data={"name": "NHL"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"], {"1": ["<b>Bold</b>"]})
+        self.assertNotIn("NHL", self.app.getBlocks())
+        self.assertEqual(self.app.getHiddenBlocks(), [])
+        self.assertEqual(self.app.getDefaultBlocks(), [])
+        self.assertEqual(self.app.getBlockOrder(), [])
+        self.assertEqual(self.app.getBlockFavourites(), {})
+        self.assertEqual(self.app.getSavedFilters()["editor"]["Hockey"]["block"], "")
+        self.assertEqual(self.app.getAccounts()[0]["blocks"], [])
+        # NHL was STB-Proxy only ("hidden"), so its channels never fed Plex: no lineup change.
+        self.syncPlex.assert_not_called()
+
+    def test_remove_block_resyncs_plex_when_the_lineup_changes(self):
+        self.app.getBlocks()["NHL"] = "true"
+        self.client.post("/blocks/remove", data={"name": "NHL"})
+        self.syncPlex.assert_called_once()  # channel 2 left the (on, shared) block
+
+    def test_remove_keeps_a_channel_in_its_other_blocks(self):
+        self.app.getPortals()[PORTAL]["channel blocks"]["4"] = ["NHL", "Keep"]
+        self.app.getBlocks().update({"NHL": "true", "Keep": "true"})
+        self.client.post("/blocks/remove", data={"name": "NHL"})
+        self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"]["4"], ["Keep"])
+
+    def test_remove_unknown_block_does_nothing(self):
+        before = dict(self.app.getPortals()[PORTAL]["channel blocks"])
+        self.client.post("/blocks/remove", data={"name": "Nope"})
+        self.assertEqual(self.app.getPortals()[PORTAL]["channel blocks"], before)
+        self.syncPlex.assert_not_called()
 
     def test_sync_now(self):
         response = self.client.post("/blocks/sync")

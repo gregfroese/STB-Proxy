@@ -102,6 +102,13 @@
                                     title="{{ 'Share with the API, Plex and Jellyfin again' if block.hidden else 'Keep this block in STB-Proxy only (not the API, Plex or Jellyfin)' }}">
                                     <i class="bi {{ 'bi-eye-fill' if block.hidden else 'bi-eye-slash-fill' }}"></i></button>
                             </form>
+                            <form action="/blocks/remove" method="post" class="d-inline">
+                                <input type="hidden" name="name" value="{{ block.name }}">
+                                <button type="button" class="btn btn-sm btn-outline-danger"
+                                    data-block="{{ block.name }}" data-count="{{ block.channels }}"
+                                    aria-label="Remove {{ block.name }}" title="Remove this block and take all its channels out"
+                                    onclick="removeBlock(this)"><i class="bi bi-trash3"></i></button>
+                            </form>
                         </td>
                     </tr>
                     <tr class="d-none">
@@ -175,6 +182,19 @@
             return;
         }
         form.elements.newName.value = newName.trim();
+        form.submit();
+    }
+
+    // A block exists only while it holds channels, so removing it takes them all out.
+    function removeBlock(button) {
+        var form = button.form;
+        var name = form.elements.name.value;
+        var count = button.getAttribute('data-count');
+        if (!window.confirm('Remove "' + name + '" and take its ' + count + ' channel(s) out? ' +
+                "Any that aren't in another block or enabled on their own will stop playing. " +
+                'This cannot be undone.')) {
+            return;
+        }
         form.submit();
     }
 

@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.13.0] - 2026-10-18
+
+### Blocks
+
+- **Remove a block**: a trash button on each row of the Blocks page takes every channel out of the block. Since a block only exists while it holds channels, this removes it — its entry is also dropped from the operator's order, the **hidden** and **default** sets, its block favourites and any accounts assigned it, and Plex/Jellyfin are re-synced if the lineup changed. Handy after switching servers, when the old channel numbers no longer exist.
+
 ## [1.12.0] - 2026-10-18
 
 ### Android app & web viewer

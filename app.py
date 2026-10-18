@@ -1339,6 +1339,42 @@ def blocksHide():
     return redirect("/blocks", code=302)
 
 
+@app.route("/blocks/remove", methods=["POST"])
+@authorise
+def blocksRemove():
+    """Remove a block by taking every channel out of it.
+
+    A block exists only while a channel references it, so this empties and removes it.
+    saveBlocks() then prunes the block from the operator's order, the hidden and default
+    sets, its favourites and every account; its own entry and any saved-filter reference
+    are dropped here.
+    """
+    name = request.form["name"]
+    portals = getPortals()
+    if name not in availability.blockNames(portals):
+        flash("No block called {}".format(name), "danger")
+        return redirect("/blocks", code=302)
+
+    before = {p: plexLineup(portals[p]) for p in portals}
+    availability.removeBlock(portals, name)
+    savePortals(portals)
+
+    blocks = getBlocks()
+    blocks.pop(name, None)
+    for pageFilters in getSavedFilters().values():
+        for filters in pageFilters.values():
+            if filters.get("block") == name:
+                filters["block"] = ""
+    saveBlocks(availability.pruneBlocks(portals, blocks))
+    logger.info("Block({}) removed, taking out all its channels".format(name))
+    flash("{} removed".format(name), "success")
+
+    if {p: plexLineup(portals[p]) for p in portals} != before:
+        category, message = syncPlex()
+        flash(message, category)
+    return redirect("/blocks", code=302)
+
+
 @app.route("/blocks/sync", methods=["POST"])
 @authorise
 def blocksSync():
