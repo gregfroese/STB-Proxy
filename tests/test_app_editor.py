@@ -42,6 +42,11 @@ class EditorTest(unittest.TestCase):
         self.assertIn('id="blockEdits"', body)
         self.assertIn("function editBlock", body)
 
+    def test_editor_page_renders_portal_filter(self):
+        body = self.client.get("/editor").get_data(as_text=True)
+        self.assertIn('id="portalFilter"', body)
+        self.assertIn("function fillPortalFilter", body)
+
     def test_block_edits_replace_rather_than_mutate_channel_blocks(self):
         # Other threads may be iterating the old dict (lineup/xmltv/playlist).
         before = self.app.getPortals()[PORTAL]["channel blocks"]

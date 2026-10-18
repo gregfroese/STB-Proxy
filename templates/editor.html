@@ -284,9 +284,9 @@
             });
     }
 
-    // ---- Filters: name (with match modes), genre, block and enabled, remembered between visits.
+    // ---- Filters: name (with match modes), genre, portal, block and enabled, remembered between visits.
     var nameTest = null;
-    var filters = { name: "", mode: "words", genre: "", block: "", enabled: "" };
+    var filters = { name: "", mode: "words", genre: "", portal: "", block: "", enabled: "" };
     // Block filter values that can't be block names (names can't contain commas).
     var IN_A_BLOCK = ",in", NOT_IN_A_BLOCK = ",none";
 
@@ -299,6 +299,9 @@
             return false;
         }
         if (filters.genre && rowGenre(row) != filters.genre) {
+            return false;
+        }
+        if (filters.portal && row.portal != filters.portal) {
             return false;
         }
         if (filters.block == IN_A_BLOCK ? !row.blocks.length
@@ -326,6 +329,28 @@
         document.getElementById("genreFilter").value = filters.genre;
     }
 
+    function fillPortalFilter() {
+        var select = document.getElementById("portalFilter");
+        if (!select) {
+            return;
+        }
+        var counts = {};
+        var names = {};
+        table.rows().data().toArray().forEach(function (row) {
+            counts[row.portal] = (counts[row.portal] || 0) + 1;
+            names[row.portal] = row.portalName || row.portal;
+        });
+        var ids = Object.keys(counts).sort(function (a, b) { return names[a].localeCompare(names[b]); });
+        select.innerHTML = '<option value="">All portals</option>' +
+            ids.map(function (id) {
+                return '<option value="' + escapeAttr(id) + '">' + escapeAttr(names[id]) + ' (' + counts[id] + ')</option>';
+            }).join("");
+        select.value = filters.portal;
+        if (select.value != filters.portal) {
+            filters.portal = "";  // that portal is gone
+        }
+    }
+
     function fillBlockFilter() {
         var select = document.getElementById("blockFilter");
         if (!select) {
@@ -345,6 +370,7 @@
         filters.name = document.getElementById("nameFilter").value;
         filters.mode = document.getElementById("nameMode").value;
         filters.genre = document.getElementById("genreFilter").value;
+        filters.portal = document.getElementById("portalFilter").value;
         filters.block = document.getElementById("blockFilter").value;
         filters.enabled = document.getElementById("enabledFilter").value;
         var parsed = parseChannelQuery(filters.name, filters.mode);
@@ -361,6 +387,7 @@
         document.getElementById("nameFilter").value = "";
         document.getElementById("nameMode").value = "words";
         document.getElementById("genreFilter").value = "";
+        document.getElementById("portalFilter").value = "";
         document.getElementById("blockFilter").value = "";
         document.getElementById("enabledFilter").value = "";
         applyFilters();
@@ -374,6 +401,7 @@
             }
         } catch (e) { }
         fillGenreFilter();
+        fillPortalFilter();
         fillBlockFilter();
         document.getElementById("nameFilter").value = filters.name;
         document.getElementById("nameMode").value = filters.mode;
@@ -383,7 +411,7 @@
             clearTimeout(timer);
             timer = setTimeout(applyFilters, 200);
         });
-        ["nameMode", "genreFilter", "blockFilter", "enabledFilter"].forEach(function (id) {
+        ["nameMode", "genreFilter", "portalFilter", "blockFilter", "enabledFilter"].forEach(function (id) {
             document.getElementById(id).addEventListener("change", applyFilters);
         });
         applyFilters();
@@ -399,6 +427,7 @@
         document.getElementById("nameFilter").value = view.name || "";
         document.getElementById("nameMode").value = view.mode || "words";
         document.getElementById("genreFilter").value = view.genre || "";
+        document.getElementById("portalFilter").value = view.portal || "";
         document.getElementById("blockFilter").value = view.block || "";
         document.getElementById("enabledFilter").value = view.enabled || "";
         hideDead = view.hideDead !== false;
@@ -476,6 +505,7 @@
                     '<option value="contains">Contains</option><option value="exact">Exact name</option>' +
                     '<option value="regex">Regex</option></select>' +
                     '<select class="form-select form-select-sm w-auto" id="genreFilter" aria-label="Filter by genre"></select>' +
+                    '<select class="form-select form-select-sm w-auto" id="portalFilter" aria-label="Filter by portal"></select>' +
                     '<select class="form-select form-select-sm w-auto" id="blockFilter" aria-label="Filter by block"></select>' +
                     '<select class="form-select form-select-sm w-auto" id="enabledFilter" aria-label="Filter by enabled state">' +
                     '<option value="">Enabled or not</option><option value="on">Enabled</option>' +

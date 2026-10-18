@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.14.0] - 2026-10-18
+
+### Playlist Editor
+
+- **Filter by portal**: a **Portal** dropdown beside the genre and block filters narrows the editor to one portal's channels, with each portal's name and channel count. Like the other filters it's remembered between visits and kept in saved filters.
+
 ## [1.13.0] - 2026-10-18
 
 ### Blocks
