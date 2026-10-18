@@ -65,6 +65,14 @@
       </div>
     </div>
     <div class="card">
+      <h2>Companion app</h2>
+      <p class="notice" style="margin:0 0 8px">
+        On Android TV or phone, sideload the STB-Proxy companion app — the same channels, player and
+        Multiview as this page.
+      </p>
+      <a class="btn" href="/companion.apk" download>Download the Android app (APK)</a>
+    </div>
+    <div class="card">
       <h2>About</h2>
       <div class="kv"><span>STB Proxy (web viewer)</span><span>v{__APP_VERSION__}</span></div>
       <p class="notice" style="margin:0">

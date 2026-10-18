@@ -100,6 +100,11 @@ a {
   border-color: #3ba6ff66;
 }
 
+a.btn {
+  display: inline-block;
+  text-decoration: none;
+}
+
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);

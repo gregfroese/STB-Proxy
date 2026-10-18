@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.15.0] - 2026-10-18
+
+### Web viewer
+
+- **Companion app download**: the web viewer's Settings has a **Download the Android app (APK)** link. The BFF streams the APK STB-Proxy already serves from its static folder, so the browser (which can't reach STB-Proxy directly) can sideload it. Login is required, same as the rest of the viewer.
+
 ## [1.14.0] - 2026-10-18
 
 ### Playlist Editor

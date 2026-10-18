@@ -26,6 +26,7 @@ export default defineConfig({
     proxy: {
       "/api": "http://127.0.0.1:8000",
       "/stream": "http://127.0.0.1:8000",
+      "/companion.apk": "http://127.0.0.1:8000",
     },
   },
   build: {

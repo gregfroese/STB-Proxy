@@ -65,6 +65,12 @@ def _upstream(request: httpx.Request) -> httpx.Response:
             stream=httpx.ByteStream(b"\x47\x40\x00\x10stream-bytes"),
             headers={"Content-Type": "video/mp2t"},
         )
+    if path == "/static/STB-Proxy-Companion.apk":
+        return httpx.Response(
+            200,
+            stream=httpx.ByteStream(b"APK-BYTES"),
+            headers={"Content-Type": "application/octet-stream"},
+        )
     return httpx.Response(404)
 
 
@@ -169,6 +175,21 @@ def test_stream_404_is_not_found(client):
 
 def test_stream_requires_a_session(client):
     assert client.get("/stream/1/ok").status_code == 401
+
+
+def test_companion_apk_is_proxied_with_a_download_name(client):
+    client.post("/api/login", json={"username": "katie", "password": "pw"})
+    response = client.get("/companion.apk")
+    assert response.status_code == 200
+    assert response.content == b"APK-BYTES"
+    assert response.headers["content-type"] == "application/vnd.android.package-archive"
+    assert "attachment" in response.headers["content-disposition"]
+    assert "STB-Proxy-Companion.apk" in response.headers["content-disposition"]
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_companion_apk_requires_a_session(client):
+    assert client.get("/companion.apk").status_code == 401
 
 
 def test_hls_playlist_and_segments_are_served(client):

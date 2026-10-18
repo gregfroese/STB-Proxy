@@ -360,6 +360,42 @@ async def hls_stop(portal: str, channel_id: str, variant: str, session: str, req
     return {"ok": True}
 
 
+@app.get("/companion.apk")
+async def companion_apk(request: Request):
+    """The Android companion app, proxied from STB-Proxy's /static so the browser can grab it.
+
+    STB-Proxy itself is not reachable from the browser, so this streams the APK the
+    operator dropped in its static folder, named for a clean download.
+    """
+    _get_session(request)
+    client: httpx.AsyncClient = request.app.state.client
+    upstream_request = client.build_request("GET", "/static/STB-Proxy-Companion.apk")
+    try:
+        upstream = await client.send(upstream_request, stream=True)
+    except httpx.HTTPError:
+        raise proxy_unreachable()
+    if upstream.status_code != 200:
+        await upstream.aclose()
+        raise not_found("The companion app isn't available.")
+
+    async def body():
+        try:
+            async for chunk in upstream.aiter_raw(65536):
+                yield chunk
+        finally:
+            await upstream.aclose()
+
+    headers = {
+        "Content-Type": "application/vnd.android.package-archive",
+        "Content-Disposition": 'attachment; filename="STB-Proxy-Companion.apk"',
+        "Cache-Control": "no-store",
+    }
+    length = upstream.headers.get("content-length")
+    if length:
+        headers["Content-Length"] = length
+    return StreamingResponse(body(), status_code=200, headers=headers)
+
+
 async def _hls_reap_loop(app: FastAPI) -> None:
     while True:
         await asyncio.sleep(5)
