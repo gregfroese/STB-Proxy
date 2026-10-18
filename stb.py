@@ -10,6 +10,9 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 s = requests.Session()
+# Portal lookups and tests are small calls made while someone waits on the form.
+# Without a timeout an unresponsive host leaves Add/Save spinning indefinitely.
+TIMEOUT = 15
 retries = Retry(total=3, backoff_factor=0.1, status_forcelist=[500, 502, 503, 504])
 s.mount("http://", HTTPAdapter(max_retries=retries))
 
@@ -145,7 +148,7 @@ def getUrl(url, proxy=None):
     try:
         for i in urls:
             try:
-                response = s.get(url + i, headers=headers, proxies=proxies)
+                response = s.get(url + i, headers=headers, proxies=proxies, timeout=TIMEOUT)
             except:
                 response = None
             if response:
@@ -157,7 +160,7 @@ def getUrl(url, proxy=None):
     try:
         for i in urls:
             try:
-                response = s.get(url + i, headers=headers)
+                response = s.get(url + i, headers=headers, timeout=TIMEOUT)
             except:
                 response = None
             if response:
@@ -245,6 +248,7 @@ def handshake(url, mac, proxy=None):
             cookies=cookies,
             headers=headers,
             proxies=proxies,
+            timeout=TIMEOUT,
         )
         token = response.json()["js"]["token"]
         if token:
@@ -306,6 +310,7 @@ def getProfile(url, mac, token, proxy=None, refresh=False):
             cookies=cookies,
             headers=headers,
             proxies=proxies,
+            timeout=TIMEOUT,
         )
         profile = response.json()["js"]
         if profile:
@@ -327,6 +332,7 @@ def getExpires(url, mac, token, proxy=None):
             cookies=cookies,
             headers=headers,
             proxies=proxies,
+            timeout=TIMEOUT,
         )
         info = response.json()["js"]
         # Some portals leave "phone" empty and put the expiry in "end_date".

@@ -180,7 +180,7 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" title="Cancel" data-bs-dismiss="modal">Cancel</button>
-                    <button class="btn btn-success w-100" title="Add">Add</button>
+                    <button type="submit" class="btn btn-success w-100" title="Add">Add</button>
                 </div>
             </form>
         </div>
@@ -264,7 +264,7 @@
                         id="deleteName">Delete</button>
                     <button type="button" class="btn btn-secondary" title="Cancel" data-bs-dismiss="modal">Cancel</button>
                     <button type="button" class="btn btn-success" title="Retest" onclick="retestSave()">Retest</button>
-                    <button class="btn btn-success" title="Save">Save</button>
+                    <button type="submit" class="btn btn-success" title="Save">Save</button>
                 </div>
             </form>
 
@@ -355,6 +355,25 @@
     document.getElementById('modalAdd').addEventListener('show.bs.modal', function () {
         fillDevice('add', null);
         showDevice('add', false, 'keep', false);
+    });
+
+    // Adding and saving both log in to the portal over the network, which can take a
+    // while: show that something is happening instead of leaving the button looking dead.
+    // The result comes back as a toast when the page reloads.
+    function busy(button, label) {
+        if (!button) {
+            return;
+        }
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>' + label;
+    }
+
+    document.querySelector('#modalAdd form').addEventListener('submit', function () {
+        busy(document.querySelector('#modalAdd button[type="submit"]'), 'Testing portal...');
+    });
+
+    document.getElementById('update').addEventListener('submit', function () {
+        busy(document.querySelector('#update button[type="submit"]'), 'Saving...');
     });
 
     var now = Date.now();

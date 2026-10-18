@@ -887,6 +887,17 @@ i.bi {
 .modal-header { border-bottom: 1px solid var(--line); }
 .modal-footer { border-top: 1px solid var(--line); }
 
+/* A form wrapping the header/body/footer (our portal modals do this) stops
+   Bootstrap's scrollable dialog from sizing .modal-body, so a long form clips
+   its footer and the buttons can't be reached. Make the form a flex column
+   that fills the dialog, so the body scrolls and the footer stays put. */
+.modal-dialog-scrollable .modal-content > form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: 100%;
+}
+
 .modal-backdrop {
     --bs-backdrop-bg: var(--scrim);
     --bs-backdrop-opacity: 1;

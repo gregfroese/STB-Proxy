@@ -2,6 +2,13 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.10.1] - 2026-10-18
+
+### Fixed
+
+- **Portals**: the Add/Edit modal scrolls again, so the **Add** and **Save** buttons are reachable when the device-lock fields make the form taller than the screen.
+- **Portals**: adding or saving now shows a spinner and "Testing portal…" while it logs in over the network, instead of appearing to do nothing, and portal lookups time out after 15 seconds instead of hanging.
+
 ## [1.10.0] - 2026-10-13
 
 ### Changed
