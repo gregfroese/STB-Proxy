@@ -1,8 +1,9 @@
 package cc.selfhosters.stbproxy.ui.picker
 
+import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.model.Channel
 
-/** Rail entry for public channels that sit in no visible Block (`blocks: []`). */
+/** Rail entry for public channels that sit in no visible Block (`blocks: []`) or genre. */
 const val OTHER_BLOCK = "Other"
 
 /** The picker's favourites filter (spec follow-up). */
@@ -87,3 +88,70 @@ fun launchBlockFor(channel: Channel, activeBlock: String?): String {
     }
     return channel.blocks.firstOrNull() ?: OTHER_BLOCK
 }
+
+/**
+ * The mode actually used: a preference of [GroupMode.BLOCKS] still falls back to
+ * [GroupMode.GENRES] when the account has no visible Blocks, so nothing is
+ * dumped into a lone "Other" bucket.
+ */
+fun effectiveGroupMode(pref: GroupMode, blocks: List<String>): GroupMode =
+    if (blocks.isEmpty()) GroupMode.GENRES else pref
+
+/** A channel's Genre as a rail name, or [OTHER_BLOCK] when the portal gave none. */
+fun genreName(channel: Channel): String {
+    val genre = channel.genre?.trim().orEmpty()
+    return genre.ifEmpty { OTHER_BLOCK }
+}
+
+/** The Genre rail: distinct genres (case-insensitively sorted), "Other" last. */
+fun genreRail(channels: List<Channel>): List<BlockEntry> {
+    val canonical = linkedMapOf<String, String>()
+    channels.forEach { channel ->
+        val genre = channel.genre?.trim().orEmpty()
+        if (genre.isNotEmpty()) canonical.putIfAbsent(genre.lowercase(), genre)
+    }
+    val entries = canonical.values
+        .sortedBy { it.lowercase() }
+        .map { name ->
+            val count = channels.count { it.genre?.trim().orEmpty().lowercase() == name.lowercase() }
+            BlockEntry(name, count)
+        }
+    val other = channels.count { it.genre?.trim().orEmpty().isEmpty() }
+    return if (other > 0) entries + BlockEntry(OTHER_BLOCK, other) else entries
+}
+
+/** The rail for [mode]: Blocks in operator order, or Genres alphabetically. */
+fun groupRail(mode: GroupMode, blocks: List<String>, channels: List<Channel>): List<BlockEntry> =
+    if (mode == GroupMode.GENRES) genreRail(channels) else blockRail(blocks, channels)
+
+/** Channels belonging to [group], interpreted by [mode]. */
+fun channelsInGroup(mode: GroupMode, channels: List<Channel>, group: String): List<Channel> {
+    if (mode == GroupMode.BLOCKS) return channelsInBlock(channels, group)
+    val target = group.lowercase()
+    return channels.filter { channel ->
+        val genre = channel.genre?.trim().orEmpty()
+        if (group == OTHER_BLOCK) genre.isEmpty() else genre.lowercase() == target
+    }
+}
+
+/** Per-group match counts for the search rail, keyed by rail entry name. */
+fun groupMatchCounts(
+    mode: GroupMode,
+    channels: List<Channel>,
+    groupNames: List<String>,
+    query: String,
+): Map<String, Int> {
+    val matched = searchChannels(channels, query)
+    return groupNames.associateWith { group -> channelsInGroup(mode, matched, group).size }
+}
+
+/**
+ * The `+N` badge: how many other groups the channel belongs to. Always 0 in
+ * genre mode — a channel has exactly one genre.
+ */
+fun extraGroupCount(mode: GroupMode, channel: Channel, activeGroup: String?, searching: Boolean): Int =
+    if (mode == GroupMode.GENRES) 0 else extraBlockCount(channel, activeGroup, searching)
+
+/** The group a channel is launched into the player from (its zap list). */
+fun launchGroupFor(mode: GroupMode, channel: Channel, activeGroup: String?): String =
+    if (mode == GroupMode.GENRES) genreName(channel) else launchBlockFor(channel, activeGroup)

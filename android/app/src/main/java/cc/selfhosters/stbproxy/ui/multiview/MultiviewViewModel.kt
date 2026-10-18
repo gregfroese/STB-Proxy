@@ -5,7 +5,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.SessionController
+import cc.selfhosters.stbproxy.data.ViewerPreferences
 import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.data.network.ApiClient
 import cc.selfhosters.stbproxy.data.network.ApiException
@@ -27,6 +29,7 @@ data class MultiviewUiState(
     val lineupError: String? = null,
     val blocks: List<String> = emptyList(),
     val channels: List<Channel> = emptyList(),
+    val groupMode: GroupMode = GroupMode.BLOCKS,
     val tiles: List<MultiviewTile> = emptyTiles(),
     val tunerCount: Int = DEFAULT_TUNER_COUNT,
     val tunerCountKnown: Boolean = false,
@@ -62,13 +65,19 @@ data class MultiviewUiState(
 class MultiviewViewModel(
     private val apiClient: ApiClient,
     private val session: SessionController,
+    private val viewerPreferences: ViewerPreferences,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(MultiviewUiState())
+    private val _state = MutableStateFlow(MultiviewUiState(groupMode = viewerPreferences.groupMode.value))
     val state: StateFlow<MultiviewUiState> = _state.asStateFlow()
 
     init {
         load()
+        viewModelScope.launch {
+            viewerPreferences.groupMode.collect { mode ->
+                _state.update { it.copy(groupMode = mode) }
+            }
+        }
     }
 
     fun load() {
@@ -209,9 +218,12 @@ class MultiviewViewModel(
     }
 
     companion object {
-        fun factory(apiClient: ApiClient, session: SessionController): ViewModelProvider.Factory =
-            viewModelFactory {
-                initializer { MultiviewViewModel(apiClient, session) }
-            }
+        fun factory(
+            apiClient: ApiClient,
+            session: SessionController,
+            viewerPreferences: ViewerPreferences,
+        ): ViewModelProvider.Factory = viewModelFactory {
+            initializer { MultiviewViewModel(apiClient, session, viewerPreferences) }
+        }
     }
 }

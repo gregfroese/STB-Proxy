@@ -7,7 +7,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import cc.selfhosters.stbproxy.data.AccountStore
 import cc.selfhosters.stbproxy.data.ConnectOutcome
+import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.SessionController
+import cc.selfhosters.stbproxy.data.ViewerPreferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,6 +23,7 @@ data class SettingsUiState(
     val activeUsername: String? = null,
     val addUsername: String = "",
     val addPassword: String = "",
+    val groupMode: GroupMode = GroupMode.BLOCKS,
     val busy: Boolean = false,
     val message: String? = null,
     val error: String? = null,
@@ -33,10 +36,14 @@ data class SettingsUiState(
 class SettingsViewModel(
     private val session: SessionController,
     private val store: AccountStore,
+    private val viewerPreferences: ViewerPreferences,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
-        SettingsUiState(baseUrl = store.state.value.baseUrl.orEmpty()),
+        SettingsUiState(
+            baseUrl = store.state.value.baseUrl.orEmpty(),
+            groupMode = viewerPreferences.groupMode.value,
+        ),
     )
     val state: StateFlow<SettingsUiState> = _state.asStateFlow()
 
@@ -49,6 +56,11 @@ class SettingsViewModel(
                         activeUsername = accounts.activeUsername,
                     )
                 }
+            }
+        }
+        viewModelScope.launch {
+            viewerPreferences.groupMode.collect { mode ->
+                _state.update { it.copy(groupMode = mode) }
             }
         }
     }
@@ -127,12 +139,18 @@ class SettingsViewModel(
         _state.update { it.copy(message = "Removed $username") }
     }
 
+    /** Persist the picker's grouping preference; screens pick the change up live. */
+    fun setGroupMode(mode: GroupMode) = viewerPreferences.setGroupMode(mode)
+
     fun signOut() = session.signOut()
 
     companion object {
-        fun factory(session: SessionController, store: AccountStore): ViewModelProvider.Factory =
-            viewModelFactory {
-                initializer { SettingsViewModel(session, store) }
-            }
+        fun factory(
+            session: SessionController,
+            store: AccountStore,
+            viewerPreferences: ViewerPreferences,
+        ): ViewModelProvider.Factory = viewModelFactory {
+            initializer { SettingsViewModel(session, store, viewerPreferences) }
+        }
     }
 }

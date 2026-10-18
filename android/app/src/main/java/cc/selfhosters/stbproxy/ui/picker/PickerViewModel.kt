@@ -5,8 +5,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.SessionController
 import cc.selfhosters.stbproxy.data.SessionState
+import cc.selfhosters.stbproxy.data.ViewerPreferences
 import cc.selfhosters.stbproxy.data.epg.EpgRepository
 import cc.selfhosters.stbproxy.data.epg.NowNext
 import cc.selfhosters.stbproxy.data.model.Channel
@@ -34,6 +36,7 @@ data class PickerUiState(
     val nowNext: Map<String, NowNext> = emptyMap(),
     val query: String = "",
     val activeBlock: String? = null,
+    val groupMode: GroupMode = GroupMode.BLOCKS,
     val filter: ChannelFilter = ChannelFilter.ALL,
     val error: String? = null,
     val accountLabel: String? = null,
@@ -49,9 +52,10 @@ class PickerViewModel(
     private val apiClient: ApiClient,
     private val epgRepository: EpgRepository,
     private val session: SessionController,
+    private val viewerPreferences: ViewerPreferences,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(PickerUiState())
+    private val _state = MutableStateFlow(PickerUiState(groupMode = viewerPreferences.groupMode.value))
     val state: StateFlow<PickerUiState> = _state.asStateFlow()
 
     init {
@@ -64,6 +68,18 @@ class PickerViewModel(
                 .drop(1)
                 .collect { refresh() }
         }
+        // A grouping change in Settings re-groups the rail without leaving the picker.
+        viewModelScope.launch {
+            viewerPreferences.groupMode.collect { mode ->
+                _state.update { state ->
+                    val rail = groupRail(effectiveGroupMode(mode, state.blocks), state.blocks, state.channels)
+                    val active = state.activeBlock
+                        ?.takeIf { block -> rail.any { it.name == block } }
+                        ?: rail.firstOrNull()?.name
+                    state.copy(groupMode = mode, activeBlock = active)
+                }
+            }
+        }
     }
 
     fun refresh() {
@@ -71,12 +87,14 @@ class PickerViewModel(
         viewModelScope.launch {
             try {
                 val lineup = apiClient.fetchLineup()
-                val rail = blockRail(lineup.blocks, lineup.channels)
+                val mode = effectiveGroupMode(viewerPreferences.groupMode.value, lineup.blocks)
+                val rail = groupRail(mode, lineup.blocks, lineup.channels)
                 _state.update {
                     it.copy(
                         loading = false,
                         blocks = lineup.blocks,
                         channels = lineup.channels,
+                        groupMode = mode,
                         error = null,
                         accountLabel = lineup.account ?: OPERATOR_LABEL,
                         credentialsUnverified = lineup.account == null && session.hasCredentials(),
@@ -126,8 +144,9 @@ class PickerViewModel(
             apiClient: ApiClient,
             epgRepository: EpgRepository,
             session: SessionController,
+            viewerPreferences: ViewerPreferences,
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { PickerViewModel(apiClient, epgRepository, session) }
+            initializer { PickerViewModel(apiClient, epgRepository, session, viewerPreferences) }
         }
     }
 }

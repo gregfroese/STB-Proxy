@@ -89,6 +89,7 @@ fun PlayerScreen(
             apiClient = LocalAppContainer.current.apiClient,
             epgRepository = LocalAppContainer.current.epgRepository,
             session = LocalAppContainer.current.sessionController,
+            viewerPreferences = LocalAppContainer.current.viewerPreferences,
             portal = portal,
             channelId = channelId,
             launchBlock = launchBlock,

@@ -5,8 +5,16 @@ import {
   blockMatchCounts,
   blockRail,
   channelsInBlock,
+  channelsInGroup,
+  effectiveGroupMode,
   extraBlockCount,
+  extraGroupCount,
+  genreName,
+  genreRail,
+  groupMatchCounts,
+  groupRail,
   launchBlockFor,
+  launchGroupFor,
   searchChannels,
 } from "./pickerLogic";
 
@@ -94,5 +102,69 @@ describe("pickerLogic", () => {
     expect(launchBlockFor(multi, null)).toBe("Sports");
     expect(launchBlockFor(ungrouped, "Kids")).toBe(OTHER_BLOCK);
     expect(launchBlockFor(ungrouped, OTHER_BLOCK)).toBe(OTHER_BLOCK);
+  });
+});
+
+function withGenre(id: string, name: string, genre: string | null): Channel {
+  const base = channel(id, name, null, []);
+  return { ...base, genre };
+}
+
+const gNews = withGenre("1", "BBC News", "News");
+const gNews2 = withGenre("2", "Sky News", "news");
+const gSports = withGenre("3", "TNT Sports", "Sports");
+const gNoGenre = withGenre("4", "Community TV", null);
+const genreChannels = [gNews, gNews2, gSports, gNoGenre];
+
+describe("genre grouping", () => {
+  it("falls back to Genres only when there are no visible Blocks", () => {
+    expect(effectiveGroupMode("blocks", ["Kids"])).toBe("blocks");
+    expect(effectiveGroupMode("genres", ["Kids"])).toBe("genres");
+    expect(effectiveGroupMode("blocks", [])).toBe("genres");
+    expect(effectiveGroupMode("genres", [])).toBe("genres");
+  });
+
+  it("a blank genre becomes Other", () => {
+    expect(genreName(gNews)).toBe("News");
+    expect(genreName(gNoGenre)).toBe(OTHER_BLOCK);
+  });
+
+  it("genre rail merges same-named genres, sorts, and appends Other last", () => {
+    const rail = genreRail(genreChannels);
+    expect(rail.map((entry) => entry.name)).toEqual(["News", "Sports", OTHER_BLOCK]);
+    expect(rail.map((entry) => entry.count)).toEqual([2, 1, 1]);
+  });
+
+  it("groupRail dispatches on mode", () => {
+    expect(groupRail("genres", [], genreChannels).map((entry) => entry.name)).toEqual([
+      "News",
+      "Sports",
+      OTHER_BLOCK,
+    ]);
+    expect(groupRail("blocks", ["Kids"], [kids]).map((entry) => entry.name)).toEqual(["Kids"]);
+  });
+
+  it("channelsInGroup resolves genres case-insensitively and Other", () => {
+    expect(channelsInGroup("genres", genreChannels, "News")).toEqual([gNews, gNews2]);
+    expect(channelsInGroup("genres", genreChannels, "sports")).toEqual([gSports]);
+    expect(channelsInGroup("genres", genreChannels, OTHER_BLOCK)).toEqual([gNoGenre]);
+  });
+
+  it("genre match counts are per-genre", () => {
+    const counts = groupMatchCounts("genres", genreChannels, ["News", "Sports", OTHER_BLOCK], "sky");
+    expect(counts.get("News")).toBe(1);
+    expect(counts.get("Sports")).toBe(0);
+    expect(counts.get(OTHER_BLOCK)).toBe(0);
+  });
+
+  it("plus-N badge is always zero in genre mode", () => {
+    expect(extraGroupCount("genres", gSports, "Sports", false)).toBe(0);
+    expect(extraGroupCount("blocks", multi, "Sports", false)).toBe(1);
+  });
+
+  it("launch group is the channel's genre in genre mode", () => {
+    expect(launchGroupFor("genres", gSports, "News")).toBe("Sports");
+    expect(launchGroupFor("genres", gNoGenre, null)).toBe(OTHER_BLOCK);
+    expect(launchGroupFor("blocks", multi, "Kids")).toBe("Sports");
   });
 });

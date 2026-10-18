@@ -1,22 +1,26 @@
 <script lang="ts">
   import type { Channel } from "../lib/types";
-  import { OTHER_BLOCK, extraBlockCount } from "../lib/pickerLogic";
+  import { OTHER_BLOCK, extraGroupCount, genreName, type GroupMode } from "../lib/pickerLogic";
   import Logo from "./Logo.svelte";
 
   let {
     channel,
     activeBlock,
+    mode = "blocks",
     searching = false,
     onpick,
   }: {
     channel: Channel;
     activeBlock: string | null;
+    mode?: GroupMode;
     searching?: boolean;
     onpick: (channel: Channel) => void;
   } = $props();
 
-  const extra = $derived(extraBlockCount(channel, activeBlock, searching));
-  const dimOthers = $derived(!searching && activeBlock != null && activeBlock !== OTHER_BLOCK);
+  const extra = $derived(extraGroupCount(mode, channel, activeBlock, searching));
+  const dimOthers = $derived(
+    mode === "blocks" && !searching && activeBlock != null && activeBlock !== OTHER_BLOCK,
+  );
 </script>
 
 <button
@@ -29,7 +33,11 @@
   <Logo name={channel.name} logo={channel.logo} size={56} />
   <div class="tnm">{channel.name}</div>
   <div class="tags">
-    {#if channel.blocks.length > 0}
+    {#if mode === "genres"}
+      <span class="tag {genreName(channel) === OTHER_BLOCK ? 'other' : ''}">
+        {genreName(channel) === OTHER_BLOCK ? "ungrouped" : genreName(channel)}
+      </span>
+    {:else if channel.blocks.length > 0}
       {#each channel.blocks as block (block)}
         <span class="tag {dimOthers && block !== activeBlock ? 'extra' : ''}">{block}</span>
       {/each}

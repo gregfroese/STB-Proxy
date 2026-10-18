@@ -67,6 +67,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cc.selfhosters.stbproxy.R
+import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.epg.NowNext
 import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.data.network.NO_CHANNELS_NOTICE
@@ -104,6 +105,7 @@ fun PickerScreen(
             LocalAppContainer.current.apiClient,
             LocalAppContainer.current.epgRepository,
             LocalAppContainer.current.sessionController,
+            LocalAppContainer.current.viewerPreferences,
         ),
     ),
 ) {
@@ -112,20 +114,21 @@ fun PickerScreen(
     val isTv = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK ==
         Configuration.UI_MODE_TYPE_TELEVISION
 
-    val rail = remember(state.blocks, state.channels) {
-        blockRail(state.blocks, state.channels)
+    val mode = effectiveGroupMode(state.groupMode, state.blocks)
+    val rail = remember(state.blocks, state.channels, mode) {
+        groupRail(mode, state.blocks, state.channels)
     }
     val searching = state.query.isNotBlank()
-    val visibleChannels = remember(state.channels, state.activeBlock, state.query, searching, state.filter) {
+    val visibleChannels = remember(state.channels, state.activeBlock, state.query, searching, state.filter, mode) {
         val base = if (searching) {
             searchChannels(state.channels, state.query)
         } else {
-            state.activeBlock?.let { channelsInBlock(state.channels, it) }.orEmpty()
+            state.activeBlock?.let { channelsInGroup(mode, state.channels, it) }.orEmpty()
         }
         sortChannels(applyChannelFilter(base, state.filter))
     }
-    val blockCounts = remember(state.channels, rail, state.query, searching) {
-        if (searching) blockMatchCounts(state.channels, rail.map { it.name }, state.query)
+    val blockCounts = remember(state.channels, rail, state.query, searching, mode) {
+        if (searching) groupMatchCounts(mode, state.channels, rail.map { it.name }, state.query)
         else emptyMap()
     }
 
@@ -147,6 +150,7 @@ fun PickerScreen(
             query = state.query,
             onQueryChange = viewModel::onQueryChange,
             palette = palette,
+            mode = mode,
             isTv = isTv,
         )
         FilterRow(
@@ -179,6 +183,7 @@ fun PickerScreen(
                     isTv = isTv,
                     rail = rail,
                     activeBlock = state.activeBlock,
+                    mode = mode,
                     searching = searching,
                     query = state.query,
                     visibleChannels = visibleChannels,
@@ -187,7 +192,7 @@ fun PickerScreen(
                     palette = palette,
                     onBlockSelected = viewModel::onBlockSelected,
                     onChannelClick = { channel ->
-                        onChannelClick(channel, launchBlockFor(channel, state.activeBlock))
+                        onChannelClick(channel, launchGroupFor(mode, channel, state.activeBlock))
                     },
                 )
             }
@@ -200,6 +205,7 @@ private fun PickerBody(
     isTv: Boolean,
     rail: List<BlockEntry>,
     activeBlock: String?,
+    mode: GroupMode,
     searching: Boolean,
     query: String,
     visibleChannels: List<Channel>,
@@ -224,6 +230,7 @@ private fun PickerBody(
                 channels = visibleChannels,
                 nowNext = nowNext,
                 activeBlock = activeBlock,
+                mode = mode,
                 searching = searching,
                 isTv = true,
                 query = query,
@@ -247,6 +254,7 @@ private fun PickerBody(
                 channels = visibleChannels,
                 nowNext = nowNext,
                 activeBlock = activeBlock,
+                mode = mode,
                 searching = searching,
                 isTv = false,
                 query = query,
@@ -263,6 +271,7 @@ internal fun PickerList(
     channels: List<Channel>,
     nowNext: Map<String, NowNext>,
     activeBlock: String?,
+    mode: GroupMode,
     searching: Boolean,
     isTv: Boolean,
     query: String,
@@ -290,6 +299,7 @@ internal fun PickerList(
                 channel = channel,
                 nowNext = channel.epgId?.let { nowNext[it] },
                 activeBlock = activeBlock,
+                mode = mode,
                 searching = searching,
                 palette = palette,
                 onClick = { onChannelClick(channel) },
@@ -308,13 +318,14 @@ internal fun ChannelRow(
     channel: Channel,
     nowNext: NowNext?,
     activeBlock: String?,
+    mode: GroupMode,
     searching: Boolean,
     palette: PickerPalette,
     onClick: () -> Unit,
     focusRequester: FocusRequester? = null,
 ) {
     var focused by remember { mutableStateOf(false) }
-    val extra = extraBlockCount(channel, activeBlock, searching)
+    val extra = extraGroupCount(mode, channel, activeBlock, searching)
     val shape = RoundedCornerShape(12.dp)
 
     Row(
@@ -350,7 +361,11 @@ internal fun ChannelRow(
                     BasicLabel("CH $it", palette.muted, 12.sp, maxLines = 1)
                 }
             }
-            val tags = channel.blocks.joinToString(" · ")
+            val tags = if (mode == GroupMode.GENRES) {
+                genreName(channel).takeIf { it != OTHER_BLOCK }.orEmpty()
+            } else {
+                channel.blocks.joinToString(" · ")
+            }
             val teaser = nowNext?.now?.title?.let { "Now: $it" } ?: "No guide data"
             BasicLabel(
                 listOfNotNull(teaser, tags.ifBlank { null }).joinToString("   •   "),
@@ -413,6 +428,7 @@ private fun SearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     palette: PickerPalette,
+    mode: GroupMode = GroupMode.BLOCKS,
     isTv: Boolean = false,
 ) {
     val shape = RoundedCornerShape(11.dp)
@@ -426,7 +442,11 @@ private fun SearchField(
             .padding(horizontal = 12.dp, vertical = 10.dp),
     ) {
         if (query.isEmpty()) {
-            BasicLabel("Search all Blocks…", palette.muted, 14.sp)
+            BasicLabel(
+                if (mode == GroupMode.GENRES) "Search all Genres…" else "Search all Blocks…",
+                palette.muted,
+                14.sp,
+            )
         }
         BasicTextField(
             value = query,
@@ -580,6 +600,7 @@ fun ChannelPickerOverlay(
     title: String,
     blocks: List<String>,
     channels: List<Channel>,
+    groupMode: GroupMode,
     onSelect: (Channel) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -588,16 +609,17 @@ fun ChannelPickerOverlay(
         Configuration.UI_MODE_TYPE_TELEVISION
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(ChannelFilter.ALL) }
-    val rail = remember(blocks, channels) { blockRail(blocks, channels) }
+    val mode = effectiveGroupMode(groupMode, blocks)
+    val rail = remember(blocks, channels, mode) { groupRail(mode, blocks, channels) }
     var activeBlock by remember(rail) { mutableStateOf(rail.firstOrNull()?.name) }
     val searching = query.isNotBlank()
-    val visible = remember(channels, activeBlock, query, searching, filter) {
+    val visible = remember(channels, activeBlock, query, searching, filter, mode) {
         val base = if (searching) searchChannels(channels, query)
-        else activeBlock?.let { channelsInBlock(channels, it) }.orEmpty()
+        else activeBlock?.let { channelsInGroup(mode, channels, it) }.orEmpty()
         sortChannels(applyChannelFilter(base, filter))
     }
-    val blockCounts = remember(channels, rail, query, searching) {
-        if (searching) blockMatchCounts(channels, rail.map { it.name }, query) else emptyMap()
+    val blockCounts = remember(channels, rail, query, searching, mode) {
+        if (searching) groupMatchCounts(mode, channels, rail.map { it.name }, query) else emptyMap()
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -613,7 +635,13 @@ fun ChannelPickerOverlay(
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
             )
-            SearchField(query = query, onQueryChange = { query = it }, palette = palette, isTv = isTv)
+            SearchField(
+                query = query,
+                onQueryChange = { query = it },
+                palette = palette,
+                mode = mode,
+                isTv = isTv,
+            )
             FilterRow(filter = filter, onFilter = { filter = it }, palette = palette)
             Box(modifier = Modifier.fillMaxWidth().height(420.dp)) {
                 if (isTv) {
@@ -631,6 +659,7 @@ fun ChannelPickerOverlay(
                             channels = visible,
                             nowNext = emptyMap(),
                             activeBlock = activeBlock,
+                            mode = mode,
                             searching = searching,
                             isTv = true,
                             query = query,
@@ -654,6 +683,7 @@ fun ChannelPickerOverlay(
                             channels = visible,
                             nowNext = emptyMap(),
                             activeBlock = activeBlock,
+                            mode = mode,
                             searching = searching,
                             isTv = false,
                             query = query,

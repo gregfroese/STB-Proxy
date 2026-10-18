@@ -6,8 +6,10 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import cc.selfhosters.stbproxy.BuildConfig
 import cc.selfhosters.stbproxy.data.AccountStore
+import cc.selfhosters.stbproxy.data.AccountStorage
 import cc.selfhosters.stbproxy.data.AndroidAccountStorage
 import cc.selfhosters.stbproxy.data.SessionController
+import cc.selfhosters.stbproxy.data.ViewerPreferences
 import cc.selfhosters.stbproxy.data.epg.EpgRepository
 import cc.selfhosters.stbproxy.data.epg.XmltvParser
 import cc.selfhosters.stbproxy.data.network.ApiClient
@@ -26,8 +28,12 @@ import java.util.concurrent.TimeUnit
  */
 class AppContainer(
     context: Context,
-    val accountStore: AccountStore = AccountStore(AndroidAccountStorage(context.applicationContext)),
+    storage: AccountStorage = AndroidAccountStorage(context.applicationContext),
+    val accountStore: AccountStore = AccountStore(storage),
 ) {
+
+    /** Per-device viewer preferences (the picker's grouping taxonomy). */
+    val viewerPreferences: ViewerPreferences = ViewerPreferences(storage)
 
     private val json: Json = Json {
         ignoreUnknownKeys = true

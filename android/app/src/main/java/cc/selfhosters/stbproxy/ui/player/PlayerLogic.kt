@@ -1,9 +1,10 @@
 package cc.selfhosters.stbproxy.ui.player
 
+import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.epg.NowNext
 import cc.selfhosters.stbproxy.data.epg.Programme
 import cc.selfhosters.stbproxy.data.model.Channel
-import cc.selfhosters.stbproxy.ui.picker.channelsInBlock
+import cc.selfhosters.stbproxy.ui.picker.channelsInGroup
 import java.time.Duration
 import java.time.Instant
 
@@ -106,12 +107,15 @@ fun programmeProgress(programme: Programme?, now: Instant): Float {
 }
 
 /**
- * The channel up/down list for a player launched from [launchBlock] (spec 2.6):
- * the channels of that Block, so a channel in several Blocks walks the one it
- * was launched from.
+ * The channel up/down list for a player launched from [launchGroup] (spec 2.6):
+ * the channels of that group — a Block (so a channel in several Blocks walks the
+ * one it was launched from) or a Genre, per [mode].
  */
-fun zapList(channels: List<Channel>, launchBlock: String): List<Channel> =
-    channelsInBlock(channels, launchBlock)
+fun zapList(
+    channels: List<Channel>,
+    launchGroup: String,
+    mode: GroupMode = GroupMode.BLOCKS,
+): List<Channel> = channelsInGroup(mode, channels, launchGroup)
 
 /** Steps [current] by [delta] within a list of [size], wrapping; -1 when empty. */
 fun zapIndex(size: Int, current: Int, delta: Int): Int {
@@ -126,11 +130,12 @@ fun zapIndex(size: Int, current: Int, delta: Int): Int {
  */
 fun zapTarget(
     channels: List<Channel>,
-    launchBlock: String,
+    launchGroup: String,
     current: Channel,
     delta: Int,
+    mode: GroupMode = GroupMode.BLOCKS,
 ): Channel? {
-    val list = zapList(channels, launchBlock)
+    val list = zapList(channels, launchGroup, mode)
     if (list.isEmpty()) return null
     val index = list.indexOfFirst {
         it.portal == current.portal && it.channelId == current.channelId

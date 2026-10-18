@@ -2,8 +2,95 @@
 
 import type { Channel } from "./types";
 
-/** Rail entry for public channels in no visible Block (`blocks: []`). */
+/** Rail entry for public channels in no visible Block (`blocks: []`) or genre. */
 export const OTHER_BLOCK = "Other";
+
+/** Which taxonomy the viewer groups channels by (per-device preference). */
+export type GroupMode = "blocks" | "genres";
+
+/**
+ * The mode actually used: a viewer preference of "blocks" still falls back to
+ * "genres" when the account has no visible Blocks, so nothing is dumped into a
+ * lone "Other" bucket.
+ */
+export function effectiveGroupMode(pref: GroupMode, blocks: string[]): GroupMode {
+  return blocks.length > 0 ? pref : "genres";
+}
+
+/** A channel's Genre as a rail name, or "Other" when the portal gave none. */
+export function genreName(channel: Channel): string {
+  const genre = (channel.genre ?? "").trim();
+  return genre === "" ? OTHER_BLOCK : genre;
+}
+
+/** The Genre rail: distinct genres (case-insensitively sorted), "Other" last. */
+export function genreRail(channels: Channel[]): BlockEntry[] {
+  const canonical = new Map<string, string>();
+  for (const channel of channels) {
+    const genre = (channel.genre ?? "").trim();
+    if (genre === "") continue;
+    const key = genre.toLowerCase();
+    if (!canonical.has(key)) canonical.set(key, genre);
+  }
+  const entries = [...canonical.values()]
+    .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    .map((name) => ({
+      name,
+      count: channels.filter(
+        (channel) => (channel.genre ?? "").trim().toLowerCase() === name.toLowerCase(),
+      ).length,
+    }));
+  const other = channels.filter((channel) => (channel.genre ?? "").trim() === "").length;
+  return other > 0 ? [...entries, { name: OTHER_BLOCK, count: other }] : entries;
+}
+
+/** The rail for [mode]: Blocks in operator order, or Genres alphabetically. */
+export function groupRail(mode: GroupMode, blocks: string[], channels: Channel[]): BlockEntry[] {
+  return mode === "genres" ? genreRail(channels) : blockRail(blocks, channels);
+}
+
+/** Channels belonging to [group], interpreted by [mode]. */
+export function channelsInGroup(mode: GroupMode, channels: Channel[], group: string): Channel[] {
+  if (mode === "blocks") return channelsInBlock(channels, group);
+  const target = group.toLowerCase();
+  return channels.filter((channel) => {
+    const genre = (channel.genre ?? "").trim();
+    return group === OTHER_BLOCK ? genre === "" : genre.toLowerCase() === target;
+  });
+}
+
+/** Per-group match counts for the search rail, keyed by rail entry name. */
+export function groupMatchCounts(
+  mode: GroupMode,
+  channels: Channel[],
+  groupNames: string[],
+  query: string,
+): Map<string, number> {
+  const matched = searchChannels(channels, query);
+  return new Map(groupNames.map((group) => [group, channelsInGroup(mode, matched, group).length]));
+}
+
+/**
+ * The `+N` badge: how many other groups the channel belongs to. Always 0 in
+ * genre mode — a channel has exactly one genre.
+ */
+export function extraGroupCount(
+  mode: GroupMode,
+  channel: Channel,
+  activeGroup: string | null,
+  searching: boolean,
+): number {
+  return mode === "genres" ? 0 : extraBlockCount(channel, activeGroup, searching);
+}
+
+/** The group a channel launches into the player from (its zap list). */
+export function launchGroupFor(
+  mode: GroupMode,
+  channel: Channel,
+  activeGroup: string | null,
+): string {
+  return mode === "genres" ? genreName(channel) : launchBlockFor(channel, activeGroup);
+}
 
 /** A Channel's identity — the GLOSSARY's `(portal, channelId)` pair, as one key. */
 export function channelKey(channel: Channel): string {

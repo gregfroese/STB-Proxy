@@ -187,4 +187,12 @@ describe("channel up/down within the launch Block", () => {
     expect(zapIndex(3, 0, -1)).toBe(2);
     expect(zapIndex(3, 0, 1)).toBe(1);
   });
+
+  it("zap follows the genre group when in genre mode", () => {
+    const sporty = { ...channel("9", "ESPN", []), genre: "Sports" };
+    const sporty2 = { ...channel("10", "Fox Sports", []), genre: "Sports" };
+    const genreChannels = [...channels, sporty, sporty2];
+    expect(zapList(genreChannels, "Sports", "genres")).toEqual([sporty, sporty2]);
+    expect(zapTarget(genreChannels, "Sports", sporty, 1, "genres")).toEqual(sporty2);
+  });
 });

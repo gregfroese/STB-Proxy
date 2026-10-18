@@ -5,7 +5,13 @@
   import { timeRange } from "../lib/format";
   import { lineup, loadLineup } from "../lib/lineup";
   import { attachStream, type StreamHandle } from "../lib/stream";
-  import { channelsInBlock, channelKey, launchBlockFor } from "../lib/pickerLogic";
+  import {
+    channelKey,
+    channelsInGroup,
+    effectiveGroupMode,
+    launchGroupFor,
+  } from "../lib/pickerLogic";
+  import { groupMode } from "../lib/prefs";
   import {
     epgRefreshAction,
     programmeProgress,
@@ -36,8 +42,9 @@
   const channel = $derived(
     channels.find((item) => item.portal === params.portal && item.channelId === params.id) ?? null,
   );
-  const launchBlock = $derived(channel ? params.block || launchBlockFor(channel, null) : "");
-  const zapChannels = $derived(channel ? channelsInBlock(channels, launchBlock) : []);
+  const mode = $derived(effectiveGroupMode($groupMode, $lineup?.blocks ?? []));
+  const launchBlock = $derived(channel ? params.block || launchGroupFor(mode, channel, null) : "");
+  const zapChannels = $derived(channel ? channelsInGroup(mode, channels, launchBlock) : []);
   const stored = $derived(channel?.epgId ? ($epg[channel.epgId] ?? null) : null);
   const resolved = $derived(resolveNowNext(stored, now));
   const progress = $derived(programmeProgress(resolved?.now ?? null, now));
@@ -99,7 +106,7 @@
 
   function zap(delta: number) {
     if (!channel) return;
-    const target = zapTarget(channels, launchBlock, channel, delta);
+    const target = zapTarget(channels, launchBlock, channel, delta, mode);
     if (target) goto(target);
   }
 

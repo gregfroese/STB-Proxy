@@ -3,6 +3,7 @@
   import { clearLineup } from "../lib/lineup";
   import { resetMultiview } from "../lib/multiview";
   import { logout } from "../lib/api";
+  import { groupMode } from "../lib/prefs";
   import { navigate } from "../lib/router";
   import { accountLabel, clearSession, session } from "../lib/session";
 
@@ -39,6 +40,27 @@
       <div>
         <button class="btn danger" onclick={signOut} disabled={busy}>
           {busy ? "Signing out…" : "Sign out"}
+        </button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Channel grouping</h2>
+      <p class="notice" style="margin:0 0 8px">
+        How the channel picker arranges its rail. Blocks are only used when the account has any;
+        otherwise the picker groups by the portal's Genres either way.
+      </p>
+      <div class="chips" style="padding:0">
+        <button
+          class="chip {$groupMode === 'blocks' ? 'on' : ''}"
+          onclick={() => groupMode.set("blocks")}
+        >
+          Blocks
+        </button>
+        <button
+          class="chip {$groupMode === 'genres' ? 'on' : ''}"
+          onclick={() => groupMode.set("genres")}
+        >
+          Genres
         </button>
       </div>
     </div>

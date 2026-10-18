@@ -1,5 +1,6 @@
 package cc.selfhosters.stbproxy.ui.picker
 
+import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.model.Channel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -93,5 +94,59 @@ class PickerLogicTest {
         assertEquals("Sports", launchBlockFor(multi, null))
         assertEquals(OTHER_BLOCK, launchBlockFor(ungrouped, "Kids"))
         assertEquals(OTHER_BLOCK, launchBlockFor(ungrouped, OTHER_BLOCK))
+    }
+
+    // ---- genre grouping (spec follow-up) ----
+
+    private fun genreChannel(id: String, name: String, genre: String?) =
+        Channel(
+            portal = "1",
+            channelId = id,
+            name = name,
+            url = "/play/1/$id",
+            genre = genre,
+        )
+
+    private val gNews = genreChannel("1", "BBC News", "News")
+    private val gNews2 = genreChannel("2", "Sky News", "news")
+    private val gSports = genreChannel("3", "TNT Sports", "Sports")
+    private val gNone = genreChannel("4", "Community TV", null)
+    private val genreChannels = listOf(gNews, gNews2, gSports, gNone)
+
+    @Test
+    fun `genre mode only replaces blocks when there are none`() {
+        assertEquals(GroupMode.BLOCKS, effectiveGroupMode(GroupMode.BLOCKS, listOf("Kids")))
+        assertEquals(GroupMode.GENRES, effectiveGroupMode(GroupMode.GENRES, listOf("Kids")))
+        assertEquals(GroupMode.GENRES, effectiveGroupMode(GroupMode.BLOCKS, emptyList()))
+    }
+
+    @Test
+    fun `genre rail merges same-named genres, sorts, and appends Other last`() {
+        val rail = genreRail(genreChannels)
+        assertEquals(listOf("News", "Sports", OTHER_BLOCK), rail.map { it.name })
+        assertEquals(listOf(2, 1, 1), rail.map { it.count })
+    }
+
+    @Test
+    fun `channelsInGroup resolves genres case-insensitively and Other`() {
+        assertEquals(listOf("BBC News", "Sky News"), channelsInGroup(GroupMode.GENRES, genreChannels, "News").map { it.name })
+        assertEquals(listOf("TNT Sports"), channelsInGroup(GroupMode.GENRES, genreChannels, "sports").map { it.name })
+        assertEquals(listOf("Community TV"), channelsInGroup(GroupMode.GENRES, genreChannels, OTHER_BLOCK).map { it.name })
+    }
+
+    @Test
+    fun `genre match counts are per-genre and the plus-N badge is zero`() {
+        val counts = groupMatchCounts(GroupMode.GENRES, genreChannels, listOf("News", "Sports", OTHER_BLOCK), "sky")
+        assertEquals(1, counts["News"])
+        assertEquals(0, counts["Sports"])
+        assertEquals(0, extraGroupCount(GroupMode.GENRES, gSports, "Sports", searching = false))
+        assertEquals(1, extraGroupCount(GroupMode.BLOCKS, multi, "Sports", searching = false))
+    }
+
+    @Test
+    fun `launch group is the channel's genre in genre mode`() {
+        assertEquals("Sports", launchGroupFor(GroupMode.GENRES, gSports, "News"))
+        assertEquals(OTHER_BLOCK, launchGroupFor(GroupMode.GENRES, gNone, null))
+        assertEquals("Sports", launchGroupFor(GroupMode.BLOCKS, multi, "Kids"))
     }
 }

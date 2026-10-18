@@ -94,6 +94,7 @@ fun MultiviewScreen(
         factory = MultiviewViewModel.factory(
             LocalAppContainer.current.apiClient,
             LocalAppContainer.current.sessionController,
+            LocalAppContainer.current.viewerPreferences,
         ),
     ),
 ) {
@@ -276,6 +277,7 @@ fun MultiviewScreen(
             title = "Pick channel for Tile ${slot + 1}",
             blocks = state.blocks,
             channels = state.channels,
+            groupMode = state.groupMode,
             onSelect = viewModel::pick,
             onDismiss = viewModel::dismissPicker,
         )

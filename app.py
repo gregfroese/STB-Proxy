@@ -2121,7 +2121,7 @@ def playlist():
                             genre = customGenres.get(channelId)
                             if genre == None:
                                 genreId = str(channel.get("tv_genre_id"))
-                                genre = str(genres.get(genreId))
+                                genre = genres.get(genreId) or ""
                             channelNumber = customChannelNumbers.get(channelId)
                             if channelNumber == None:
                                 channelNumber = str(channel.get("number"))
@@ -3376,7 +3376,7 @@ def portalLineup(portalId, blocks):
             channelName = str(channel.get("name"))
         genre = customGenres.get(channelId)
         if genre == None:
-            genre = str((genres or {}).get(str(channel.get("tv_genre_id"))))
+            genre = (genres or {}).get(str(channel.get("tv_genre_id"))) or ""
         channelNumber = customChannelNumbers.get(channelId)
         if channelNumber == None:
             channelNumber = str(channel.get("number"))

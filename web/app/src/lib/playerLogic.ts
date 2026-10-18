@@ -2,7 +2,7 @@
 // decisions, now/next resolution, progress and zap.
 
 import type { Channel, NowNext, Programme } from "./types";
-import { channelsInBlock } from "./pickerLogic";
+import { channelsInGroup, type GroupMode } from "./pickerLogic";
 
 export type PlaybackError =
   | { kind: "all_tuners_busy" }
@@ -75,9 +75,13 @@ export function programmeProgress(programme: Programme | null, now: Date): numbe
   return Math.min(1, Math.max(0, elapsed / total));
 }
 
-/** The channel up/down list for a player launched from `launchBlock`. */
-export function zapList(channels: Channel[], launchBlock: string): Channel[] {
-  return channelsInBlock(channels, launchBlock);
+/** The channel up/down list for a player launched from `launchGroup`. */
+export function zapList(
+  channels: Channel[],
+  launchGroup: string,
+  mode: GroupMode = "blocks",
+): Channel[] {
+  return channelsInGroup(mode, channels, launchGroup);
 }
 
 /** Steps `current` by `delta` within a list of `size`, wrapping; -1 when empty. */
@@ -86,14 +90,15 @@ export function zapIndex(size: number, current: number, delta: number): number {
   return (((current + delta) % size) + size) % size;
 }
 
-/** The channel `delta` steps away from `current` in `launchBlock`, wrapping. */
+/** The channel `delta` steps away from `current` in `launchGroup`, wrapping. */
 export function zapTarget(
   channels: Channel[],
-  launchBlock: string,
+  launchGroup: string,
   current: Channel,
   delta: number,
+  mode: GroupMode = "blocks",
 ): Channel | null {
-  const list = zapList(channels, launchBlock);
+  const list = zapList(channels, launchGroup, mode);
   if (list.length === 0) return null;
   const index = list.findIndex(
     (channel) => channel.portal === current.portal && channel.channelId === current.channelId,

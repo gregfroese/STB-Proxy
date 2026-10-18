@@ -26,6 +26,9 @@ interface AccountStorage {
     fun readPassword(username: String): String?
     fun writePassword(username: String, password: String)
     fun removePassword(username: String)
+
+    fun readGroupMode(): String?
+    fun writeGroupMode(mode: String?)
 }
 
 /**
@@ -38,7 +41,9 @@ class AndroidAccountStorage(context: Context) : AccountStorage {
     private val prefs: SharedPreferences =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private val secure: SharedPreferences = run {
+    // Built lazily: instances that only touch non-secret prefs (e.g. the
+    // grouping preference) never create the encrypted store.
+    private val secure: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(context)
             .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
             .build()
@@ -89,6 +94,14 @@ class AndroidAccountStorage(context: Context) : AccountStorage {
         secure.edit().remove(passwordKey(username)).apply()
     }
 
+    override fun readGroupMode(): String? = prefs.getString(KEY_GROUP_MODE, null)
+
+    override fun writeGroupMode(mode: String?) {
+        prefs.edit().apply {
+            if (mode == null) remove(KEY_GROUP_MODE) else putString(KEY_GROUP_MODE, mode)
+        }.apply()
+    }
+
     private fun passwordKey(username: String): String = "password:$username"
 
     private companion object {
@@ -97,6 +110,7 @@ class AndroidAccountStorage(context: Context) : AccountStorage {
         const val KEY_BASE_URL = "base_url"
         const val KEY_USERNAMES = "usernames"
         const val KEY_ACTIVE_USERNAME = "active_username"
+        const val KEY_GROUP_MODE = "group_mode"
         const val USERNAME_SEPARATOR = "\n"
     }
 }

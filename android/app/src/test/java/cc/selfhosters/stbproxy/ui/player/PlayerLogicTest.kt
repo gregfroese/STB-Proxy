@@ -1,5 +1,6 @@
 package cc.selfhosters.stbproxy.ui.player
 
+import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.epg.NowNext
 import cc.selfhosters.stbproxy.data.epg.Programme
 import cc.selfhosters.stbproxy.data.model.Channel
@@ -218,6 +219,15 @@ class PlayerLogicTest {
         assertEquals(0, zapIndex(3, 2, 1))
         assertEquals(2, zapIndex(3, 0, -1))
         assertEquals(1, zapIndex(3, 0, 1))
+    }
+
+    @Test
+    fun `zap follows the genre group when in genre mode`() {
+        val sports1 = Channel(portal = "1", channelId = "9", name = "ESPN", url = "/play/1/9", genre = "Sports")
+        val sports2 = Channel(portal = "1", channelId = "10", name = "Fox Sports", url = "/play/1/10", genre = "Sports")
+        val list = channels + listOf(sports1, sports2)
+        assertEquals(listOf(sports1, sports2), zapList(list, "Sports", GroupMode.GENRES))
+        assertEquals(sports2, zapTarget(list, "Sports", sports1, delta = 1, mode = GroupMode.GENRES))
     }
 
     // ---- full-screen decision ----

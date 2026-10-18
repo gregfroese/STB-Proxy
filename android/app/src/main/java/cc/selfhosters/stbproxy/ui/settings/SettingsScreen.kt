@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cc.selfhosters.stbproxy.BuildConfig
+import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.di.LocalAppContainer
 
 /**
@@ -39,7 +40,11 @@ import cc.selfhosters.stbproxy.di.LocalAppContainer
 fun SettingsScreen(onBack: () -> Unit = {}) {
     val container = LocalAppContainer.current
     val viewModel: SettingsViewModel = viewModel(
-        factory = SettingsViewModel.factory(container.sessionController, container.accountStore),
+        factory = SettingsViewModel.factory(
+            container.sessionController,
+            container.accountStore,
+            container.viewerPreferences,
+        ),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
 
@@ -70,6 +75,25 @@ fun SettingsScreen(onBack: () -> Unit = {}) {
             modifier = Modifier.fillMaxWidth(),
         )
         Button(onClick = viewModel::saveBaseUrl) { Text("Save address") }
+
+        HorizontalDivider()
+
+        Text("Channel grouping", style = MaterialTheme.typography.titleMedium)
+        Text(
+            text = "How the picker arranges its rail. Blocks win when the account has any; " +
+                "otherwise the picker groups by the portal's Genres either way.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GroupMode.entries.forEach { option ->
+                if (option == state.groupMode) {
+                    Button(onClick = { viewModel.setGroupMode(option) }) { Text(option.label) }
+                } else {
+                    OutlinedButton(onClick = { viewModel.setGroupMode(option) }) { Text(option.label) }
+                }
+            }
+        }
 
         HorizontalDivider()
 

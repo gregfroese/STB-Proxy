@@ -2,6 +2,14 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.12.0] - 2026-10-18
+
+### Android app & web viewer
+
+- **Channel grouping**: a per-device **Channel grouping** switch in each viewer's Settings lets the picker arrange channels by the portal's **Genres** instead of **Blocks**.
+- **Blocks still scope the lineup**: whichever grouping is chosen, a channel only present in an off or hidden Block never appears. When an account has no Blocks at all, the picker falls back to Genres automatically so nothing lands in a lone "Other" bucket.
+- Genres are merged across portals by name; channels the portal gives no genre for group under **Other**. The player's channel up/down (and Multiview's picker) follow the active group.
+
 ## [1.11.0] - 2026-10-18
 
 ### Added

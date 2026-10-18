@@ -16,12 +16,14 @@
   import {
     CHANNEL_FILTERS,
     applyChannelFilter,
-    blockRail,
     channelKey,
-    channelsInBlock,
+    channelsInGroup,
+    effectiveGroupMode,
+    groupRail,
     searchChannels,
     type ChannelFilter,
   } from "../lib/pickerLogic";
+  import { groupMode } from "../lib/prefs";
   import type { PlaybackError } from "../lib/playerLogic";
   import { navigate } from "../lib/router";
   import type { Channel } from "../lib/types";
@@ -88,11 +90,12 @@
   const audio = $derived(effectiveAudioSlot($tiles, $audioSlot));
 
   const pickSearching = $derived(pickQuery.trim() !== "");
-  const pickRail = $derived(blockRail($lineup?.blocks ?? [], channels));
+  const pickMode = $derived(effectiveGroupMode($groupMode, $lineup?.blocks ?? []));
+  const pickRail = $derived(groupRail(pickMode, $lineup?.blocks ?? [], channels));
   const pickVisible = $derived.by(() => {
     const base = pickSearching
       ? searchChannels(channels, pickQuery)
-      : channelsInBlock(channels, pickBlock ?? "");
+      : channelsInGroup(pickMode, channels, pickBlock ?? "");
     return applyChannelFilter(base, pickFilter);
   });
 
@@ -203,7 +206,10 @@
       <div style="padding: 8px 10px 0">
         <div class="search" style="margin: 0">
           <span>⌕</span>
-          <input placeholder="Search all Blocks…" bind:value={pickQuery} />
+          <input
+            placeholder={pickMode === "genres" ? "Search all Genres…" : "Search all Blocks…"}
+            bind:value={pickQuery}
+          />
         </div>
       </div>
       <div class="chips" style="padding: 8px 10px">
@@ -237,9 +243,13 @@
                 {channel.name}{#if channel.favourite}<span style="color: var(--star)"> ★</span>{/if}
               </div>
               <div style="font-size: 11px; color: var(--dim)">
-                CH {channel.number ?? "—"}{channel.blocks.length
-                  ? ` · ${channel.blocks.join(", ")}`
-                  : ""}
+                CH {channel.number ?? "—"}{pickMode === "genres"
+                  ? channel.genre
+                    ? ` · ${channel.genre}`
+                    : ""
+                  : channel.blocks.length
+                    ? ` · ${channel.blocks.join(", ")}`
+                    : ""}
                 {#each channel.blockFavourites as block (block)}
                   <span style="color: var(--star)"> ★ {block}</span>
                 {/each}

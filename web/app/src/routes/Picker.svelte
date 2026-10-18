@@ -5,14 +5,16 @@
   import {
     CHANNEL_FILTERS,
     applyChannelFilter,
-    blockMatchCounts,
-    blockRail,
-    channelsInBlock,
     channelKey,
-    launchBlockFor,
+    channelsInGroup,
+    effectiveGroupMode,
+    groupMatchCounts,
+    groupRail,
+    launchGroupFor,
     searchChannels,
     type ChannelFilter,
   } from "../lib/pickerLogic";
+  import { groupMode } from "../lib/prefs";
   import { navigate } from "../lib/router";
   import { accountLabel, session } from "../lib/session";
   import type { Channel } from "../lib/types";
@@ -26,7 +28,8 @@
   });
 
   const channels = $derived($lineup?.channels ?? []);
-  const rail = $derived(blockRail($lineup?.blocks ?? [], channels));
+  const mode = $derived(effectiveGroupMode($groupMode, $lineup?.blocks ?? []));
+  const rail = $derived(groupRail(mode, $lineup?.blocks ?? [], channels));
   const searching = $derived(query.trim() !== "");
 
   $effect(() => {
@@ -43,14 +46,15 @@
     const base = searching
       ? searchChannels(channels, query)
       : activeBlock != null
-        ? channelsInBlock(channels, activeBlock)
+        ? channelsInGroup(mode, channels, activeBlock)
         : [];
     return applyChannelFilter(base, filter);
   });
 
   const counts = $derived.by(() => {
     if (searching)
-      return blockMatchCounts(
+      return groupMatchCounts(
+        mode,
         channels,
         rail.map((entry) => entry.name),
         query,
@@ -59,7 +63,7 @@
   });
 
   function pick(channel: Channel) {
-    const block = launchBlockFor(channel, activeBlock);
+    const block = launchGroupFor(mode, channel, activeBlock);
     navigate(
       `/watch?portal=${encodeURIComponent(channel.portal)}&id=${encodeURIComponent(
         channel.channelId,
@@ -83,7 +87,10 @@
 
   <div class="search">
     <span>⌕</span>
-    <input placeholder="Search all Blocks…" bind:value={query} />
+    <input
+      placeholder={mode === "genres" ? "Search all Genres…" : "Search all Blocks…"}
+      bind:value={query}
+    />
   </div>
 
   <div class="chips">
@@ -129,7 +136,7 @@
         </div>
       {:else}
         {#each visible as channel (channelKey(channel))}
-          <ChannelTile {channel} {activeBlock} {searching} onpick={pick} />
+          <ChannelTile {channel} {activeBlock} {mode} {searching} onpick={pick} />
         {/each}
       {/if}
     </div>
