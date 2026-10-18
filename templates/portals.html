@@ -260,6 +260,8 @@
 
                 </div>
                 <div class="modal-footer">
+                    <button class="btn btn-outline-success" title="Duplicate" form="duplicate"><i
+                            class="bi bi-copy"></i> Duplicate</button>
                     <button class="btn btn-danger me-auto" title="Delete" form="delete"
                         id="deleteName">Delete</button>
                     <button type="button" class="btn btn-secondary" title="Cancel" data-bs-dismiss="modal">Cancel</button>
@@ -276,6 +278,10 @@
             <form id="delete" action="/portal/remove" method="post" onsubmit="return confirm('Confirm Delete');"
                 hidden>
                 <input type="text" name="deleteId" id="deleteId" value="">
+            </form>
+
+            <form id="duplicate" action="/portal/duplicate" method="post" hidden>
+                <input type="text" name="id" id="duplicateId" value="">
             </form>
         </div>
     </div>
@@ -414,6 +420,7 @@
         document.getElementById('editLogos').value = button.getAttribute('data-logos');
         document.getElementById('deleteId').value = id;
         document.getElementById('deleteName').value = name;
+        document.getElementById('duplicateId').value = id;
         document.getElementById('retest').checked = false;
         loadDevice('edit', macs.split(','));
     })

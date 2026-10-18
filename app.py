@@ -560,6 +560,17 @@ def formMacs(form):
     return macs
 
 
+def duplicateName(name, portals):
+    """A free name for a copy: "Name (copy)", then "Name (copy 2)" and so on."""
+    taken = {portal["name"] for portal in portals.values()}
+    candidate = "{} (copy)".format(name)
+    n = 2
+    while candidate in taken:
+        candidate = "{} (copy {})".format(name, n)
+        n += 1
+    return candidate
+
+
 def locatePortal(name, url, macs, proxy):
     """Find the portal's API address from whatever was typed, saying what happened."""
     found, tried = stb.findPortal(url, macs, proxy)
@@ -723,6 +734,30 @@ def portalRemove():
     savePortals(portals)
     logger.info("Portal ({}) removed!".format(name))
     flash("Portal ({}) removed!".format(name), "success")
+    return redirect("/portals", code=302)
+
+
+@app.route("/portal/duplicate", methods=["POST"])
+@authorise
+def portalDuplicate():
+    """Copy a portal, switched off, so it has to be turned on deliberately."""
+    sourceId = request.form["id"]
+    portals = getPortals()
+    source = portals[sourceId]
+    newId = uuid.uuid4().hex
+    duplicate = json.loads(json.dumps(source))  # deep copy: the copies must not share lists or dicts
+    duplicate["enabled"] = "false"
+    duplicate["name"] = duplicateName(source["name"], portals)
+
+    ordered = {}
+    for pid, portal in portals.items():
+        ordered[pid] = portal
+        if pid == sourceId:
+            ordered[newId] = duplicate  # keep the copy next to the original
+    savePortals(ordered)
+
+    logger.info("Portal({}) duplicated as {}!".format(source["name"], duplicate["name"]))
+    flash("Portal({}) duplicated as {}. It's off until you turn it on.".format(source["name"], duplicate["name"]), "success")
     return redirect("/portals", code=302)
 
 

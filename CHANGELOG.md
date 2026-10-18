@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.11.0] - 2026-10-18
+
+### Added
+
+- **Portals**: a **Duplicate** button on a portal's edit dialog copies it — same URL, MACs, proxy, logos and channel edits — under "Name (copy)", **switched off** so nothing starts using it until you turn it on.
+
 ## [1.10.1] - 2026-10-18
 
 ### Fixed

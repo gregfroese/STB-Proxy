@@ -521,6 +521,10 @@ class PortalsSettingsChangelogCompositionTest(unittest.TestCase):
         for name in ("deviceToggled", "macsEdited", "loadDevice", "refreshLogos", "retestSave", "followLogoRefreshes"):
             self.assertIn(name, self.portals)
 
+    def test_portals_offer_a_duplicate_action(self):
+        self.assertIn('/portal/duplicate', self.portals)
+        self.assertIn('form="duplicate"', self.portals)
+
     def test_settings_sections_are_cards_with_a_single_external_form(self):
         self.assertIn('<form id="save" action="/settings/save" method="post"></form>', self.settings)
         self.assertEqual(self.settings.count('<button form="save"'), 1)  # the lone Save, now in the bar

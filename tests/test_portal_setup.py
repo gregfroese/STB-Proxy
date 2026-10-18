@@ -176,6 +176,26 @@ class PortalFormTest(unittest.TestCase):
         self.client.post("/portal/update", data=dict(edit, **{"device state": "off"}))
         self.assertEqual(stb.device(MAC), {})
 
+    def test_duplicate_copies_the_portal_switched_off(self):
+        source = self.app.getPortals()[PORTAL]
+        self.client.post("/portal/duplicate", data={"id": PORTAL})
+        portals = self.app.getPortals()
+        self.assertEqual(len(portals), 2)
+        copy = portals[next(pid for pid in portals if pid != PORTAL)]
+        self.assertEqual(copy["name"], "Test portal (copy)")
+        self.assertEqual(copy["enabled"], "false")  # off until turned on deliberately
+        self.assertEqual(copy["url"], source["url"])
+        self.assertEqual(copy["macs"], source["macs"])
+        self.assertEqual(copy["logos"], source["logos"])
+        self.assertIsNot(copy["macs"], source["macs"])  # a real copy, not a shared reference
+        self.assertIn("duplicated as Test portal (copy)", self.messages())
+
+    def test_duplicate_names_stay_unique(self):
+        self.client.post("/portal/duplicate", data={"id": PORTAL})
+        self.client.post("/portal/duplicate", data={"id": PORTAL})
+        names = {p["name"] for p in self.app.getPortals().values()}
+        self.assertEqual(names, {"Test portal", "Test portal (copy)", "Test portal (copy 2)"})
+
     def test_portals_page_offers_device_lock(self):
         stb.saveDevice(MAC, CAPTURED)
         body = self.client.get("/portals").get_data(as_text=True)
