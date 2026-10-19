@@ -275,8 +275,8 @@ def test_companion_apk_is_proxied_with_a_download_name(client):
     assert response.headers["cache-control"] == "no-store"
 
 
-def test_companion_apk_requires_a_session(client):
-    assert client.get("/companion.apk").status_code == 401
+def test_companion_apk_is_public_so_the_login_page_can_offer_it(client):
+    assert client.get("/companion.apk").status_code == 200
 
 
 def test_hls_playlist_and_segments_are_served(client):

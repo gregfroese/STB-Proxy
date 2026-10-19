@@ -63,5 +63,6 @@
     <button class="btn primary" type="submit" disabled={busy}>
       {busy ? "Signing in…" : "Sign in"}
     </button>
+    <a class="btn" href="/companion.apk" download>Download the Android app (APK)</a>
   </form>
 </div>

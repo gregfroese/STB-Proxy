@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.17.0] - 2026-10-18
+
+### Web viewer
+
+- **Download the app from the login page**: the sign-in screen now has a **Download the Android app (APK)** link, so the companion app can be grabbed before logging in. The BFF's `/companion.apk` is served without a session for this (the app still needs an account to use).
+
 ## [1.16.0] - 2026-10-18
 
 ### Guide — Android app & web viewer

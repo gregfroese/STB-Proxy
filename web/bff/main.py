@@ -435,9 +435,9 @@ async def companion_apk(request: Request):
     """The Android companion app, proxied from STB-Proxy's /static so the browser can grab it.
 
     STB-Proxy itself is not reachable from the browser, so this streams the APK the
-    operator dropped in its static folder, named for a clean download.
+    operator dropped in its static folder, named for a clean download. Public (no
+    session): the login page offers it, and the app needs credentials anyway.
     """
-    _get_session(request)
     client: httpx.AsyncClient = request.app.state.client
     upstream_request = client.build_request("GET", "/static/STB-Proxy-Companion.apk")
     try:
