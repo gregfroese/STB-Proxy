@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.SessionController
 import cc.selfhosters.stbproxy.data.ViewerPreferences
+import cc.selfhosters.stbproxy.data.ZapScope
 import cc.selfhosters.stbproxy.data.epg.EpgRepository
 import cc.selfhosters.stbproxy.data.epg.NowNext
 import cc.selfhosters.stbproxy.data.model.Channel
@@ -33,7 +34,7 @@ data class PlayerUiState(
     val loading: Boolean = true,
     val lineupError: String? = null,
     val channel: Channel? = null,
-    val launchBlock: String = "",
+    val scopeLabel: String = "",
     val groupMode: GroupMode = GroupMode.BLOCKS,
     val zapList: List<Channel> = emptyList(),
     val currentIndex: Int = 0,
@@ -58,11 +59,11 @@ class PlayerViewModel(
     private val viewerPreferences: ViewerPreferences,
     private val portal: String,
     private val channelId: String,
-    launchBlock: String,
+    private val scope: ZapScope,
     private val clock: () -> Instant = Instant::now,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(PlayerUiState(launchBlock = launchBlock))
+    private val _state = MutableStateFlow(PlayerUiState(scopeLabel = scopeLabel(scope)))
     val state: StateFlow<PlayerUiState> = _state.asStateFlow()
 
     private var lastComputedAt: Instant = clock()
@@ -77,12 +78,12 @@ class PlayerViewModel(
         viewModelScope.launch {
             try {
                 val lineup = apiClient.fetchLineup()
-                val group = _state.value.launchBlock
                 val mode = effectiveGroupMode(viewerPreferences.groupMode.value, lineup.blocks)
-                val list = zapList(lineup.channels, group, mode)
-                val channel = lineup.channels.firstOrNull {
+                val launched = lineup.channels.firstOrNull {
                     it.portal == portal && it.channelId == channelId
-                } ?: list.firstOrNull()
+                }
+                val list = scopeZapList(lineup.channels, scope, mode, launched)
+                val channel = launched ?: list.firstOrNull()
                 val index = channel?.let { c ->
                     list.indexOfFirst { it.portal == c.portal && it.channelId == c.channelId }
                 } ?: -1
@@ -135,17 +136,14 @@ class PlayerViewModel(
         if (!_state.value.loading) refreshEpg()
     }
 
-    /** Steps the current channel [delta] places through the launch Block. */
+    /** Steps the current channel [delta] places through its launch scope. */
     fun zap(delta: Int) {
         val current = _state.value.channel ?: return
-        val target = zapTarget(
-            _state.value.zapList,
-            _state.value.launchBlock,
-            current,
-            delta,
-            _state.value.groupMode,
-        ) ?: return
-        select(target)
+        val list = _state.value.zapList
+        if (list.isEmpty()) return
+        val index = list.indexOfFirst { it.portal == current.portal && it.channelId == current.channelId }
+        val next = zapIndex(list.size, if (index < 0) 0 else index, delta)
+        list.getOrNull(next)?.let { select(it) }
     }
 
     /** Zaps to the [index]-th row of the launch-Block list. */
@@ -245,7 +243,7 @@ class PlayerViewModel(
             viewerPreferences: ViewerPreferences,
             portal: String,
             channelId: String,
-            launchBlock: String,
+            scope: ZapScope,
         ): ViewModelProvider.Factory = viewModelFactory {
             initializer {
                 PlayerViewModel(
@@ -255,7 +253,7 @@ class PlayerViewModel(
                     viewerPreferences,
                     portal,
                     channelId,
-                    launchBlock,
+                    scope,
                 )
             }
         }

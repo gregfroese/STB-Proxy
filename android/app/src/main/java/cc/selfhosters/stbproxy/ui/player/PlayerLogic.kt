@@ -1,6 +1,7 @@
 package cc.selfhosters.stbproxy.ui.player
 
 import cc.selfhosters.stbproxy.data.GroupMode
+import cc.selfhosters.stbproxy.data.ZapScope
 import cc.selfhosters.stbproxy.data.epg.NowNext
 import cc.selfhosters.stbproxy.data.epg.Programme
 import cc.selfhosters.stbproxy.data.model.Channel
@@ -116,6 +117,48 @@ fun zapList(
     launchGroup: String,
     mode: GroupMode = GroupMode.BLOCKS,
 ): List<Channel> = channelsInGroup(mode, channels, launchGroup)
+
+/**
+ * The ordered up/down list for a player launched under [scope] (ticket 07): a
+ * [ZapScope.Group] re-derives from the lineup as today; a [ZapScope.Channels]
+ * list maps its keys to the lineup, preserving order, and keeps [launched] even
+ * when the set no longer holds it.
+ */
+fun scopeZapList(
+    channels: List<Channel>,
+    scope: ZapScope,
+    mode: GroupMode,
+    launched: Channel?,
+): List<Channel> = when (scope) {
+    is ZapScope.Group -> channelsInGroup(mode, channels, scope.block)
+    is ZapScope.Channels -> {
+        val byKey = channels.associateBy { "${it.portal}:${it.channelId}" }
+        val seen = mutableSetOf<String>()
+        val out = mutableListOf<Channel>()
+        for (key in scope.keys) {
+            val channel = byKey[key] ?: continue
+            if (seen.add(key)) out.add(channel)
+        }
+        if (launched != null) {
+            val key = "${launched.portal}:${launched.channelId}"
+            if (key !in seen) out.add(0, launched)
+        }
+        out
+    }
+}
+
+/** The label a scope shows in the sidebar heading and the live badge (ticket 07). */
+fun scopeLabel(scope: ZapScope): String = when (scope) {
+    is ZapScope.Group -> scope.label.ifEmpty { scope.block }
+    is ZapScope.Channels -> scope.label
+}
+
+/** Steps [current] by [delta] through every [channels] entry, wrapping (Multiview, ticket 10). */
+fun zapWithin(channels: List<Channel>, current: Channel, delta: Int): Channel? {
+    if (channels.isEmpty()) return null
+    val index = channels.indexOfFirst { it.portal == current.portal && it.channelId == current.channelId }
+    return channels.getOrNull(zapIndex(channels.size, if (index < 0) 0 else index, delta))
+}
 
 /** Steps [current] by [delta] within a list of [size], wrapping; -1 when empty. */
 fun zapIndex(size: Int, current: Int, delta: Int): Int {

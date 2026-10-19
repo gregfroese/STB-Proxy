@@ -6,6 +6,7 @@
   import Picker from "./routes/Picker.svelte";
   import Player from "./routes/Player.svelte";
   import Multiview from "./routes/Multiview.svelte";
+  import Guide from "./routes/Guide.svelte";
   import Settings from "./routes/Settings.svelte";
 
   onMount(() => {
@@ -32,6 +33,8 @@
   <Player />
 {:else if $route.name === "multiview"}
   <Multiview />
+{:else if $route.name === "guide"}
+  <Guide />
 {:else}
   <Picker />
 {/if}

@@ -10,6 +10,7 @@ import cc.selfhosters.stbproxy.data.AccountStorage
 import cc.selfhosters.stbproxy.data.AndroidAccountStorage
 import cc.selfhosters.stbproxy.data.SessionController
 import cc.selfhosters.stbproxy.data.ViewerPreferences
+import cc.selfhosters.stbproxy.data.ZapScopeStore
 import cc.selfhosters.stbproxy.data.epg.EpgRepository
 import cc.selfhosters.stbproxy.data.epg.XmltvParser
 import cc.selfhosters.stbproxy.data.network.ApiClient
@@ -34,6 +35,9 @@ class AppContainer(
 
     /** Per-device viewer preferences (the picker's grouping taxonomy). */
     val viewerPreferences: ViewerPreferences = ViewerPreferences(storage)
+
+    /** Holds list zap scopes the player route carries by token (ticket 07). */
+    val zapScopeStore: ZapScopeStore = ZapScopeStore()
 
     private val json: Json = Json {
         ignoreUnknownKeys = true

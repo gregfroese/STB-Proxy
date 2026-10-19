@@ -98,6 +98,7 @@ internal data class PickerPalette(
 @Composable
 fun PickerScreen(
     onChannelClick: (Channel, launchBlock: String) -> Unit,
+    onOpenGuide: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenMultiview: () -> Unit,
     viewModel: PickerViewModel = viewModel(
@@ -142,6 +143,7 @@ fun PickerScreen(
     ) {
         PickerTopBar(
             state = state,
+            onOpenGuide = onOpenGuide,
             onOpenSettings = onOpenSettings,
             onOpenMultiview = onOpenMultiview,
             onRefresh = viewModel::refresh,
@@ -424,7 +426,7 @@ private fun ChannelLogo(channel: Channel, palette: PickerPalette) {
 }
 
 @Composable
-private fun SearchField(
+internal fun SearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     palette: PickerPalette,
@@ -499,6 +501,7 @@ private fun FilterRow(
 @Composable
 private fun PickerTopBar(
     state: PickerUiState,
+    onOpenGuide: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenMultiview: () -> Unit,
     onRefresh: () -> Unit,
@@ -527,6 +530,9 @@ private fun PickerTopBar(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onRefresh, modifier = Modifier.focusRing()) {
                 M3Text("Refresh")
+            }
+            FilledTonalButton(onClick = onOpenGuide, modifier = Modifier.focusRing()) {
+                M3Text(stringResource(R.string.nav_guide))
             }
             FilledTonalButton(onClick = onOpenMultiview, modifier = Modifier.focusRing()) {
                 M3Text(stringResource(R.string.nav_multiview))
@@ -569,7 +575,7 @@ private fun BasicLabel(
 }
 
 @Composable
-private fun pickerPalette(): PickerPalette {
+internal fun pickerPalette(): PickerPalette {
     val scheme = MaterialTheme.colorScheme
     return PickerPalette(
         background = scheme.background,

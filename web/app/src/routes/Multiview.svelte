@@ -24,7 +24,7 @@
     type ChannelFilter,
   } from "../lib/pickerLogic";
   import { groupMode } from "../lib/prefs";
-  import type { PlaybackError } from "../lib/playerLogic";
+  import { zapWithin, type PlaybackError } from "../lib/playerLogic";
   import { navigate } from "../lib/router";
   import type { Channel } from "../lib/types";
 
@@ -42,9 +42,26 @@
   $effect(() => {
     const el = rootEl;
     if (!el) return;
-    const unmute = () => (unmuted = true);
-    el.addEventListener("pointerdown", unmute);
-    return () => el.removeEventListener("pointerdown", unmute);
+    const isPhone = phone;
+    let startY = 0;
+    let startX = 0;
+    const onDown = (event: PointerEvent) => {
+      unmuted = true;
+      startY = event.clientY;
+      startX = event.clientX;
+    };
+    const onUp = (event: PointerEvent) => {
+      if (!isPhone || pickSlot != null) return;
+      const dy = event.clientY - startY;
+      const dx = event.clientX - startX;
+      if (Math.abs(dy) >= 64 && Math.abs(dy) > Math.abs(dx)) zapTile(dy < 0 ? 1 : -1);
+    };
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointerup", onUp);
+    return () => {
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointerup", onUp);
+    };
   });
 
   onMount(() => {
@@ -59,9 +76,11 @@
     sync();
     phoneQuery.addEventListener("change", sync);
     portraitQuery.addEventListener("change", sync);
+    window.addEventListener("keydown", onKey);
     return () => {
       phoneQuery.removeEventListener("change", sync);
       portraitQuery.removeEventListener("change", sync);
+      window.removeEventListener("keydown", onKey);
     };
   });
 
@@ -153,6 +172,30 @@
   function chooseAudio(slot: number) {
     audioSlot.set(slot);
     unmuted = true;
+  }
+
+  // Ticket 10: up/down controls change the audio tile's Channel (web/phone), walking the
+  // whole lineup with wrap, through the same assignChannel path as the picker overlay.
+  function zapTile(delta: number) {
+    const slot = audio;
+    if (slot == null) return;
+    const tile = $tiles.find((item) => item.slot === slot) ?? null;
+    if (!tile?.channel) return;
+    const target = zapWithin(channels, tile.channel, delta);
+    if (!target) return;
+    tiles.update((list) => assignChannel(list, slot, target));
+    tileErrors.update((map) => ({ ...map, [slot]: null }));
+  }
+
+  function onKey(event: KeyboardEvent) {
+    if (event.target instanceof HTMLElement && event.target.matches("input,textarea")) return;
+    if (event.key === "PageUp") {
+      event.preventDefault();
+      zapTile(1);
+    } else if (event.key === "PageDown") {
+      event.preventDefault();
+      zapTile(-1);
+    }
   }
 </script>
 

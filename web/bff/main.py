@@ -50,6 +50,7 @@ async def lifespan(app: FastAPI):
     app.state.store = SessionStore(config.session_db)
     app.state.lineup_cache = TTLCache()
     app.state.epg_cache = TTLCache()
+    app.state.guide_cache = TTLCache()
     app.state.hls = (
         HlsManager(config.hls_dir, config.proxy_url, config.hls_ttl, config.ffmpeg_bin)
         if config.hls_enabled
@@ -248,6 +249,75 @@ async def epg(request: Request):
 
     data = parse_now_next(upstream.content, datetime.now(timezone.utc))
     cache.set(key, data, config.epg_ttl)
+    return data
+
+
+_GUIDE_SEARCH_PARAMS = ("q", "mode", "now", "channel", "channelMode", "limit")
+
+
+def _upstream_message(response: httpx.Response) -> str:
+    try:
+        return str(response.json().get("error") or "STB-Proxy rejected the request.")
+    except ValueError:
+        return "STB-Proxy rejected the request."
+
+
+def _guide_payload(request: Request, session: Session, upstream: httpx.Response):
+    """The server guide JSON, passed through unchanged; errors map like /api/epg, plus the
+    two client errors (bad query -> 400, out-of-scope channel -> 404) surfaced as such."""
+    if upstream.status_code == 401:
+        request.app.state.store.delete_hash(session.token_hash)
+        raise session_invalid()
+    if upstream.status_code == 400:
+        raise ApiError(400, "bad_request", _upstream_message(upstream))
+    if upstream.status_code == 404:
+        raise not_found(_upstream_message(upstream))
+    if upstream.status_code != 200:
+        raise proxy_error()
+    try:
+        return upstream.json()
+    except ValueError:
+        raise proxy_error()
+
+
+@app.get("/api/guide/search")
+async def guide_search(request: Request):
+    """Proxy the account-scoped guide search; uncached (query-specific, the server is warm)."""
+    session = _get_session(request)
+    params = {key: request.query_params[key] for key in _GUIDE_SEARCH_PARAMS if key in request.query_params}
+
+    client: httpx.AsyncClient = request.app.state.client
+    try:
+        upstream = await client.get("/api/guide/search", params=params, auth=_basic(request, session))
+    except httpx.HTTPError:
+        raise proxy_unreachable()
+    return _guide_payload(request, session, upstream)
+
+
+@app.get("/api/guide/channel")
+async def guide_channel(request: Request):
+    """Proxy one channel's timeline, cached per account+channel; refresh=1 bypasses."""
+    session = _get_session(request)
+    portal = request.query_params.get("portal", "")
+    channel_id = request.query_params.get("channelId", "")
+    cache: TTLCache = request.app.state.guide_cache
+    key = ("guide-channel", session.username, portal, channel_id)
+    if request.query_params.get("refresh") not in ("1", "true"):
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
+    client: httpx.AsyncClient = request.app.state.client
+    try:
+        upstream = await client.get(
+            "/api/guide/channel",
+            params={"portal": portal, "channelId": channel_id},
+            auth=_basic(request, session),
+        )
+    except httpx.HTTPError:
+        raise proxy_unreachable()
+    data = _guide_payload(request, session, upstream)
+    cache.set(key, data, config.guide_ttl)
     return data
 
 

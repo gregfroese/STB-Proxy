@@ -7,7 +7,6 @@
   import { attachStream, type StreamHandle } from "../lib/stream";
   import {
     channelKey,
-    channelsInGroup,
     effectiveGroupMode,
     launchGroupFor,
   } from "../lib/pickerLogic";
@@ -16,10 +15,12 @@
     epgRefreshAction,
     programmeProgress,
     resolveNowNext,
-    zapTarget,
+    scopeZapList,
+    zapIndex,
     type PlaybackError,
   } from "../lib/playerLogic";
   import { navigate, route } from "../lib/router";
+  import { parseScope, watchUrl } from "../lib/zapScope";
   import type { Channel } from "../lib/types";
 
   let videoEl: HTMLVideoElement | undefined = $state();
@@ -35,7 +36,6 @@
   const params = $derived({
     portal: $route.query.get("portal") ?? "",
     id: $route.query.get("id") ?? "",
-    block: $route.query.get("block") ?? "",
   });
 
   const channels = $derived($lineup?.channels ?? []);
@@ -43,8 +43,16 @@
     channels.find((item) => item.portal === params.portal && item.channelId === params.id) ?? null,
   );
   const mode = $derived(effectiveGroupMode($groupMode, $lineup?.blocks ?? []));
-  const launchBlock = $derived(channel ? params.block || launchGroupFor(mode, channel, null) : "");
-  const zapChannels = $derived(channel ? channelsInGroup(mode, channels, launchBlock) : []);
+  const scope = $derived.by(() => {
+    const parsed = parseScope($route.query);
+    if (parsed.kind === "group" && !parsed.block && channel) {
+      const block = launchGroupFor(mode, channel, null);
+      return { kind: "group" as const, block, label: block };
+    }
+    return parsed;
+  });
+  const scopeLabel = $derived(scope.kind === "group" ? scope.label || scope.block : scope.label);
+  const zapChannels = $derived(channel ? scopeZapList(channels, scope, mode, channel) : []);
   const stored = $derived(channel?.epgId ? ($epg[channel.epgId] ?? null) : null);
   const resolved = $derived(resolveNowNext(stored, now));
   const progress = $derived(programmeProgress(resolved?.now ?? null, now));
@@ -86,28 +94,68 @@
   $effect(() => {
     const el = stageEl;
     if (!el) return;
-    // A tap on the video unmutes; a tap on a control (the mute button, chevrons,
-    // …) is that control's job, so ignore it here or the two fight each other.
-    const unmute = (event: PointerEvent) => {
-      if ((event.target as HTMLElement | null)?.closest("button")) return;
-      muted = false;
+    // A vertical swipe on the stage moves channel (up = next); a tap with no
+    // movement unmutes. A control's own pointer (the mute button, chevrons, …) is
+    // ignored here so the two never fight.
+    const SWIPE_MIN = 44;
+    let startY = 0;
+    let startX = 0;
+    let fromButton = false;
+    let moved = false;
+    const onDown = (event: PointerEvent) => {
+      fromButton = !!(event.target as HTMLElement | null)?.closest("button");
+      if (fromButton) return;
+      startY = event.clientY;
+      startX = event.clientX;
+      moved = false;
     };
-    el.addEventListener("pointerdown", unmute);
-    return () => el.removeEventListener("pointerdown", unmute);
+    const onMove = (event: PointerEvent) => {
+      if (fromButton) return;
+      const dy = event.clientY - startY;
+      const dx = event.clientX - startX;
+      if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) moved = true;
+    };
+    const onUp = (event: PointerEvent) => {
+      if (fromButton) {
+        fromButton = false;
+        return;
+      }
+      const dy = event.clientY - startY;
+      const dx = event.clientX - startX;
+      if (Math.abs(dy) >= SWIPE_MIN && Math.abs(dy) > Math.abs(dx)) {
+        zap(dy < 0 ? 1 : -1);
+      } else if (!moved) {
+        muted = false;
+      }
+      moved = false;
+    };
+    const onCancel = () => {
+      fromButton = false;
+      moved = false;
+    };
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onCancel);
+    return () => {
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onCancel);
+    };
   });
 
   function goto(target: Channel) {
-    navigate(
-      `/watch?portal=${encodeURIComponent(target.portal)}&id=${encodeURIComponent(
-        target.channelId,
-      )}&block=${encodeURIComponent(launchBlock)}`,
-    );
+    navigate(watchUrl(target, scope));
   }
 
   function zap(delta: number) {
-    if (!channel) return;
-    const target = zapTarget(channels, launchBlock, channel, delta, mode);
-    if (target) goto(target);
+    if (!channel || zapChannels.length === 0) return;
+    const index = zapChannels.findIndex(
+      (item) => item.portal === channel.portal && item.channelId === channel.channelId,
+    );
+    const next = zapIndex(zapChannels.length, index < 0 ? 0 : index, delta);
+    if (next >= 0) goto(zapChannels[next]);
   }
 
   function retry() {
@@ -140,10 +188,10 @@
 
   function onKey(event: KeyboardEvent) {
     if (event.target instanceof HTMLElement && event.target.matches("input,textarea")) return;
-    if (event.key === "ArrowUp") {
+    if (event.key === "ArrowUp" || event.key === "PageUp") {
       event.preventDefault();
       zap(1);
-    } else if (event.key === "ArrowDown") {
+    } else if (event.key === "ArrowDown" || event.key === "PageDown") {
       event.preventDefault();
       zap(-1);
     }
@@ -258,7 +306,7 @@
           </div>
         </div>
       {:else}
-        <div class="live"><span class="dot"></span>LIVE{channel ? ` · ${launchBlock}` : ""}</div>
+        <div class="live"><span class="dot"></span>LIVE{channel ? ` · ${scopeLabel}` : ""}</div>
         <button class="chev l" title="Channel down" onclick={() => zap(-1)}>‹</button>
         <button class="chev r" title="Channel up" onclick={() => zap(1)}>›</button>
       {/if}
@@ -285,7 +333,7 @@
     <aside class="side">
       {#if channel}
         <div class="head">
-          <div class="num">CH {channel.number ?? "—"} · {launchBlock}</div>
+          <div class="num">CH {channel.number ?? "—"} · {scopeLabel}</div>
           <div class="nm">{channel.name}</div>
         </div>
         <div class="body">
@@ -314,7 +362,7 @@
             <div class="pcard"><div class="pm">No guide data.</div></div>
           {/if}
 
-          <h3>{launchBlock} — channel up/down</h3>
+          <h3>{scopeLabel} — channel up/down</h3>
           <div class="zaplist">
             {#each zapChannels as item (channelKey(item))}
               <button

@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
@@ -54,6 +55,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,6 +65,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import cc.selfhosters.stbproxy.data.ZapScope
 import cc.selfhosters.stbproxy.di.LocalAppContainer
 import cc.selfhosters.stbproxy.ui.common.ImmersiveEffect
 import cc.selfhosters.stbproxy.ui.common.KeepScreenOnEffect
@@ -81,7 +84,7 @@ import kotlin.math.roundToInt
 fun PlayerScreen(
     portal: String,
     channelId: String,
-    launchBlock: String,
+    scope: ZapScope,
     onOpenSettings: () -> Unit,
     onOpenMultiview: () -> Unit,
     viewModel: PlayerViewModel = viewModel(
@@ -92,7 +95,7 @@ fun PlayerScreen(
             viewerPreferences = LocalAppContainer.current.viewerPreferences,
             portal = portal,
             channelId = channelId,
-            launchBlock = launchBlock,
+            scope = scope,
         ),
     ),
 ) {
@@ -245,6 +248,7 @@ fun PlayerScreen(
                 immersive = true,
                 onToggleGuide = { guideVisible = !guideVisible },
                 guideVisible = guideVisible,
+                onZap = if (!guideVisible) viewModel::zap else null,
                 modifier = Modifier.fillMaxSize(),
             )
             if (guideVisible) {
@@ -274,6 +278,7 @@ fun PlayerScreen(
             onSelectChannel = viewModel::selectChannel,
             onOpenMultiview = onOpenMultiview,
             onToggleFullscreen = { immersive = true },
+            onZap = viewModel::zap,
             modifier = interactions,
         )
     }
@@ -342,6 +347,7 @@ private fun PhonePlayerLayout(
     onSelectChannel: (Int) -> Unit,
     onOpenMultiview: () -> Unit,
     onToggleFullscreen: () -> Unit,
+    onZap: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sheetPeek = 300.dp
@@ -375,6 +381,7 @@ private fun PhonePlayerLayout(
             immersive = false,
             onToggleGuide = null,
             guideVisible = false,
+            onZap = onZap,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
@@ -400,9 +407,32 @@ private fun VideoPane(
     onToggleGuide: (() -> Unit)?,
     guideVisible: Boolean,
     multiviewFocusRequester: FocusRequester? = null,
+    onZap: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    Box(modifier = modifier.background(Color.Black)) {
+    val density = LocalDensity.current
+    // Phone: a vertical stage swipe moves channel (up = next), ticket 08. Suppressed while
+    // the guide overlay is open (onZap is null here then). TV keeps its D-pad.
+    val swipe = if (onZap != null) {
+        Modifier.pointerInput(onZap) {
+            val threshold = with(density) { 64.dp.toPx() }
+            var total = 0f
+            detectVerticalDragGestures(
+                onDragStart = { total = 0f },
+                onVerticalDrag = { change, dragAmount ->
+                    total += dragAmount
+                    change.consume()
+                },
+                onDragEnd = {
+                    if (kotlin.math.abs(total) >= threshold) onZap(if (total < 0) 1 else -1)
+                    total = 0f
+                },
+            )
+        }
+    } else {
+        Modifier
+    }
+    Box(modifier = modifier.then(swipe).background(Color.Black)) {
         if (state.streamUrl != null) {
             VideoSurface(player = player, modifier = Modifier.fillMaxSize())
         }
@@ -444,7 +474,7 @@ private fun VideoPane(
                 exit = fadeOut(),
                 modifier = Modifier.align(Alignment.TopStart),
             ) {
-                LiveBadge(playing = playing, buffering = buffering, block = state.launchBlock)
+                LiveBadge(playing = playing, buffering = buffering, block = state.scopeLabel)
             }
         }
 

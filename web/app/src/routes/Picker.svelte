@@ -81,6 +81,7 @@
       <small>{label}</small>
     </div>
     <div class="spacer"></div>
+    <button class="btn" onclick={() => navigate("/guide")}>Guide</button>
     <button class="btn" onclick={() => navigate("/multiview")}>Multiview</button>
     <button class="btn" onclick={() => navigate("/settings")}>Settings</button>
   </div>

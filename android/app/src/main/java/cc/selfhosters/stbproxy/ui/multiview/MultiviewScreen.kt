@@ -11,6 +11,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -54,6 +55,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -100,6 +102,7 @@ fun MultiviewScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
     val isTv = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK ==
         Configuration.UI_MODE_TYPE_TELEVISION
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -197,12 +200,41 @@ fun MultiviewScreen(
                         }
                         Key.DirectionDown -> { moveTile(0, 1); true }
                         Key.Enter, Key.DirectionCenter -> { selectTile(state.focusSlot); true }
+                        // Ticket 10: ChannelUp/Down zap the focused tile's channel; the
+                        // arrows stay grid navigation.
+                        Key.ChannelUp -> { viewModel.zapTile(state.focusSlot, 1); true }
+                        Key.ChannelDown -> { viewModel.zapTile(state.focusSlot, -1); true }
                         else -> false
                     }
                 }
             }
         }
         .pointerInput(Unit) { detectTapGestures { controls.show() } }
+        .then(
+            if (!isTv) {
+                // Ticket 10: a phone vertical swipe zaps the audio tile (up = next), through
+                // the same assign path as the picker overlay.
+                Modifier.pointerInput(Unit) {
+                    val threshold = with(density) { 64.dp.toPx() }
+                    var total = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { total = 0f },
+                        onVerticalDrag = { change, amount ->
+                            total += amount
+                            change.consume()
+                        },
+                        onDragEnd = {
+                            if (state.pickFor == null && kotlin.math.abs(total) >= threshold) {
+                                state.audioSlot?.let { viewModel.zapTile(it, if (total < 0) 1 else -1) }
+                            }
+                            total = 0f
+                        },
+                    )
+                }
+            } else {
+                Modifier
+            },
+        )
 
     // Keep something focused so the preview key handler above receives the keys.
     val tileFocus = remember { FocusRequester() }

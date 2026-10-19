@@ -63,14 +63,15 @@ async function parse<T>(response: Response): Promise<T> {
   throw new ApiError(response.status, code, body.error ?? `Request failed (${response.status}).`);
 }
 
-/** A read: 2 retries on network failure or 5xx, then surface. */
-export async function read<T>(path: string): Promise<T> {
+/** A read: 2 retries on network failure or 5xx, then surface. An aborted read never retries. */
+export async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt <= RETRY_DELAYS.length; attempt += 1) {
     try {
       const response = await fetch(path, {
         headers: headersFor(),
         credentials: "same-origin",
+        signal,
       });
       if (response.status >= 500 && attempt < RETRY_DELAYS.length) {
         await sleep(RETRY_DELAYS[attempt]);
@@ -79,6 +80,7 @@ export async function read<T>(path: string): Promise<T> {
       return await parse<T>(response);
     } catch (error) {
       lastError = error;
+      if (error instanceof DOMException && error.name === "AbortError") throw error;
       if (error instanceof ApiError || attempt >= RETRY_DELAYS.length) throw error;
       await sleep(RETRY_DELAYS[attempt]);
     }

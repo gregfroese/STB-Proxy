@@ -2,6 +2,15 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.16.0] - 2026-10-18
+
+### Guide — Android app & web viewer
+
+- **Guide screen**: both viewers gain a **Guide** for browsing the schedule. Channels are grouped the way you group them (**Blocks** or **Genres**), with a **programme search** (words / prefix / contains / exact / regex), an **On now** filter and a channel-name sub-filter. Expanding a channel shows its next-24-hour timeline, with progress on the programme airing now; tapping a programme plays its channel.
+- **Scoped to your account**: the Guide comes from new account-scoped endpoints (`GET /api/guide/search`, `GET /api/guide/channel`) that reuse the operator's guide engine but hide dead channels and hidden ("STB-Proxy only") Blocks. The web viewer reaches them through its BFF, which caches a channel's timeline per account.
+- **Channel up/down follows where you launched**: a channel opened from search walks the result set; from **On now**, that list; from the picker, its Block or Genre. The scope's label shows in the player.
+- **Channel up/down by gesture**: the web player takes **PageUp**/**PageDown** and a vertical swipe on the video; the Android phone player takes a vertical swipe (Android TV keeps the D-pad). In **Multiview**, **ChannelUp**/**ChannelDown** (TV) and a phone swipe step the focused/audio tile through the whole lineup.
+
 ## [1.15.0] - 2026-10-18
 
 ### Web viewer

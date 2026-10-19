@@ -40,6 +40,14 @@ _Avoid_: station, stream (the live connection to a channel, not the channel itse
 The category a portal assigns a channel, carried in feeds as the M3U `group-title` attribute.
 _Avoid_: block, category, group
 
+**Guide**:
+The schedule of **Programmes** for the channels in a **Lineup**, assembled from the portals' EPG and served to every client (the operator's `/guide` page, the apps' Guide screen). A viewer's Guide is scoped to their **Lineup** exactly as the channels are; programme rows join to channels by `epgId`.
+_Avoid_: EPG (that's the feed/protocol, not the schedule), listings, TV guide
+
+**Programme**:
+One entry in the **Guide**: a title, a start and a stop time, and an optional description, for exactly one **Channel**. The apps' "now/next" teaser is the current **Programme** and the following one.
+_Avoid_: show, event, entry
+
 **Tuner**:
 One concurrent distinct-channel stream STB-Proxy can serve; all viewers of the same channel share a single tuner.
 _Avoid_: connection, slot, stream

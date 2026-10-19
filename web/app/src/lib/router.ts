@@ -3,7 +3,14 @@
 
 import { writable } from "svelte/store";
 
-export type RouteName = "login" | "picker" | "player" | "multiview" | "settings" | "notfound";
+export type RouteName =
+  | "login"
+  | "picker"
+  | "player"
+  | "multiview"
+  | "guide"
+  | "settings"
+  | "notfound";
 
 export interface Route {
   name: RouteName;
@@ -19,6 +26,7 @@ export function parseRoute(input: string): Route {
   else if (path === "/" || path === "") name = "picker";
   else if (path === "/watch") name = "player";
   else if (path === "/multiview") name = "multiview";
+  else if (path === "/guide") name = "guide";
   else if (path === "/settings") name = "settings";
   return { name, path, query: url.searchParams };
 }

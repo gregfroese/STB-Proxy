@@ -7,9 +7,11 @@ import {
   programmeBoundaryPassed,
   programmeProgress,
   resolveNowNext,
+  scopeZapList,
   zapIndex,
   zapList,
   zapTarget,
+  zapWithin,
 } from "./playerLogic";
 
 const t0 = new Date("2024-01-01T12:00:00Z");
@@ -194,5 +196,33 @@ describe("channel up/down within the launch Block", () => {
     const genreChannels = [...channels, sporty, sporty2];
     expect(zapList(genreChannels, "Sports", "genres")).toEqual([sporty, sporty2]);
     expect(zapTarget(genreChannels, "Sports", sporty, 1, "genres")).toEqual(sporty2);
+  });
+});
+
+describe("zap scope (ticket 07)", () => {
+  it("a group scope re-derives like today", () => {
+    expect(scopeZapList(channels, { kind: "group", block: "News", label: "News" }, "blocks", null))
+      .toEqual([news1, news2, news3]);
+  });
+
+  it("a list scope walks the given order, filtering to the lineup", () => {
+    const scope = { kind: "list" as const, keys: ["1:2", "1:9", "1:1"], label: "Results" };
+    expect(scopeZapList(channels, scope, "blocks", null)).toEqual([news2, news1]);
+  });
+
+  it("a list scope keeps the launched channel even when absent from the set", () => {
+    const scope = { kind: "list" as const, keys: ["1:2"], label: "Results" };
+    expect(scopeZapList(channels, scope, "blocks", kids)).toEqual([kids, news2]);
+  });
+
+  it("a missing token yields an empty list scope", () => {
+    const scope = { kind: "list" as const, keys: [], label: "" };
+    expect(scopeZapList(channels, scope, "blocks", null)).toEqual([]);
+  });
+
+  it("zapWithin steps through the whole lineup, wrapping", () => {
+    expect(zapWithin(channels, kids, 1)).toEqual(news1);
+    expect(zapWithin(channels, news1, -1)).toEqual(kids);
+    expect(zapWithin([], news1, 1)).toBeNull();
   });
 });

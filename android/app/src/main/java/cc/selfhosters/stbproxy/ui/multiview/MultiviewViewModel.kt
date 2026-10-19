@@ -12,6 +12,7 @@ import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.data.network.ApiClient
 import cc.selfhosters.stbproxy.data.network.ApiException
 import cc.selfhosters.stbproxy.ui.player.PlaybackError
+import cc.selfhosters.stbproxy.ui.player.zapWithin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -201,6 +202,19 @@ class MultiviewViewModel(
     /** Moves the single audio source to [slot] (spec 2.7). */
     fun setAudio(slot: Int) {
         _state.update { it.copy(audioRequested = slot) }
+    }
+
+    /**
+     * Ticket 10: steps [slot]'s channel through the whole lineup (wrap), reusing the
+     * same assign path as the picker overlay. TV targets the focused tile; the screen
+     * passes the audio slot on phone.
+     */
+    fun zapTile(slot: Int, delta: Int) {
+        _state.update { state ->
+            val current = state.tiles.firstOrNull { it.slot == slot }?.channel ?: return@update state
+            val target = zapWithin(state.channels, current, delta) ?: return@update state
+            state.copy(tiles = assignChannel(state.tiles, slot, target), errors = state.errors - slot)
+        }
     }
 
     /** Per-Tile retry: clears this Tile's error and re-prepares only it. */

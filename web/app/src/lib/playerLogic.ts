@@ -2,7 +2,8 @@
 // decisions, now/next resolution, progress and zap.
 
 import type { Channel, NowNext, Programme } from "./types";
-import { channelsInGroup, type GroupMode } from "./pickerLogic";
+import { channelKey, channelsInGroup, type GroupMode } from "./pickerLogic";
+import type { ZapScope } from "./zapScope";
 
 export type PlaybackError =
   | { kind: "all_tuners_busy" }
@@ -82,6 +83,46 @@ export function zapList(
   mode: GroupMode = "blocks",
 ): Channel[] {
   return channelsInGroup(mode, channels, launchGroup);
+}
+
+/**
+ * The ordered up/down list for a player launched under [scope] (ticket 07): a `group`
+ * re-derives from the lineup as today; a `list` maps its keys to the lineup, preserving
+ * the given order, and keeps [launched] even if the set no longer holds it.
+ */
+export function scopeZapList(
+  channels: Channel[],
+  scope: ZapScope,
+  mode: GroupMode,
+  launched: Channel | null,
+): Channel[] {
+  if (scope.kind === "group") return channelsInGroup(mode, channels, scope.block);
+
+  const byKey = new Map(channels.map((channel) => [channelKey(channel), channel]));
+  const seen = new Set<string>();
+  const list: Channel[] = [];
+  for (const key of scope.keys) {
+    const channel = byKey.get(key);
+    if (channel && !seen.has(key)) {
+      seen.add(key);
+      list.push(channel);
+    }
+  }
+  if (launched) {
+    const key = channelKey(launched);
+    if (!seen.has(key)) list.unshift(launched);
+  }
+  return list;
+}
+
+/** Steps [current] by [delta] through every [channels] entry, wrapping (Multiview, ticket 10). */
+export function zapWithin(channels: Channel[], current: Channel, delta: number): Channel | null {
+  if (channels.length === 0) return null;
+  const index = channels.findIndex(
+    (channel) => channel.portal === current.portal && channel.channelId === current.channelId,
+  );
+  const next = zapIndex(channels.length, index < 0 ? 0 : index, delta);
+  return next < 0 ? null : channels[next];
 }
 
 /** Steps `current` by `delta` within a list of `size`, wrapping; -1 when empty. */

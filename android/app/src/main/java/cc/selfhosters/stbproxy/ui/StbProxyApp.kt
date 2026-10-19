@@ -16,7 +16,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import cc.selfhosters.stbproxy.data.SessionState
+import cc.selfhosters.stbproxy.data.ZapScope
+import cc.selfhosters.stbproxy.data.ZapScopeStore
 import cc.selfhosters.stbproxy.di.LocalAppContainer
+import cc.selfhosters.stbproxy.ui.guide.GuideScreen
 import cc.selfhosters.stbproxy.ui.login.LoginScreen
 import cc.selfhosters.stbproxy.ui.multiview.MultiviewScreen
 import cc.selfhosters.stbproxy.ui.picker.PickerScreen
@@ -27,17 +30,80 @@ object Routes {
     const val PICKER = "picker"
     const val PLAYER = "player"
     const val MULTIVIEW = "multiview"
+    const val GUIDE = "guide"
     const val SETTINGS = "settings"
 
     const val ARG_PORTAL = "portal"
     const val ARG_CHANNEL_ID = "channelId"
+    const val ARG_SCOPE = "scope"
     const val ARG_BLOCK = "block"
+    const val ARG_LABEL = "label"
+    const val ARG_KEYS = "keys"
+    const val ARG_TOKEN = "token"
+
+    private const val SCOPE_GROUP = "group"
+    private const val SCOPE_LIST = "list"
+
+    /** A list scope this short rides inline; longer ones go through the [ZapScopeStore]. */
+    const val INLINE_KEY_LIMIT = 50
 
     /** Player route carrying the channel identity and its launch Block (zap list). */
     fun player(portal: String, channelId: String, block: String): String =
-        "$PLAYER?$ARG_PORTAL=${Uri.encode(portal)}" +
-            "&$ARG_CHANNEL_ID=${Uri.encode(channelId)}" +
-            "&$ARG_BLOCK=${Uri.encode(block)}"
+        playerRoute(portal, channelId, SCOPE_GROUP, block, "", "", block)
+
+    /** Player route for a Guide group context: an explicit label over the launch group. */
+    fun playerGroup(portal: String, channelId: String, block: String, label: String): String =
+        playerRoute(portal, channelId, SCOPE_GROUP, block, "", "", label)
+
+    /** Player route for a Guide search/on-now context: an explicit ordered channel set. */
+    fun playerList(
+        portal: String,
+        channelId: String,
+        keys: List<String>,
+        label: String,
+        store: ZapScopeStore,
+    ): String = if (keys.size <= INLINE_KEY_LIMIT) {
+        playerRoute(portal, channelId, SCOPE_LIST, "", keys.joinToString(","), "", label)
+    } else {
+        val token = store.put(ZapScope.Channels(keys, label))
+        playerRoute(portal, channelId, SCOPE_LIST, "", "", token, label)
+    }
+
+    /** The player route's zap scope, resolved from its args (token via [store]). */
+    fun scopeOf(
+        scope: String?,
+        block: String?,
+        keys: String?,
+        token: String?,
+        label: String?,
+        store: ZapScopeStore,
+    ): ZapScope = if (scope == SCOPE_LIST) {
+        val parsed = keys
+            ?.takeIf { it.isNotEmpty() }
+            ?.split(",")
+            ?.filter { it.isNotEmpty() }
+            ?: store.get(token)?.keys
+            ?: emptyList()
+        ZapScope.Channels(parsed, label.orEmpty())
+    } else {
+        ZapScope.Group(block.orEmpty(), label?.takeIf { it.isNotEmpty() } ?: block.orEmpty())
+    }
+
+    private fun playerRoute(
+        portal: String,
+        channelId: String,
+        scope: String,
+        block: String,
+        keys: String,
+        token: String,
+        label: String,
+    ): String = "$PLAYER?$ARG_PORTAL=${Uri.encode(portal)}" +
+        "&$ARG_CHANNEL_ID=${Uri.encode(channelId)}" +
+        "&$ARG_SCOPE=${Uri.encode(scope)}" +
+        "&$ARG_BLOCK=${Uri.encode(block)}" +
+        "&$ARG_LABEL=${Uri.encode(label)}" +
+        "&$ARG_KEYS=${Uri.encode(keys)}" +
+        "&$ARG_TOKEN=${Uri.encode(token)}"
 }
 
 /**
@@ -67,6 +133,7 @@ private fun Splash() {
 @Composable
 private fun MainNavHost() {
     val navController = rememberNavController()
+    val container = LocalAppContainer.current
     NavHost(navController = navController, startDestination = Routes.PICKER) {
         composable(Routes.PICKER) {
             PickerScreen(
@@ -75,6 +142,7 @@ private fun MainNavHost() {
                         Routes.player(channel.portal, channel.channelId, launchBlock),
                     )
                 },
+                onOpenGuide = { navController.navigate(Routes.GUIDE) },
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenMultiview = { navController.navigate(Routes.MULTIVIEW) },
             )
@@ -82,19 +150,62 @@ private fun MainNavHost() {
         composable(
             route = "${Routes.PLAYER}?${Routes.ARG_PORTAL}={${Routes.ARG_PORTAL}}" +
                 "&${Routes.ARG_CHANNEL_ID}={${Routes.ARG_CHANNEL_ID}}" +
-                "&${Routes.ARG_BLOCK}={${Routes.ARG_BLOCK}}",
+                "&${Routes.ARG_SCOPE}={${Routes.ARG_SCOPE}}" +
+                "&${Routes.ARG_BLOCK}={${Routes.ARG_BLOCK}}" +
+                "&${Routes.ARG_LABEL}={${Routes.ARG_LABEL}}" +
+                "&${Routes.ARG_KEYS}={${Routes.ARG_KEYS}}" +
+                "&${Routes.ARG_TOKEN}={${Routes.ARG_TOKEN}}",
             arguments = listOf(
                 navArgument(Routes.ARG_PORTAL) { type = NavType.StringType; defaultValue = "" },
                 navArgument(Routes.ARG_CHANNEL_ID) { type = NavType.StringType; defaultValue = "" },
+                navArgument(Routes.ARG_SCOPE) { type = NavType.StringType; defaultValue = "" },
                 navArgument(Routes.ARG_BLOCK) { type = NavType.StringType; defaultValue = "" },
+                navArgument(Routes.ARG_LABEL) { type = NavType.StringType; defaultValue = "" },
+                navArgument(Routes.ARG_KEYS) { type = NavType.StringType; defaultValue = "" },
+                navArgument(Routes.ARG_TOKEN) { type = NavType.StringType; defaultValue = "" },
             ),
         ) { entry ->
+            val args = entry.arguments
+            val portal = args?.getString(Routes.ARG_PORTAL).orEmpty()
+            val channelId = args?.getString(Routes.ARG_CHANNEL_ID).orEmpty()
+            val scope = Routes.scopeOf(
+                scope = args?.getString(Routes.ARG_SCOPE),
+                block = args?.getString(Routes.ARG_BLOCK),
+                keys = args?.getString(Routes.ARG_KEYS),
+                token = args?.getString(Routes.ARG_TOKEN),
+                label = args?.getString(Routes.ARG_LABEL),
+                store = container.zapScopeStore,
+            )
             PlayerScreen(
-                portal = entry.arguments?.getString(Routes.ARG_PORTAL).orEmpty(),
-                channelId = entry.arguments?.getString(Routes.ARG_CHANNEL_ID).orEmpty(),
-                launchBlock = entry.arguments?.getString(Routes.ARG_BLOCK).orEmpty(),
+                portal = portal,
+                channelId = channelId,
+                scope = scope,
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenMultiview = { navController.navigate(Routes.MULTIVIEW) },
+            )
+        }
+        composable(Routes.GUIDE) {
+            GuideScreen(
+                onChannelClick = { channel, scope ->
+                    val route = when (scope) {
+                        is ZapScope.Channels -> Routes.playerList(
+                            channel.portal,
+                            channel.channelId,
+                            scope.keys,
+                            scope.label,
+                            container.zapScopeStore,
+                        )
+                        is ZapScope.Group -> Routes.playerGroup(
+                            channel.portal,
+                            channel.channelId,
+                            scope.block,
+                            scope.label,
+                        )
+                    }
+                    navController.navigate(route)
+                },
+                onBack = { navController.popBackStack() },
+                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
         }
         composable(Routes.MULTIVIEW) {

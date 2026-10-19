@@ -26,6 +26,9 @@ def _auth(user: str, password: str) -> str:
     return f"Basic {raw}"
 
 
+_upstream_calls: dict[str, int] = {}
+
+
 def _upstream(request: httpx.Request) -> httpx.Response:
     path = request.url.path
     if path == "/api/lineup":
@@ -57,6 +60,50 @@ def _upstream(request: httpx.Request) -> httpx.Response:
         return httpx.Response(401, json={"error": "no"})
     if path == "/xmltv":
         return httpx.Response(200, content=_xmltv())
+    if path == "/api/guide/search":
+        if request.headers.get("authorization") != _auth("katie", "pw"):
+            return httpx.Response(401, json={"error": "no"})
+        if request.url.params.get("q") == "bad(":
+            return httpx.Response(400, json={"error": "Not a valid regex: bad("})
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "portal": "1",
+                        "channelId": "9",
+                        "channelName": "BBC News",
+                        "channelNumber": "501",
+                        "logo": None,
+                        "epgId": "bbc.uk",
+                        "start": 1000,
+                        "stop": 2000,
+                        "title": "News",
+                        "desc": "",
+                    }
+                ],
+                "total": 1,
+                "loadedAt": 1.0,
+                "programmes": 42,
+                "failed": [],
+                "partial": [],
+                "account": "katie",
+            },
+        )
+    if path == "/api/guide/channel":
+        _upstream_calls["guide_channel"] = _upstream_calls.get("guide_channel", 0) + 1
+        if request.headers.get("authorization") != _auth("katie", "pw"):
+            return httpx.Response(401, json={"error": "no"})
+        if request.url.params.get("channelId") == "missing":
+            return httpx.Response(404, json={"error": "Unknown channel"})
+        return httpx.Response(
+            200,
+            json={
+                "portal": "1",
+                "channelId": "9",
+                "programmes": [{"start": 1000, "stop": 2000, "title": "News", "desc": ""}],
+            },
+        )
     if path == "/play/1/9":
         return httpx.Response(503, json={"error": "busy"})
     if path == "/play/1/ok":
@@ -147,6 +194,46 @@ def test_epg_is_now_next_by_epg_id(client):
     epg = client.get("/api/epg")
     assert epg.status_code == 200
     assert epg.json()["bbc.uk"]["now"]["title"] == "News"
+
+
+def test_guide_routes_require_a_session(client):
+    assert client.get("/api/guide/search?q=news").status_code == 401
+    assert client.get("/api/guide/channel?portal=1&channelId=9").status_code == 401
+
+
+def test_guide_search_proxies_the_json_unchanged(client):
+    client.post("/api/login", json={"username": "katie", "password": "pw"})
+    response = client.get("/api/guide/search?q=news&now=true")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"][0]["title"] == "News"
+    assert body["results"][0]["epgId"] == "bbc.uk"
+    assert body["account"] == "katie"
+
+
+def test_guide_search_bad_regex_is_a_client_400(client):
+    client.post("/api/login", json={"username": "katie", "password": "pw"})
+    response = client.get("/api/guide/search?q=bad(&mode=regex")
+    assert response.status_code == 400
+    assert response.json()["code"] == "bad_request"
+    assert "regex" in response.json()["error"]
+
+
+def test_guide_channel_out_of_scope_is_a_404(client):
+    client.post("/api/login", json={"username": "katie", "password": "pw"})
+    response = client.get("/api/guide/channel?portal=1&channelId=missing")
+    assert response.status_code == 404
+    assert response.json()["code"] == "not_found"
+
+
+def test_guide_channel_is_cached_and_refresh_bypasses(client):
+    client.post("/api/login", json={"username": "katie", "password": "pw"})
+    _upstream_calls["guide_channel"] = 0
+    assert client.get("/api/guide/channel?portal=1&channelId=9").status_code == 200
+    assert client.get("/api/guide/channel?portal=1&channelId=9").status_code == 200
+    assert _upstream_calls["guide_channel"] == 1
+    assert client.get("/api/guide/channel?portal=1&channelId=9&refresh=1").status_code == 200
+    assert _upstream_calls["guide_channel"] == 2
 
 
 def test_stream_503_is_normalised(client):

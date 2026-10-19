@@ -2048,6 +2048,140 @@ def guideSearch():
     )
 
 
+GUIDE_MODES = ("words", "prefix", "contains", "exact", "regex")
+GUIDE_LIMIT_DEFAULT = 200
+GUIDE_LIMIT_MAX = 500
+
+
+def guideChannelFields(portal, channelId, cache, portals):
+    """The Channel fields a viewer Guide row carries, joining a Programme to its Channel.
+
+    A Programme tuple holds no channel details, so a viewer hit is enriched from the
+    guide cache. The clients already hold the rest of a Channel from /api/lineup; this
+    is the trimmed set a row needs, including epgId — their only programme↔channel key.
+    """
+    channel = cache["channels"][(portal, channelId)]
+    p = portals[portal]
+    name = p.get("custom channel names", {}).get(channelId)
+    if name is None:
+        name = channel["name"]
+    number = p.get("custom channel numbers", {}).get(channelId)
+    if number is None:
+        number = channel["number"]
+    return {
+        "channelName": name,
+        "channelNumber": number,
+        "logo": channelLogo(p, channelId, channel.get("logo"), knownLogos(portal)),
+        "epgId": p.get("custom epg ids", {}).get(channelId) or defaultEpgId(portal, channelId),
+    }
+
+
+def viewerGuideLimit(value):
+    """The clamped result limit for a viewer Guide search (default 200, max 500)."""
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        return GUIDE_LIMIT_DEFAULT
+    return max(0, min(limit, GUIDE_LIMIT_MAX))
+
+
+# Accounts reach the Guide through this viewer door, not the operator /guide/search: it scopes
+# to the Account's Lineup (hidden-block aware) and trims the operator-only result fields. The
+# engine (guide.py, guideCache) and the operator route are untouched (see ADR 0002).
+@app.route("/api/guide/search", methods=["GET"])
+@feedAuthorise
+def apiGuideSearch():
+    """The account-scoped Guide search the companion app and web viewer consume."""
+    query = request.args.get("q", "").strip()
+    onNow = request.args.get("now") == "true"
+    mode = request.args.get("mode", "prefix")
+    if mode not in GUIDE_MODES:
+        mode = "prefix"
+    channelQuery = request.args.get("channel", "").strip()
+    try:
+        guide.parseQuery(query, mode)
+        channelTest = guide.parseQuery(channelQuery, request.args.get("channelMode", "words"))
+    except ValueError as e:
+        return flask.jsonify({"error": str(e)}), 400
+    limit = viewerGuideLimit(request.args.get("limit", GUIDE_LIMIT_DEFAULT))
+
+    cache = loadGuide()
+    portals = getPortals()
+    account = getattr(g, "account", None)
+    blocks = viewerBlocks()
+    available = {p: plexLineup(portals[p], blocks) for p in portals}
+
+    def keep(portal, channelId):
+        if portal not in portals or (portal, channelId) not in cache["channels"]:
+            return False
+        if channelId in portals[portal].get("dead channels", []):
+            return False
+        if channelId not in available[portal]:
+            return False
+        if channelTest:
+            custom = portals[portal].get("custom channel names", {}).get(channelId, "")
+            if not (channelTest(cache["channels"][(portal, channelId)]["name"]) or (custom and channelTest(custom))):
+                return False
+        return True
+
+    matches, total = [], 0
+    if query or onNow or channelQuery:
+        matches, total = guide.search(cache["programmes"], query, int(time.time()), keep, onNow, limit, mode)
+
+    results = []
+    for start, stop, title, desc, portal, channelId in matches:
+        hit = guideChannelFields(portal, channelId, cache, portals)
+        results.append(
+            {
+                "portal": portal,
+                "channelId": channelId,
+                "start": start,
+                "stop": stop,
+                "title": title,
+                "desc": desc,
+                **hit,
+            }
+        )
+
+    return flask.jsonify(
+        {
+            "results": results,
+            "total": total,
+            "loadedAt": cache["time"],
+            "programmes": len(cache["programmes"]),
+            "failed": cache["failed"],
+            "partial": cache["partial"],
+            "account": account["username"] if account else None,
+        }
+    )
+
+
+@app.route("/api/guide/channel", methods=["GET"])
+@feedAuthorise
+def apiGuideChannel():
+    """One Channel's upcoming Programmes, next-24h, for the viewer clients' timeline."""
+    portal = request.args.get("portal", "")
+    channelId = request.args.get("channelId", "")
+    portals = getPortals()
+    blocks = viewerBlocks()
+    available = {p: plexLineup(portals[p], blocks) for p in portals}
+    if portal not in portals or channelId not in available[portal]:
+        return flask.jsonify({"error": "Unknown channel"}), 404
+
+    cache = loadGuide()
+    now = int(time.time())
+    upcoming = sorted(
+        p for p in cache["programmes"] if p[4] == portal and p[5] == channelId and p[1] > now
+    )
+    return flask.jsonify(
+        {
+            "portal": portal,
+            "channelId": channelId,
+            "programmes": [{"start": p[0], "stop": p[1], "title": p[2], "desc": p[3]} for p in upcoming],
+        }
+    )
+
+
 @app.route("/settings", methods=["GET"])
 @authorise
 def settings():

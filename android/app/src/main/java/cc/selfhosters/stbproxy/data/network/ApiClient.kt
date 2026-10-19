@@ -1,14 +1,18 @@
 package cc.selfhosters.stbproxy.data.network
 
 import cc.selfhosters.stbproxy.data.model.Channel
+import cc.selfhosters.stbproxy.data.model.GuideChannelProgrammes
+import cc.selfhosters.stbproxy.data.model.GuideSearchResult
 import cc.selfhosters.stbproxy.data.model.Lineup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
@@ -38,12 +42,53 @@ class ApiClient(
 
     suspend fun fetchLineup(): Lineup = withContext(Dispatchers.IO) {
         val base = requireNotNull(baseUrl) { "baseUrl is not set" }
-        val request = Request.Builder().url("$base/api/lineup").build()
+        getJson("$base/api/lineup", Lineup.serializer())
+    }
 
+    /**
+     * The account-scoped Guide search (ADR 0002), for the Guide screen. A bad
+     * regex / unknown channel comes back as [ApiException] 400/404.
+     */
+    suspend fun fetchGuideSearch(
+        query: String,
+        mode: String,
+        onNow: Boolean,
+        channel: String,
+        limit: Int,
+    ): GuideSearchResult = withContext(Dispatchers.IO) {
+        val base = requireNotNull(baseUrl) { "baseUrl is not set" }
+        val url = "$base/api/guide/search".toHttpUrl().newBuilder().apply {
+            if (query.isNotEmpty()) addQueryParameter("q", query)
+            addQueryParameter("mode", mode)
+            if (onNow) addQueryParameter("now", "true")
+            if (channel.isNotEmpty()) addQueryParameter("channel", channel)
+            addQueryParameter("limit", limit.toString())
+        }.build()
+        getJson(url.toString(), GuideSearchResult.serializer())
+    }
+
+    /** One Channel's upcoming programmes for the Guide's inline timeline. */
+    suspend fun fetchGuideChannel(
+        portal: String,
+        channelId: String,
+        refresh: Boolean = false,
+    ): GuideChannelProgrammes = withContext(Dispatchers.IO) {
+        val base = requireNotNull(baseUrl) { "baseUrl is not set" }
+        val url = "$base/api/guide/channel".toHttpUrl().newBuilder().apply {
+            addQueryParameter("portal", portal)
+            addQueryParameter("channelId", channelId)
+            if (refresh) addQueryParameter("refresh", "1")
+        }.build()
+        getJson(url.toString(), GuideChannelProgrammes.serializer())
+    }
+
+    /** A GET with the spec-2.3 retry policy, decoding a json body into [T]. */
+    private suspend fun <T> getJson(url: String, deserializer: DeserializationStrategy<T>): T {
+        val request = Request.Builder().url(url).build()
         var lastError: IOException? = null
         repeat(retryDelaysMs.size + 1) { attempt ->
             try {
-                return@withContext execute(request)
+                return execute(request, deserializer)
             } catch (e: IOException) {
                 if (e is ApiException && e.code in 400..499) throw e
                 lastError = e
@@ -77,13 +122,13 @@ class ApiClient(
         }
     }
 
-    private fun execute(request: Request): Lineup {
+    private fun <T> execute(request: Request, deserializer: DeserializationStrategy<T>): T {
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) {
                 throw ApiException(response.code)
             }
             val body = response.body?.string() ?: throw IOException("Empty response body")
-            return json.decodeFromString(Lineup.serializer(), body)
+            return json.decodeFromString(deserializer, body)
         }
     }
 

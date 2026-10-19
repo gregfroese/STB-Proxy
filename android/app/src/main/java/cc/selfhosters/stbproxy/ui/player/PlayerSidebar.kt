@@ -81,7 +81,7 @@ private fun SidebarContent(
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         BasicLabel(
-            text = "CH ${channel?.number ?: "—"} · ${state.launchBlock}",
+            text = "CH ${channel?.number ?: "—"} · ${state.scopeLabel}",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
         )
@@ -100,7 +100,7 @@ private fun SidebarContent(
         SectionLabel("Up next")
         ProgrammeCard(resolved?.next, state.now, zone, showProgress = false)
 
-        SectionLabel("${state.launchBlock} — channel up/down")
+        SectionLabel("${state.scopeLabel} — channel up/down")
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()

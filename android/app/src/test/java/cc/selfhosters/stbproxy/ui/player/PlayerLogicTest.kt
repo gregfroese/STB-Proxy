@@ -1,6 +1,7 @@
 package cc.selfhosters.stbproxy.ui.player
 
 import cc.selfhosters.stbproxy.data.GroupMode
+import cc.selfhosters.stbproxy.data.ZapScope
 import cc.selfhosters.stbproxy.data.epg.NowNext
 import cc.selfhosters.stbproxy.data.epg.Programme
 import cc.selfhosters.stbproxy.data.model.Channel
@@ -230,8 +231,40 @@ class PlayerLogicTest {
         assertEquals(sports2, zapTarget(list, "Sports", sports1, delta = 1, mode = GroupMode.GENRES))
     }
 
-    // ---- full-screen decision ----
+    // ---- zap scope (ticket 07) ----
 
+    @Test
+    fun `a group scope re-derives like today`() {
+        val scope = ZapScope.Group("News", "News")
+        assertEquals(listOf(news1, news2, news3), scopeZapList(channels, scope, GroupMode.BLOCKS, null))
+    }
+
+    @Test
+    fun `a list scope walks the given order, filtering to the lineup`() {
+        val scope = ZapScope.Channels(listOf("1:2", "1:9", "1:1"), "Results")
+        assertEquals(listOf(news2, news1), scopeZapList(channels, scope, GroupMode.BLOCKS, null))
+    }
+
+    @Test
+    fun `a list scope keeps the launched channel when absent from the set`() {
+        val scope = ZapScope.Channels(listOf("1:2"), "Results")
+        assertEquals(listOf(kids, news2), scopeZapList(channels, scope, GroupMode.BLOCKS, kids))
+    }
+
+    @Test
+    fun `scope label falls back to the block for a group`() {
+        assertEquals("News", scopeLabel(ZapScope.Group("News", "")))
+        assertEquals("Search: x", scopeLabel(ZapScope.Channels(emptyList(), "Search: x")))
+    }
+
+    @Test
+    fun `zapWithin steps through the whole lineup, wrapping`() {
+        assertEquals(news1, zapWithin(channels, kids, 1))
+        assertEquals(kids, zapWithin(channels, news1, -1))
+        assertNull(zapWithin(emptyList(), news1, 1))
+    }
+
+    // ---- full-screen decision ----
     @Test
     fun `phone landscape starts full-screen`() {
         assertTrue(shouldAutoFullscreen(isTv = false, isLandscape = true))
