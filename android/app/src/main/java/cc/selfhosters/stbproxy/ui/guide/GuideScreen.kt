@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -99,8 +100,8 @@ fun GuideScreen(
         }
     }
 
-    val browseChannels = remember(state.channels, state.channelFilter, state.onNow, state.nowNext, now) {
-        var list = filterGuideChannels(state.channels, state.channelFilter)
+    val browseChannels = remember(state.channels, state.onNow, state.nowNext, now) {
+        var list = state.channels
         if (state.onNow) list = airingChannels(list, state.nowNext, now)
         list
     }
@@ -117,7 +118,8 @@ fun GuideScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(palette.background),
+            .background(palette.background)
+            .safeDrawingPadding(),
     ) {
         GuideTopBar(
             accountLabel = state.accountLabel,
@@ -142,7 +144,6 @@ fun GuideScreen(
                     if (mode == GroupMode.BLOCKS) GroupMode.GENRES else GroupMode.BLOCKS,
                 )
             },
-            onChannelFilter = viewModel::onChannelFilterChange,
             onToggleAdvanced = viewModel::onToggleAdvanced,
             onMode = viewModel::onModeChange,
         )
@@ -293,7 +294,6 @@ private fun GuideControls(
     palette: PickerPalette,
     onOnNow: (Boolean) -> Unit,
     onGroupMode: () -> Unit,
-    onChannelFilter: (String) -> Unit,
     onToggleAdvanced: () -> Unit,
     onMode: (GuideMode) -> Unit,
 ) {
@@ -322,11 +322,6 @@ private fun GuideControls(
             }
         }
     }
-    ChannelSubFilter(
-        value = state.channelFilter,
-        onValueChange = onChannelFilter,
-        palette = palette,
-    )
 }
 
 @Composable
@@ -351,20 +346,6 @@ private fun ToggleChip(
             maxLines = 1,
         )
     }
-}
-
-@Composable
-private fun ChannelSubFilter(
-    value: String,
-    onValueChange: (String) -> Unit,
-    palette: PickerPalette,
-) {
-    SearchField(
-        query = value,
-        onQueryChange = onValueChange,
-        palette = palette,
-        isTv = false,
-    )
 }
 
 @Composable

@@ -41,7 +41,6 @@ data class GuideUiState(
     val mode: GuideMode = GuideMode.PREFIX,
     val advanced: Boolean = false,
     val onNow: Boolean = false,
-    val channelFilter: String = "",
     val activeBlock: String? = null,
     val limit: Int = GUIDE_LIMIT_DEFAULT,
     val searchLoading: Boolean = false,
@@ -134,11 +133,6 @@ class GuideViewModel(
         scheduleSearch()
     }
 
-    fun onChannelFilterChange(text: String) {
-        _state.update { it.copy(channelFilter = text) }
-        scheduleSearch()
-    }
-
     /** Block navigation is suspended while searching (spec 2.5). */
     fun onBlockSelected(block: String) {
         _state.update { if (it.query.isBlank()) it.copy(activeBlock = block) else it }
@@ -176,7 +170,7 @@ class GuideViewModel(
                     query = s.query.trim(),
                     mode = s.mode.wire,
                     onNow = s.onNow,
-                    channel = s.channelFilter.trim(),
+                    channel = "",
                     limit = s.limit,
                 )
                 _state.update {
