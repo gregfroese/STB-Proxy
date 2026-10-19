@@ -432,6 +432,7 @@ internal fun SearchField(
     palette: PickerPalette,
     mode: GroupMode = GroupMode.BLOCKS,
     isTv: Boolean = false,
+    placeholder: String? = null,
 ) {
     val shape = RoundedCornerShape(11.dp)
     Box(
@@ -445,7 +446,7 @@ internal fun SearchField(
     ) {
         if (query.isEmpty()) {
             BasicLabel(
-                if (mode == GroupMode.GENRES) "Search all Genres…" else "Search all Blocks…",
+                placeholder ?: if (mode == GroupMode.GENRES) "Search all Genres…" else "Search all Blocks…",
                 palette.muted,
                 14.sp,
             )

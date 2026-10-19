@@ -134,6 +134,7 @@ fun GuideScreen(
             palette = palette,
             mode = mode,
             isTv = isTv,
+            placeholder = "Search programmes across your lineup…",
         )
         GuideControls(
             state = state,
