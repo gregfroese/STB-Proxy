@@ -31,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text as TvText
+import cc.selfhosters.stbproxy.ui.common.ScreenGutter
 
 /**
  * TV Block rail: a vertical, D-pad-focusable list of Blocks (spec 2.5/2.10).
@@ -150,7 +151,7 @@ internal fun PhoneBlockChips(
         modifier = modifier
             .fillMaxWidth()
             .focusGroup(),
-        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        contentPadding = PaddingValues(horizontal = ScreenGutter, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
         if (searching) {

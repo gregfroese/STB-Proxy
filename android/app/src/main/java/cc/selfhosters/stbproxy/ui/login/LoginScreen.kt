@@ -6,13 +6,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -20,12 +20,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import cc.selfhosters.stbproxy.BuildConfig
 import cc.selfhosters.stbproxy.di.LocalAppContainer
+import cc.selfhosters.stbproxy.ui.common.AppTextField
+import cc.selfhosters.stbproxy.ui.common.focusRing
 
 /**
  * First-run Login and re-auth screen (spec 2.4). Nothing else in the app is
@@ -45,7 +46,10 @@ fun LoginScreen(reason: String? = null) {
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .safeDrawingPadding()
-            .padding(24.dp),
+            .padding(24.dp)
+            // Keep the form a readable width on a TV or tablet.
+            .wrapContentWidth()
+            .widthIn(max = 560.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -56,37 +60,24 @@ fun LoginScreen(reason: String? = null) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        OutlinedTextField(
+        AppTextField(
             value = state.baseUrl,
             onValueChange = viewModel::onBaseUrlChange,
-            label = { Text("Proxy address") },
-            placeholder = { Text("192.168.1.10 or https://host:8000") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Uri,
-                imeAction = ImeAction.Next,
-            ),
-            modifier = Modifier.fillMaxWidth(),
+            label = "Proxy address",
+            placeholder = "192.168.1.10 or https://host:8000",
+            keyboardType = KeyboardType.Uri,
         )
-        OutlinedTextField(
+        AppTextField(
             value = state.username,
             onValueChange = viewModel::onUsernameChange,
-            label = { Text("Username") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-            modifier = Modifier.fillMaxWidth(),
+            label = "Username",
         )
-        OutlinedTextField(
+        AppTextField(
             value = state.password,
             onValueChange = viewModel::onPasswordChange,
-            label = { Text("Password") },
-            singleLine = true,
-            visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Password,
-                imeAction = ImeAction.Done,
-            ),
-            modifier = Modifier.fillMaxWidth(),
+            label = "Password",
+            password = true,
+            imeAction = ImeAction.Done,
         )
 
         val message = state.error ?: reason
@@ -101,7 +92,7 @@ fun LoginScreen(reason: String? = null) {
         Button(
             onClick = viewModel::connect,
             enabled = !state.connecting,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().focusRing(),
         ) {
             if (state.connecting) {
                 CircularProgressIndicator(
