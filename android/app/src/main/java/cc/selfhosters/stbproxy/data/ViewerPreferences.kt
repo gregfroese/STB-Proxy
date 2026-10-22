@@ -5,9 +5,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Per-device viewer preferences that aren't account credentials. For now just
- * the picker's [GroupMode], persisted through [AccountStorage] and exposed as a
- * [StateFlow] so screens react to a change made in Settings.
+ * Per-device viewer preferences that aren't account credentials: the picker's
+ * [GroupMode] and per-channel [AspectMode] overrides, persisted through
+ * [AccountStorage] and exposed as [StateFlow]s so screens react to changes.
  */
 class ViewerPreferences(
     private val storage: AccountStorage,
@@ -19,6 +19,21 @@ class ViewerPreferences(
     fun setGroupMode(mode: GroupMode) {
         storage.writeGroupMode(mode.name)
         _groupMode.value = mode
+    }
+
+    private val _aspectModes = MutableStateFlow(decodeAspectModes(storage.readAspectModes()))
+
+    /** Channels (by `portal/channelId`) whose picture fit isn't [AspectMode.AUTO]. */
+    val aspectModes: StateFlow<Map<String, AspectMode>> = _aspectModes.asStateFlow()
+
+    fun setAspectMode(channelKey: String, mode: AspectMode) {
+        val updated = if (mode == AspectMode.AUTO) {
+            _aspectModes.value - channelKey
+        } else {
+            _aspectModes.value + (channelKey to mode)
+        }
+        storage.writeAspectModes(encodeAspectModes(updated))
+        _aspectModes.value = updated
     }
 
     private fun readGroupMode(): GroupMode =

@@ -12,6 +12,9 @@ STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/ST
 - **Text fields no longer trap the remote**: moving over a text field in Settings or Login on TV no longer pops the keyboard and captures the D-pad; press OK to edit.
 - **Back returns where you were**: coming back from the player puts focus on the channel you were watching, Back from Multiview returns to the screen that opened it, and Back from any top-level screen goes to Channels, then exits.
 - **Guide opens on a group**: the Guide now starts on the first Block/Genre instead of an empty list.
+- **Aspect per channel**: the player has an **Aspect** button (Auto / 16:9 / 4:3 / Zoom), remembered per channel, for channels whose stream reports the wrong picture shape (typically SD channels that don't flag widescreen). Auto now sizes the picture with media3's own presentation state (non-square SD pixels included) and hides the previous channel's last frame until the new one is drawn.
+- **Portrait player clears the status bar**: on phones the picture and its buttons sit below the clock/status icons and the camera cutout instead of underneath them.
+- **Swipe hint**: swiping up or down on the video (player and Multiview on phones) shows which way you're going and the channel it lands on, then confirms the switch.
 
 ## [1.17.0] - 2026-10-18
 

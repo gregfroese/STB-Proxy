@@ -6,6 +6,7 @@ class FakeAccountStorage(
     private var usernames: List<String> = emptyList(),
     private var activeUsername: String? = null,
     private var groupMode: String? = null,
+    private var aspectModes: String? = null,
 ) : AccountStorage {
 
     private val passwords = mutableMapOf<String, String>()
@@ -25,6 +26,9 @@ class FakeAccountStorage(
 
     override fun readGroupMode(): String? = groupMode
     override fun writeGroupMode(mode: String?) { groupMode = mode }
+
+    override fun readAspectModes(): String? = aspectModes
+    override fun writeAspectModes(encoded: String?) { aspectModes = encoded }
 
     fun passwordCount(): Int = passwords.size
 }
