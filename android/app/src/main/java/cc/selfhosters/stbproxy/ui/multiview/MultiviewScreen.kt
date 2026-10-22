@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -55,7 +54,6 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -69,6 +67,8 @@ import androidx.media3.common.Player
 import cc.selfhosters.stbproxy.R
 import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.di.LocalAppContainer
+import cc.selfhosters.stbproxy.ui.common.ZapSwipeHint
+import cc.selfhosters.stbproxy.ui.common.rememberZapSwipe
 import cc.selfhosters.stbproxy.ui.common.ImmersiveEffect
 import cc.selfhosters.stbproxy.ui.common.KeepScreenOnEffect
 import cc.selfhosters.stbproxy.ui.common.TvFocusColor
@@ -80,6 +80,7 @@ import cc.selfhosters.stbproxy.ui.player.PlaybackError
 import cc.selfhosters.stbproxy.ui.player.buildStreamPlayer
 import cc.selfhosters.stbproxy.ui.player.classifyPlaybackException
 import cc.selfhosters.stbproxy.ui.player.mediaItemFor
+import cc.selfhosters.stbproxy.ui.player.zapWithin
 import androidx.compose.ui.res.stringResource
 
 /**
@@ -102,7 +103,6 @@ fun MultiviewScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val configuration = LocalConfiguration.current
-    val density = LocalDensity.current
     val isTv = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK ==
         Configuration.UI_MODE_TYPE_TELEVISION
     val landscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -160,6 +160,16 @@ fun MultiviewScreen(
         )
     }
 
+    // Ticket 10: a phone vertical swipe zaps the audio tile (up = next), through the
+    // same assign path as the picker overlay, with a hint naming where it lands.
+    val audioChannel = state.audioSlot?.let { slot -> state.tiles.firstOrNull { it.slot == slot }?.channel }
+    val swipe = rememberZapSwipe(
+        onZap = if (isTv) null else { delta ->
+            if (state.pickFor == null) state.audioSlot?.let { viewModel.zapTile(it, delta) }
+        },
+        targetName = { delta -> audioChannel?.let { zapWithin(state.channels, it, delta)?.name } },
+    )
+
     val interactions = Modifier
         .onPreviewKeyEvent { event ->
             if (event.type != KeyEventType.KeyDown) {
@@ -210,31 +220,7 @@ fun MultiviewScreen(
             }
         }
         .pointerInput(Unit) { detectTapGestures { controls.show() } }
-        .then(
-            if (!isTv) {
-                // Ticket 10: a phone vertical swipe zaps the audio tile (up = next), through
-                // the same assign path as the picker overlay.
-                Modifier.pointerInput(Unit) {
-                    val threshold = with(density) { 64.dp.toPx() }
-                    var total = 0f
-                    detectVerticalDragGestures(
-                        onDragStart = { total = 0f },
-                        onVerticalDrag = { change, amount ->
-                            total += amount
-                            change.consume()
-                        },
-                        onDragEnd = {
-                            if (state.pickFor == null && kotlin.math.abs(total) >= threshold) {
-                                state.audioSlot?.let { viewModel.zapTile(it, if (total < 0) 1 else -1) }
-                            }
-                            total = 0f
-                        },
-                    )
-                }
-            } else {
-                Modifier
-            },
-        )
+        .then(swipe.modifier)
 
     // Keep something focused so the preview key handler above receives the keys.
     val tileFocus = remember { FocusRequester() }
@@ -286,6 +272,8 @@ fun MultiviewScreen(
                 }
             }
         }
+
+        ZapSwipeHint(swipe.hint, modifier = Modifier.align(Alignment.Center))
 
         if (isTv) {
             actionSlot?.let { slot ->

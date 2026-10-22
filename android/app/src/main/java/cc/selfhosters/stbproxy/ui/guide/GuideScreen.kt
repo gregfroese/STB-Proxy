@@ -1,6 +1,5 @@
 package cc.selfhosters.stbproxy.ui.guide
 
-import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
@@ -19,10 +18,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text as M3Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,12 +35,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import cc.selfhosters.stbproxy.R
 import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.ZapScope
 import cc.selfhosters.stbproxy.data.epg.NowNext
@@ -48,7 +49,11 @@ import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.data.model.GuideHit
 import cc.selfhosters.stbproxy.data.model.GuideProgramme
 import cc.selfhosters.stbproxy.di.LocalAppContainer
+import cc.selfhosters.stbproxy.ui.common.HeaderAction
+import cc.selfhosters.stbproxy.ui.common.ScreenGutter
+import cc.selfhosters.stbproxy.ui.common.ScreenHeader
 import cc.selfhosters.stbproxy.ui.common.focusRing
+import cc.selfhosters.stbproxy.ui.common.isTvDevice
 import cc.selfhosters.stbproxy.ui.picker.PhoneBlockChips
 import cc.selfhosters.stbproxy.ui.picker.PickerPalette
 import cc.selfhosters.stbproxy.ui.picker.SearchField
@@ -73,8 +78,6 @@ import java.time.format.DateTimeFormatter
 @Composable
 fun GuideScreen(
     onChannelClick: (Channel, ZapScope) -> Unit,
-    onBack: () -> Unit,
-    onOpenSettings: () -> Unit,
     viewModel: GuideViewModel = viewModel(
         factory = GuideViewModel.factory(
             apiClient = LocalAppContainer.current.apiClient,
@@ -86,9 +89,7 @@ fun GuideScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val container = LocalAppContainer.current
-    val configuration = LocalConfiguration.current
-    val isTv = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK ==
-        Configuration.UI_MODE_TYPE_TELEVISION
+    val isTv = isTvDevice()
     val palette = pickerPalette()
     val mode = effectiveGroupMode(state.groupMode, state.blocks)
 
@@ -108,8 +109,11 @@ fun GuideScreen(
     val railSource = if (state.searching) state.channels else browseChannels
     val rail = remember(state.blocks, railSource, mode) { groupRail(mode, state.blocks, railSource) }
     val resultChannels = remember(state.results, state.channels) { hitChannels(state.results, state.channels) }
-    val visibleChannels = remember(browseChannels, state.activeBlock, mode) {
-        state.activeBlock?.let { channelsInGroup(mode, browseChannels, it) }.orEmpty()
+    // Open on the first group until one is picked, as Channels does.
+    val activeBlock = state.activeBlock?.takeIf { active -> rail.any { it.name == active } }
+        ?: rail.firstOrNull()?.name
+    val visibleChannels = remember(browseChannels, activeBlock, mode) {
+        activeBlock?.let { channelsInGroup(mode, browseChannels, it) }.orEmpty()
     }
     val blockCounts = remember(resultChannels, rail, mode, state.searching) {
         if (state.searching) groupMatchCounts(mode, resultChannels, rail.map { it.name }, "") else emptyMap()
@@ -121,19 +125,14 @@ fun GuideScreen(
             .background(palette.background)
             .safeDrawingPadding(),
     ) {
-        GuideTopBar(
-            accountLabel = state.accountLabel,
-            palette = palette,
-            onBack = onBack,
-            onReload = viewModel::reload,
-            onOpenSettings = onOpenSettings,
-        )
+        ScreenHeader(title = stringResource(R.string.guide_title), subtitle = state.accountLabel) {
+            HeaderAction(Icons.Filled.Refresh, "Reload", viewModel::reload)
+        }
         SearchField(
             query = state.query,
             onQueryChange = viewModel::onQueryChange,
             palette = palette,
             mode = mode,
-            isTv = isTv,
             placeholder = "Search programmes across your lineup…",
         )
         GuideControls(
@@ -154,7 +153,7 @@ fun GuideScreen(
                 text = message,
                 color = MaterialTheme.colorScheme.error,
                 fontSize = 13.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = ScreenGutter, vertical = 4.dp),
             )
         }
         state.notice?.let { notice ->
@@ -162,7 +161,7 @@ fun GuideScreen(
                 text = notice,
                 color = palette.muted,
                 fontSize = 12.sp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = ScreenGutter, vertical = 4.dp),
             )
         }
 
@@ -172,7 +171,7 @@ fun GuideScreen(
             Row(modifier = Modifier.fillMaxSize()) {
                 TvBlockRail(
                     rail = rail,
-                    activeBlock = state.activeBlock,
+                    activeBlock = activeBlock,
                     searching = state.searching,
                     resultCount = resultChannels.size,
                     blockCounts = blockCounts,
@@ -188,7 +187,7 @@ fun GuideScreen(
                     visibleChannels = visibleChannels,
                     palette = palette,
                     onPlayHit = { hit -> playHit(state, hit, resultChannels, onChannelClick) },
-                    onPlayChannel = { channel -> playBrowse(state, channel, visibleChannels, mode, onChannelClick) },
+                    onPlayChannel = { channel -> playBrowse(state, activeBlock, channel, visibleChannels, mode, onChannelClick) },
                     onToggleTimeline = viewModel::toggleTimeline,
                     onLoadMore = viewModel::onLoadMore,
                     modifier = Modifier.weight(1f),
@@ -198,7 +197,7 @@ fun GuideScreen(
             Column(modifier = Modifier.fillMaxSize()) {
                 PhoneBlockChips(
                     rail = rail,
-                    activeBlock = state.activeBlock,
+                    activeBlock = activeBlock,
                     searching = state.searching,
                     resultCount = resultChannels.size,
                     blockCounts = blockCounts,
@@ -214,7 +213,7 @@ fun GuideScreen(
                     visibleChannels = visibleChannels,
                     palette = palette,
                     onPlayHit = { hit -> playHit(state, hit, resultChannels, onChannelClick) },
-                    onPlayChannel = { channel -> playBrowse(state, channel, visibleChannels, mode, onChannelClick) },
+                    onPlayChannel = { channel -> playBrowse(state, activeBlock, channel, visibleChannels, mode, onChannelClick) },
                     onToggleTimeline = viewModel::toggleTimeline,
                     onLoadMore = viewModel::onLoadMore,
                     modifier = Modifier.weight(1f),
@@ -239,6 +238,7 @@ private fun playHit(
 
 private fun playBrowse(
     state: GuideUiState,
+    activeBlock: String?,
     channel: Channel,
     visibleChannels: List<Channel>,
     mode: GroupMode,
@@ -247,46 +247,9 @@ private fun playBrowse(
     val scope = if (state.onNow) {
         ZapScope.Channels(visibleChannels.map { channelKey(it) }, "On now")
     } else {
-        launchGroupFor(mode, channel, state.activeBlock).let { ZapScope.Group(it, it) }
+        launchGroupFor(mode, channel, activeBlock).let { ZapScope.Group(it, it) }
     }
     onChannelClick(channel, scope)
-}
-
-@Composable
-private fun GuideTopBar(
-    accountLabel: String?,
-    palette: PickerPalette,
-    onBack: () -> Unit,
-    onReload: () -> Unit,
-    onOpenSettings: () -> Unit,
-) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onBack, modifier = Modifier.focusRing()) {
-                M3Text("‹ Channels")
-            }
-            Spacer(Modifier.width(10.dp))
-            M3Text(
-                text = "Guide",
-                style = MaterialTheme.typography.headlineSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            OutlinedButton(onClick = onReload, modifier = Modifier.focusRing()) { M3Text("Reload") }
-            Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = onOpenSettings, modifier = Modifier.focusRing()) { M3Text("Settings") }
-        }
-        accountLabel?.let {
-            M3Text(
-                text = it,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-    }
 }
 
 @Composable
@@ -299,7 +262,7 @@ private fun GuideControls(
     onMode: (GuideMode) -> Unit,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 2.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = ScreenGutter, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -315,7 +278,7 @@ private fun GuideControls(
     }
     if (state.advanced) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = ScreenGutter, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
             GuideMode.entries.forEach { option ->
@@ -371,7 +334,7 @@ private fun GuideList(
     val channels = if (state.searching) emptyList() else visibleChannels
     LazyColumn(
         modifier = modifier.focusGroup(),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+        contentPadding = PaddingValues(horizontal = ScreenGutter, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (state.searching) {

@@ -10,20 +10,24 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,7 +59,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -65,13 +68,16 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import cc.selfhosters.stbproxy.data.AspectMode
 import cc.selfhosters.stbproxy.data.ZapScope
 import cc.selfhosters.stbproxy.di.LocalAppContainer
 import cc.selfhosters.stbproxy.ui.common.ImmersiveEffect
 import cc.selfhosters.stbproxy.ui.common.KeepScreenOnEffect
 import cc.selfhosters.stbproxy.ui.common.VideoSurface
+import cc.selfhosters.stbproxy.ui.common.ZapSwipeHint
 import cc.selfhosters.stbproxy.ui.common.focusRing
 import cc.selfhosters.stbproxy.ui.common.rememberAutoHideControls
+import cc.selfhosters.stbproxy.ui.common.rememberZapSwipe
 import kotlin.math.roundToInt
 
 /**
@@ -152,6 +158,13 @@ fun PlayerScreen(
 
     val controls = rememberAutoHideControls()
 
+    // Picture fit, remembered per channel.
+    val aspectModes by container.viewerPreferences.aspectModes.collectAsStateWithLifecycle()
+    val channelKey = state.channel?.let { "${it.portal}/${it.channelId}" }
+    val aspect = channelKey?.let { aspectModes[it] } ?: AspectMode.AUTO
+    val onCycleAspect = { channelKey?.let { container.viewerPreferences.setAspectMode(it, aspect.next()) }; Unit }
+    val zapTargetName = { delta: Int -> state.channel?.let { zapWithin(state.zapList, it, delta)?.name } }
+
     // Back closes the guide first; a second Back leaves the player.
     BackHandler(enabled = guideVisible) { guideVisible = false }
 
@@ -216,6 +229,8 @@ fun PlayerScreen(
                 onToggleGuide = { guideVisible = !guideVisible },
                 guideVisible = guideVisible,
                 multiviewFocusRequester = actionFocus,
+                aspect = aspect,
+                onCycleAspect = onCycleAspect,
                 modifier = Modifier.fillMaxSize(),
             )
             if (guideVisible) {
@@ -249,6 +264,9 @@ fun PlayerScreen(
                 onToggleGuide = { guideVisible = !guideVisible },
                 guideVisible = guideVisible,
                 onZap = if (!guideVisible) viewModel::zap else null,
+                zapTargetName = zapTargetName,
+                aspect = aspect,
+                onCycleAspect = onCycleAspect,
                 modifier = Modifier.fillMaxSize(),
             )
             if (guideVisible) {
@@ -279,6 +297,9 @@ fun PlayerScreen(
             onOpenMultiview = onOpenMultiview,
             onToggleFullscreen = { immersive = true },
             onZap = viewModel::zap,
+            zapTargetName = zapTargetName,
+            aspect = aspect,
+            onCycleAspect = onCycleAspect,
             modifier = interactions,
         )
     }
@@ -348,6 +369,9 @@ private fun PhonePlayerLayout(
     onOpenMultiview: () -> Unit,
     onToggleFullscreen: () -> Unit,
     onZap: (Int) -> Unit,
+    zapTargetName: (Int) -> String?,
+    aspect: AspectMode,
+    onCycleAspect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val sheetPeek = 300.dp
@@ -356,6 +380,7 @@ private fun PhonePlayerLayout(
         scaffoldState = sheetState,
         sheetPeekHeight = sheetPeek,
         sheetContainerColor = MaterialTheme.colorScheme.surface,
+        containerColor = Color.Black,
         sheetContent = {
             PlayerSidebar(
                 state = state,
@@ -382,10 +407,16 @@ private fun PhonePlayerLayout(
             onToggleGuide = null,
             guideVisible = false,
             onZap = onZap,
+            zapTargetName = zapTargetName,
+            aspect = aspect,
+            onCycleAspect = onCycleAspect,
+            // Edge-to-edge: keep the picture and its buttons clear of the status bar
+            // and the camera cutout.
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(bottom = sheetPeek),
+                .padding(bottom = sheetPeek)
+                .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal)),
         )
     }
 }
@@ -408,33 +439,18 @@ private fun VideoPane(
     guideVisible: Boolean,
     multiviewFocusRequester: FocusRequester? = null,
     onZap: ((Int) -> Unit)? = null,
+    zapTargetName: (Int) -> String? = { null },
+    aspect: AspectMode = AspectMode.AUTO,
+    onCycleAspect: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val density = LocalDensity.current
-    // Phone: a vertical stage swipe moves channel (up = next), ticket 08. Suppressed while
-    // the guide overlay is open (onZap is null here then). TV keeps its D-pad.
-    val swipe = if (onZap != null) {
-        Modifier.pointerInput(onZap) {
-            val threshold = with(density) { 64.dp.toPx() }
-            var total = 0f
-            detectVerticalDragGestures(
-                onDragStart = { total = 0f },
-                onVerticalDrag = { change, dragAmount ->
-                    total += dragAmount
-                    change.consume()
-                },
-                onDragEnd = {
-                    if (kotlin.math.abs(total) >= threshold) onZap(if (total < 0) 1 else -1)
-                    total = 0f
-                },
-            )
-        }
-    } else {
-        Modifier
-    }
-    Box(modifier = modifier.then(swipe).background(Color.Black)) {
+    // Phone: a vertical stage swipe moves channel (up = next), ticket 08, with a hint
+    // showing which way. Suppressed while the guide overlay is open (onZap is null
+    // then). TV keeps its D-pad.
+    val swipe = rememberZapSwipe(onZap, zapTargetName)
+    Box(modifier = modifier.then(swipe.modifier).background(Color.Black)) {
         if (state.streamUrl != null) {
-            VideoSurface(player = player, modifier = Modifier.fillMaxSize())
+            VideoSurface(player = player, aspect = aspect, modifier = Modifier.fillMaxSize())
         }
 
         if (state.loading || state.lineupError != null) {
@@ -489,12 +505,15 @@ private fun VideoPane(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OverlayButton("Multiview", onOpenMultiview, focusRequester = multiviewFocusRequester)
+                OverlayButton("Aspect: ${aspect.label}", onCycleAspect)
                 onToggleGuide?.let { OverlayButton(if (guideVisible) "Hide guide" else "Guide", it) }
                 onToggleFullscreen?.let {
                     OverlayButton(if (immersive) "Exit full" else "Full screen", it)
                 }
             }
         }
+
+        ZapSwipeHint(swipe.hint, modifier = Modifier.align(Alignment.Center))
     }
 }
 

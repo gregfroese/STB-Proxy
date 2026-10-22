@@ -29,6 +29,10 @@ interface AccountStorage {
 
     fun readGroupMode(): String?
     fun writeGroupMode(mode: String?)
+
+    /** Per-channel aspect overrides, as [encodeAspectModes] writes them. */
+    fun readAspectModes(): String?
+    fun writeAspectModes(encoded: String?)
 }
 
 /**
@@ -102,6 +106,14 @@ class AndroidAccountStorage(context: Context) : AccountStorage {
         }.apply()
     }
 
+    override fun readAspectModes(): String? = prefs.getString(KEY_ASPECT_MODES, null)
+
+    override fun writeAspectModes(encoded: String?) {
+        prefs.edit().apply {
+            if (encoded.isNullOrEmpty()) remove(KEY_ASPECT_MODES) else putString(KEY_ASPECT_MODES, encoded)
+        }.apply()
+    }
+
     private fun passwordKey(username: String): String = "password:$username"
 
     private companion object {
@@ -111,6 +123,7 @@ class AndroidAccountStorage(context: Context) : AccountStorage {
         const val KEY_USERNAMES = "usernames"
         const val KEY_ACTIVE_USERNAME = "active_username"
         const val KEY_GROUP_MODE = "group_mode"
+        const val KEY_ASPECT_MODES = "aspect_modes"
         const val USERNAME_SEPARATOR = "\n"
     }
 }

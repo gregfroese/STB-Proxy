@@ -1,6 +1,5 @@
 package cc.selfhosters.stbproxy.ui.picker
 
-import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,11 +24,16 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text as M3Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -37,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -54,11 +59,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -73,7 +78,12 @@ import cc.selfhosters.stbproxy.data.model.Channel
 import cc.selfhosters.stbproxy.data.network.NO_CHANNELS_NOTICE
 import cc.selfhosters.stbproxy.data.network.SECURITY_OFF_NOTICE
 import cc.selfhosters.stbproxy.di.LocalAppContainer
+import cc.selfhosters.stbproxy.ui.common.HeaderAction
+import cc.selfhosters.stbproxy.ui.common.ScreenGutter
+import cc.selfhosters.stbproxy.ui.common.ScreenHeader
+import cc.selfhosters.stbproxy.ui.common.TvEditable
 import cc.selfhosters.stbproxy.ui.common.focusRing
+import cc.selfhosters.stbproxy.ui.common.isTvDevice
 import coil.compose.AsyncImage
 
 /** Focus ring colour for D-pad navigation (spec 2.10). */
@@ -98,9 +108,6 @@ internal data class PickerPalette(
 @Composable
 fun PickerScreen(
     onChannelClick: (Channel, launchBlock: String) -> Unit,
-    onOpenGuide: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenMultiview: () -> Unit,
     viewModel: PickerViewModel = viewModel(
         factory = PickerViewModel.factory(
             LocalAppContainer.current.apiClient,
@@ -111,9 +118,10 @@ fun PickerScreen(
     ),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    val configuration = LocalConfiguration.current
-    val isTv = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK ==
-        Configuration.UI_MODE_TYPE_TELEVISION
+    val isTv = isTvDevice()
+    // The channel last opened, so coming Back from the player lands on it again.
+    var lastOpened by rememberSaveable { mutableStateOf<String?>(null) }
+    var searchEditing by remember { mutableStateOf(false) }
 
     val mode = effectiveGroupMode(state.groupMode, state.blocks)
     val rail = remember(state.blocks, state.channels, mode) {
@@ -141,19 +149,18 @@ fun PickerScreen(
             .background(palette.background)
             .safeDrawingPadding(),
     ) {
-        PickerTopBar(
-            state = state,
-            onOpenGuide = onOpenGuide,
-            onOpenSettings = onOpenSettings,
-            onOpenMultiview = onOpenMultiview,
-            onRefresh = viewModel::refresh,
-        )
+        ScreenHeader(
+            title = stringResource(R.string.picker_title),
+            subtitle = state.accountLabel,
+        ) {
+            HeaderAction(Icons.Filled.Refresh, "Refresh", viewModel::refresh)
+        }
         SearchField(
             query = state.query,
             onQueryChange = viewModel::onQueryChange,
             palette = palette,
             mode = mode,
-            isTv = isTv,
+            onEditingChange = { searchEditing = it },
         )
         FilterRow(
             filter = state.filter,
@@ -192,8 +199,11 @@ fun PickerScreen(
                     blockCounts = blockCounts,
                     nowNext = state.nowNext,
                     palette = palette,
+                    focusKey = lastOpened,
+                    autoFocus = !searchEditing,
                     onBlockSelected = viewModel::onBlockSelected,
                     onChannelClick = { channel ->
+                        lastOpened = rowKey(channel)
                         onChannelClick(channel, launchGroupFor(mode, channel, state.activeBlock))
                     },
                 )
@@ -214,6 +224,8 @@ private fun PickerBody(
     blockCounts: Map<String, Int>,
     nowNext: Map<String, NowNext>,
     palette: PickerPalette,
+    focusKey: String?,
+    autoFocus: Boolean,
     onBlockSelected: (String) -> Unit,
     onChannelClick: (Channel) -> Unit,
 ) {
@@ -238,6 +250,8 @@ private fun PickerBody(
                 query = query,
                 palette = palette,
                 onChannelClick = onChannelClick,
+                focusKey = focusKey,
+                autoFocus = autoFocus,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -280,23 +294,27 @@ internal fun PickerList(
     palette: PickerPalette,
     onChannelClick: (Channel) -> Unit,
     modifier: Modifier = Modifier,
+    focusKey: String? = null,
+    autoFocus: Boolean = true,
 ) {
     if (channels.isEmpty()) {
         val message = if (searching) "No channels match \"$query\"" else "No channels"
         Centered(modifier) { BasicLabel(message, palette.muted, 14.sp) }
         return
     }
-    // Compose for TV does not auto-focus; seed focus on the first row (spec 2.10).
-    val firstItemFocus = remember { FocusRequester() }
+    // Compose for TV does not auto-focus; seed focus on the row last opened, else the
+    // first (spec 2.10) — but never while the search box is being typed into.
+    val targetIndex = channels.indexOfFirst { rowKey(it) == focusKey }.coerceAtLeast(0)
+    val targetFocus = remember { FocusRequester() }
     if (isTv) {
-        LaunchedEffect(Unit) { runCatching { firstItemFocus.requestFocus() } }
+        LaunchedEffect(Unit) { if (autoFocus) runCatching { targetFocus.requestFocus() } }
     }
     LazyColumn(
         modifier = modifier.focusGroup(),
-        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+        contentPadding = PaddingValues(horizontal = ScreenGutter, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        itemsIndexed(channels, key = { _, channel -> "${channel.portal}/${channel.channelId}" }) { index, channel ->
+        itemsIndexed(channels, key = { _, channel -> rowKey(channel) }) { index, channel ->
             ChannelRow(
                 channel = channel,
                 nowNext = channel.epgId?.let { nowNext[it] },
@@ -305,7 +323,7 @@ internal fun PickerList(
                 searching = searching,
                 palette = palette,
                 onClick = { onChannelClick(channel) },
-                focusRequester = if (isTv && index == 0) firstItemFocus else null,
+                focusRequester = if (isTv && index == targetIndex) targetFocus else null,
             )
         }
     }
@@ -425,44 +443,78 @@ private fun ChannelLogo(channel: Channel, palette: PickerPalette) {
     }
 }
 
+/**
+ * The search box. On TV it is reached with the D-pad like any button and OK opens
+ * the keyboard (see [TvEditable]); the keyboard's Search key drops you on the results.
+ */
 @Composable
 internal fun SearchField(
     query: String,
     onQueryChange: (String) -> Unit,
     palette: PickerPalette,
     mode: GroupMode = GroupMode.BLOCKS,
-    isTv: Boolean = false,
     placeholder: String? = null,
+    onEditingChange: (Boolean) -> Unit = {},
 ) {
-    val shape = RoundedCornerShape(11.dp)
-    Box(
+    val shape = RoundedCornerShape(12.dp)
+    val isTv = isTvDevice()
+    TvEditable(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 6.dp)
-            .clip(shape)
-            .background(palette.surfaceVariant)
-            .border(1.dp, palette.surfaceVariant, shape)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        if (query.isEmpty()) {
-            BasicLabel(
-                placeholder ?: if (mode == GroupMode.GENRES) "Search all Genres…" else "Search all Blocks…",
-                palette.muted,
-                14.sp,
-            )
-        }
-        BasicTextField(
-            value = query,
-            onValueChange = onQueryChange,
-            singleLine = true,
-            textStyle = TextStyle(color = palette.onSurface, fontSize = 14.sp),
-            cursorBrush = SolidColor(palette.accent),
-            // A text field traps the D-pad (it eats Up/Down). On TV it isn't focusable,
-            // so the remote walks straight between the top bar and the channel list.
+            .padding(horizontal = ScreenGutter, vertical = 6.dp),
+        shape = shape,
+        onEditingChange = onEditingChange,
+    ) { hooks ->
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (isTv) Modifier.focusProperties { canFocus = false } else Modifier),
-        )
+                .clip(shape)
+                .background(palette.surfaceVariant)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Search,
+                contentDescription = null,
+                tint = palette.muted,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Box(modifier = Modifier.weight(1f)) {
+                if (query.isEmpty()) {
+                    BasicLabel(
+                        placeholder ?: if (mode == GroupMode.GENRES) "Search all Genres…" else "Search all Blocks…",
+                        palette.muted,
+                        14.sp,
+                        maxLines = 1,
+                    )
+                }
+                BasicTextField(
+                    value = query,
+                    onValueChange = onQueryChange,
+                    singleLine = true,
+                    textStyle = TextStyle(color = palette.onSurface, fontSize = 14.sp),
+                    cursorBrush = SolidColor(palette.accent),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { hooks.onImeAction() }),
+                    modifier = hooks.modifier.fillMaxWidth(),
+                )
+            }
+            if (query.isNotEmpty()) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = "Clear search",
+                    tint = palette.muted,
+                    modifier = Modifier
+                        .padding(start = 8.dp)
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(50))
+                        // On TV the keyboard clears; a focus stop here would split the box.
+                        .focusProperties { canFocus = !isTv }
+                        .clickable { onQueryChange("") },
+                )
+            }
+        }
     }
 }
 
@@ -476,7 +528,7 @@ private fun FilterRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 14.dp, vertical = 2.dp),
+            .padding(horizontal = ScreenGutter, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         ChannelFilter.entries.forEach { option ->
@@ -494,52 +546,6 @@ private fun FilterRow(
                     if (selected) palette.background else palette.onSurface,
                     12.sp,
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PickerTopBar(
-    state: PickerUiState,
-    onOpenGuide: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenMultiview: () -> Unit,
-    onRefresh: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 10.dp),
-    ) {
-        M3Text(
-            text = stringResource(R.string.picker_title),
-            style = MaterialTheme.typography.headlineSmall,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        state.accountLabel?.let { label ->
-            M3Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onRefresh, modifier = Modifier.focusRing()) {
-                M3Text("Refresh")
-            }
-            FilledTonalButton(onClick = onOpenGuide, modifier = Modifier.focusRing()) {
-                M3Text(stringResource(R.string.nav_guide))
-            }
-            FilledTonalButton(onClick = onOpenMultiview, modifier = Modifier.focusRing()) {
-                M3Text(stringResource(R.string.nav_multiview))
-            }
-            OutlinedButton(onClick = onOpenSettings, modifier = Modifier.focusRing()) {
-                M3Text(stringResource(R.string.nav_settings))
             }
         }
     }
@@ -589,6 +595,9 @@ internal fun pickerPalette(): PickerPalette {
     )
 }
 
+/** Stable identity of a channel row (list key and focus-restore key). */
+internal fun rowKey(channel: Channel): String = "${channel.portal}/${channel.channelId}"
+
 private fun initials(name: String): String =
     name.split(' ')
         .filter { it.isNotBlank() }
@@ -612,8 +621,7 @@ fun ChannelPickerOverlay(
     onDismiss: () -> Unit,
 ) {
     val palette = pickerPalette()
-    val isTv = LocalConfiguration.current.uiMode and Configuration.UI_MODE_TYPE_MASK ==
-        Configuration.UI_MODE_TYPE_TELEVISION
+    val isTv = isTvDevice()
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf(ChannelFilter.ALL) }
     val mode = effectiveGroupMode(groupMode, blocks)
@@ -647,7 +655,6 @@ fun ChannelPickerOverlay(
                 onQueryChange = { query = it },
                 palette = palette,
                 mode = mode,
-                isTv = isTv,
             )
             FilterRow(filter = filter, onFilter = { filter = it }, palette = palette)
             Box(modifier = Modifier.fillMaxWidth().height(420.dp)) {

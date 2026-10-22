@@ -2,23 +2,32 @@ package cc.selfhosters.stbproxy.ui
 
 import android.net.Uri
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import cc.selfhosters.stbproxy.data.SessionState
 import cc.selfhosters.stbproxy.data.ZapScope
 import cc.selfhosters.stbproxy.data.ZapScopeStore
+import cc.selfhosters.stbproxy.di.AppContainer
 import cc.selfhosters.stbproxy.di.LocalAppContainer
+import cc.selfhosters.stbproxy.ui.common.isTvDevice
 import cc.selfhosters.stbproxy.ui.guide.GuideScreen
 import cc.selfhosters.stbproxy.ui.login.LoginScreen
 import cc.selfhosters.stbproxy.ui.multiview.MultiviewScreen
@@ -134,6 +143,56 @@ private fun Splash() {
 private fun MainNavHost() {
     val navController = rememberNavController()
     val container = LocalAppContainer.current
+    val isTv = isTvDevice()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val route = backStackEntry?.destination?.route
+    val current = Destination.of(route)
+    // Multiview and the player are full-screen video; every other screen gets the nav.
+    val showNav = current != null && current != Destination.MULTIVIEW
+
+    // Switching top-level screens keeps one copy of each on the stack, with Channels
+    // at the root, so Back from any of them returns to Channels and then exits.
+    // Multiview is full-screen video like the player, so it stacks on top instead
+    // and Back returns to whichever screen opened it.
+    fun navigateTo(destination: Destination) {
+        if (destination == current) return
+        if (destination == Destination.MULTIVIEW) {
+            navController.navigate(destination.route) { launchSingleTop = true }
+            return
+        }
+        navController.navigate(destination.route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    if (isTv) {
+        TvShell(current = current, showRail = showNav, onSelect = ::navigateTo) {
+            AppNavHost(navController, container)
+        }
+    } else {
+        Scaffold(
+            contentWindowInsets = WindowInsets(0),
+            bottomBar = { if (showNav) PhoneNavBar(current = current, onSelect = ::navigateTo) },
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .consumeWindowInsets(padding),
+            ) {
+                AppNavHost(navController, container)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppNavHost(
+    navController: NavHostController,
+    container: AppContainer,
+) {
     NavHost(navController = navController, startDestination = Routes.PICKER) {
         composable(Routes.PICKER) {
             PickerScreen(
@@ -142,9 +201,6 @@ private fun MainNavHost() {
                         Routes.player(channel.portal, channel.channelId, launchBlock),
                     )
                 },
-                onOpenGuide = { navController.navigate(Routes.GUIDE) },
-                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                onOpenMultiview = { navController.navigate(Routes.MULTIVIEW) },
             )
         }
         composable(
@@ -180,6 +236,7 @@ private fun MainNavHost() {
                 portal = portal,
                 channelId = channelId,
                 scope = scope,
+                // Pushed on top of the player, so Back comes straight back to it.
                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                 onOpenMultiview = { navController.navigate(Routes.MULTIVIEW) },
             )
@@ -204,15 +261,13 @@ private fun MainNavHost() {
                     }
                     navController.navigate(route)
                 },
-                onBack = { navController.popBackStack() },
-                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
             )
         }
         composable(Routes.MULTIVIEW) {
             MultiviewScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(onBack = { navController.popBackStack() })
+            SettingsScreen()
         }
     }
 }
