@@ -13,6 +13,7 @@
   import { groupMode } from "../lib/prefs";
   import {
     epgRefreshAction,
+    fullscreenStrategy,
     programmeProgress,
     resolveNowNext,
     scopeZapList,
@@ -32,6 +33,9 @@
   let now = $state(new Date());
   let lastComputed = $state(new Date());
   let isFullscreen = $state(false);
+  // "page" full screen: the player fills the window (and the page is fullscreened
+  // when the browser allows it), rather than the video element going full screen.
+  let fullWindow = $state(false);
 
   const params = $derived({
     portal: $route.query.get("portal") ?? "",
@@ -168,18 +172,28 @@
   }
 
   function toggleFullscreen() {
-    if (document.fullscreenElement) {
-      void document.exitFullscreen();
+    if (isFullscreen) {
+      fullWindow = false;
+      if (document.fullscreenElement) void document.exitFullscreen();
+      isFullscreen = false;
       return;
     }
-    // Fullscreen the video element itself: fullscreening a container that holds
-    // an MSE video stalls playback on some Android Chrome versions.
-    const request = videoEl?.requestFullscreen();
+    const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+    if (fullscreenStrategy(navigator.userAgent, coarse) === "video") {
+      const request = videoEl?.requestFullscreen?.();
+      if (request && typeof request.catch === "function") request.catch(() => undefined);
+      return;
+    }
+    fullWindow = true;
+    isFullscreen = true;
+    const request = document.documentElement.requestFullscreen?.();
     if (request && typeof request.catch === "function") request.catch(() => undefined);
   }
 
   function onFullscreenChange() {
-    isFullscreen = document.fullscreenElement != null;
+    // Leaving the browser's full screen (Back, Esc) also leaves the full-window player.
+    if (document.fullscreenElement == null) fullWindow = false;
+    isFullscreen = fullWindow || document.fullscreenElement != null;
     if (videoEl && videoEl.paused) {
       const play = videoEl.play();
       if (play && typeof play.catch === "function") play.catch(() => undefined);
@@ -188,6 +202,11 @@
 
   function onKey(event: KeyboardEvent) {
     if (event.target instanceof HTMLElement && event.target.matches("input,textarea")) return;
+    if (event.key === "Escape" && fullWindow) {
+      event.preventDefault();
+      toggleFullscreen();
+      return;
+    }
     if (event.key === "ArrowUp" || event.key === "PageUp") {
       event.preventDefault();
       zap(1);
@@ -277,7 +296,7 @@
   });
 </script>
 
-<div class="player">
+<div class="player" class:full={fullWindow}>
   <div class="split">
     <div class="stage" bind:this={stageEl}>
       <video bind:this={videoEl} playsinline></video>

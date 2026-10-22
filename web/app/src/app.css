@@ -25,7 +25,7 @@ body {
 }
 
 body {
-  background: radial-gradient(1200px 700px at 50% -10%, #182233, var(--bg) 60%);
+  background: radial-gradient(1200px 700px at 50% -10%, #182233, var(--bg) 60%) fixed;
   color: var(--ink);
   font-family:
     system-ui,
@@ -1372,4 +1372,40 @@ a.btn {
     flex: none;
     aspect-ratio: 16/9;
   }
+}
+
+/* Page full screen: the stage covers the window, the side panel goes away. */
+.player.full .side {
+  display: none;
+}
+
+.player.full .stage {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  width: auto;
+  height: auto;
+  aspect-ratio: auto;
+}
+
+/* TV browsers (Silk's cursor, a WebView's D-pad) only scroll the page itself, so on
+   TV the channel grid grows the page instead of scrolling inside a fixed box. */
+.tv .picker {
+  height: auto;
+  min-height: 100vh;
+}
+
+.tv .bwrap {
+  flex: none;
+  align-items: flex-start;
+}
+
+.tv .rail {
+  position: sticky;
+  top: 0;
+  max-height: 100vh;
+}
+
+.tv .grid {
+  overflow: visible;
 }

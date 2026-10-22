@@ -4,6 +4,7 @@
 import type { Channel, NowNext, Programme } from "./types";
 import { channelKey, channelsInGroup, type GroupMode } from "./pickerLogic";
 import type { ZapScope } from "./zapScope";
+import { isTvBrowser } from "./device";
 
 export type PlaybackError =
   | { kind: "all_tuners_busy" }
@@ -146,4 +147,17 @@ export function zapTarget(
   );
   const next = zapIndex(list.length, index < 0 ? 0 : index, delta);
   return next < 0 ? null : list[next];
+}
+
+export type FullscreenStrategy = "video" | "page";
+
+/**
+ * How full screen is done. Phones fullscreen the video element itself, because
+ * fullscreening a container with an MSE video stalls on some Android Chrome
+ * versions. Everything else (TV, desktop) grows the player to fill the page and
+ * fullscreens the page: TV browsers (Fire TV's Silk, Downloader's WebView) hide
+ * the page around a fullscreened video but leave the picture at its old size.
+ */
+export function fullscreenStrategy(userAgent: string, coarsePointer: boolean): FullscreenStrategy {
+  return coarsePointer && !isTvBrowser(userAgent) ? "video" : "page";
 }
