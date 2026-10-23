@@ -21,7 +21,7 @@ import queue
 import threading
 import time
 import requests
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 import xml.etree.cElementTree as ET
 from flask import (
     Flask,
@@ -3836,6 +3836,108 @@ def apiOnDemandCategories():
         "categories": index.categories(list(portals)),
         "portals": [dict(portal=portal, name=name, **index.status(portal)) for portal, name in portals.items()],
     })
+
+
+# A page of /api/ondemand/items: this many items unless the viewer asks, and never more
+# than the most.
+ONDEMAND_LIMIT = 60
+ONDEMAND_MAX_LIMIT = 200
+
+
+def onDemandListItem(item, portals):
+    """An index list item as viewers get it: with its portal's name and a proxied poster."""
+    item = dict(item, portalName=portals[item["portal"]])
+    if item["poster"] is not None:
+        item["poster"] = "/api/ondemand/poster/{}/{}".format(item["portal"], item["id"])
+    return item
+
+
+@app.route("/api/ondemand/items", methods=["GET"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandItems():
+    """Browse and search the merged catalogue of the enabled portals, a page at a time."""
+    portals = enabledOnDemandPortals()
+    try:
+        offset = int(request.args.get("offset", 0))
+        limit = min(ONDEMAND_MAX_LIMIT, int(request.args.get("limit", ONDEMAND_LIMIT)))
+    except ValueError:
+        offset = limit = -1
+    if offset < 0 or limit < 1:
+        return onDemandError(400, "bad_request", "offset and limit must be whole numbers, limit at least 1")
+    sort = request.args.get("sort")
+    if sort is not None and sort not in ondemand.SORTS:
+        return onDemandError(400, "bad_request", "sort must be one of " + ", ".join(ondemand.SORTS))
+    q = request.args.get("q")
+    if q is not None and len(q.strip()) < 2:
+        return onDemandError(400, "bad_request", "Search for at least 2 characters")
+    total, items = onDemandIndex().items(
+        list(portals), category=request.args.get("category") or None, q=q, sort=sort, offset=offset, limit=limit)
+    return flask.jsonify({
+        "items": [onDemandListItem(item, portals) for item in items],
+        "total": total, "offset": offset, "limit": limit,
+    })
+
+
+def onDemandDetail(portal, id):
+    """An item's detail if this viewer may see it, else None: the one lookup the item and
+    poster routes share. A portal switched off hides its items at once (its rows stay)."""
+    if portal not in enabledOnDemandPortals():
+        return None
+    return onDemandIndex().detail(portal, id)
+
+
+@app.route("/api/ondemand/item/<portal>/<id>", methods=["GET"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandItem(portal, id):
+    """A Movie's (or Series') detail. Items of a portal switched off are not found."""
+    detail = onDemandDetail(portal, id)
+    if detail is None:
+        return onDemandError(404, "not_found", "That isn't in On Demand")
+    return flask.jsonify(onDemandListItem(detail, enabledOnDemandPortals()))
+
+
+# Proxied posters: at most this many portal fetches at once, each with this timeout, and a
+# request that waits longer than ONDEMAND_POSTER_WAIT for its turn gets 504. There is no disk
+# cache; the browser, the BFF and OkHttp keep each poster for ONDEMAND_POSTER_AGE seconds.
+ONDEMAND_POSTER_FETCHES = 6
+ONDEMAND_POSTER_TIMEOUT = 5
+ONDEMAND_POSTER_WAIT = 5
+ONDEMAND_POSTER_AGE = 7 * 24 * 3600
+onDemandPosterSlots = threading.BoundedSemaphore(ONDEMAND_POSTER_FETCHES)
+
+
+@app.route("/api/ondemand/poster/<portal>/<id>", methods=["GET"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandPoster(portal, id):
+    """An item's poster, fetched from its portal so the portal stays hidden (and an HTTPS
+    viewer gets no mixed content). A portal-relative poster is on the portal's host."""
+    detail = onDemandDetail(portal, id)
+    if detail is None or detail["poster"] is None:
+        return onDemandError(404, "not_found", "No poster")
+    parsed = urlparse(getPortals()[portal]["url"])
+    url = urljoin(parsed.scheme + "://" + parsed.netloc + "/", detail["poster"])
+    proxy = getPortals()[portal].get("proxy") or None
+    if not onDemandPosterSlots.acquire(timeout=ONDEMAND_POSTER_WAIT):
+        return flask.jsonify({"error": "Too many posters at once, try again"}), 504
+    try:
+        upstream = requests.get(url, timeout=ONDEMAND_POSTER_TIMEOUT,
+                                proxies={"http": proxy, "https": proxy} if proxy else None)
+    except Exception as e:
+        logger.info("On Demand poster {} failed ({})".format(url, e))
+        return onDemandError(502, "portal_error", "The portal didn't send the poster")
+    finally:
+        onDemandPosterSlots.release()
+    if upstream.status_code == 404:
+        return onDemandError(404, "not_found", "No poster")
+    if upstream.status_code != 200:
+        return onDemandError(502, "portal_error", "The portal didn't send the poster")
+    response = flask.Response(upstream.content,
+                              content_type=upstream.headers.get("Content-Type", "image/jpeg"))
+    response.headers["Cache-Control"] = "public, max-age={}".format(ONDEMAND_POSTER_AGE)
+    return response
 
 
 lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}
