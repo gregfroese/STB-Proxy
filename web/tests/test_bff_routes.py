@@ -339,3 +339,14 @@ def test_security_headers_present(client):
     response = client.get("/api/session")
     assert response.headers["x-content-type-options"] == "nosniff"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+
+def test_spa_page_is_revalidated_so_a_deploy_reaches_tv_browsers(client, tmp_path, monkeypatch):
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<!doctype html><title>app</title>")
+    monkeypatch.setattr(config_module.config, "static_dir", dist)
+    for path in ("/", "/watch", "/index.html"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-cache"

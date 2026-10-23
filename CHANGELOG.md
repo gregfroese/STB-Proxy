@@ -2,6 +2,13 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.18.4] - 2026-10-22
+
+### Web viewer
+
+- **The player's channel list scrolls on TV**: on TV browsers the right-hand pane (On now, Up next, channel up/down) now scrolls the page, with the video pinned on the left, like the channel grid in 1.18.1.
+- **Deploys reach TV browsers**: the page is now served with `Cache-Control: no-cache`, so browsers (notably Downloader's on Fire TV) check for a new version on every load instead of running an old build. The scripts and styles keep their versioned names and caching.
+
 ## [1.18.3] - 2026-10-22
 
 ### Web viewer
