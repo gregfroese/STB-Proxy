@@ -500,18 +500,22 @@ def onDemandRequest(url, mac, token, params, proxy=None):
     return response.json()["js"]
 
 
-def getOnDemandCategories(url, mac, token, proxy=None):
-    """The portal's On Demand categories, [{id, title, alias, censored}], or None."""
+def getOnDemandCategories(url, mac, token, proxy=None, source="vod"):
+    """The portal's On Demand categories, [{id, title, alias, censored}], or None.
+
+    `source` is the listing's type=: "vod", or "series" (Xtream-family portals only).
+    """
     try:
-        categories = onDemandRequest(url, mac, token, {"action": "get_categories"}, proxy)
+        categories = onDemandRequest(url, mac, token, {"type": source, "action": "get_categories"}, proxy)
         if isinstance(categories, list):
             return categories
     except Exception:
         pass
 
 
-def getOnDemandPage(url, mac, token, page, proxy=None):
-    """One page (1-based) of every On Demand item, newest added first, or None.
+def getOnDemandPage(url, mac, token, page, proxy=None, source="vod"):
+    """One page (1-based) of every On Demand item of the type=`source` listing ("vod", or
+    "series" on Xtream-family portals), newest added first, or None.
 
     Returns {"total", "pageSize", "items"}. The page size is fixed by the portal (14 on
     Infomir), and total_items comes back as a string on some portals.
@@ -519,7 +523,7 @@ def getOnDemandPage(url, mac, token, page, proxy=None):
     try:
         js = onDemandRequest(
             url, mac, token,
-            {"action": "get_ordered_list", "category": "*", "sortby": "added", "p": page},
+            {"type": source, "action": "get_ordered_list", "category": "*", "sortby": "added", "p": page},
             proxy,
         )
         return {

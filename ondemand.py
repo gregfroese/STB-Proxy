@@ -11,15 +11,25 @@ Two parts:
   status. `categories()` answers the merged category list with exact counts.
 - `Crawler`: one background thread that indexes portals one at a time, at one request a
   second, newest first, committing each page as it goes. It only runs while some Account
-  has On Demand switched on.
+  has On Demand switched on. After the first crawl it keeps each portal fresh: an
+  incremental pull every 2 h, a full re-crawl weekly at about 04:00 local that drops what
+  the portal no longer lists, and a retry 5 min after a failure (the portal reads stale
+  and keeps its last good index meanwhile).
 
 Portal access is behind a small "catalogue" object, so tests use a fake portal:
 
     catalogue.portals()          -> {portal id: portal name}, the enabled portals
     catalogue.wanted()           -> True while any Account has On Demand on
-    catalogue.categories(portal) -> [{id, title, alias, censored}] or None
-    catalogue.page(portal, p)    -> {"total", "pageSize", "items"} or None (p is 1-based)
+    catalogue.categories(portal, source="vod") -> [{id, title, alias, censored}] or None
+    catalogue.page(portal, p, source="vod")    -> {"total", "pageSize", "items"} or None
+
+`p` is 1-based. `source` is the portal's `type=`: "vod" (every portal), or "series", which
+only Xtream-family portals answer (research 01). Series from `type=series` are indexed with
+their ids, and their category ids, prefixed `series:` (SERIES), because Xtream numbers them
+apart from the Movies: the Series 7 of a portal is the item "series:7". Its raw row keeps
+the portal's own ids.
 """
+import datetime
 import json
 import logging
 import os
@@ -31,14 +41,25 @@ import time
 logger = logging.getLogger("STB-Proxy")
 
 # Bump to make every existing index file be thrown away and crawled again.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 # SQLite's page cache, in KiB (a negative cache_size is KiB): about 8 MB of RAM.
 CACHE_KIB = 8192
 # Category ids that are not real categories: the portal's "All", and Infomir's synthetic
 # "Coming soon" whose items can't be played (research 01).
 NOT_CATEGORIES = ("*", "coming_soon")
+# The id prefix of what an Xtream portal lists under type=series, items and categories.
+SERIES = "series:"
 # Seconds between portal requests while crawling.
 CRAWL_INTERVAL = 1.0
+# An incremental pull (newest first, up to the first page with nothing new) this often.
+REFRESH_AGE = 2 * 3600
+# After a failed crawl or refresh, try again this much later (as the Guide does).
+RETRY_AGE = 300
+# A full re-crawl, which drops what the portal no longer lists, at the first FULL_HOUR
+# (local time) at least FULL_AGE after the last one ended: weekly, at about 04:00 (6.5 days
+# on, so a crawl ending just after 04:00 still waits a week, not six days).
+FULL_AGE = int(6.5 * 24 * 3600)
+FULL_HOUR = 4
 
 SCHEMA = """
 CREATE TABLE items (
@@ -96,12 +117,29 @@ CREATE INDEX categories_merged ON categories (merged);
 
 CREATE TABLE portals (
     portal TEXT PRIMARY KEY,
-    status TEXT NOT NULL,            -- "indexing", "ready" or "failed"
+    status TEXT NOT NULL,            -- "indexing", "ready", "stale", "partial" or "failed"
     pages_done INTEGER NOT NULL DEFAULT 0,
     pages_total INTEGER,
-    last_refresh INTEGER             -- epoch seconds of the last complete crawl
+    last_refresh INTEGER,            -- epoch seconds of the last good refresh of any kind
+    last_full INTEGER,               -- epoch seconds of the last complete full crawl
+    partial INTEGER NOT NULL DEFAULT 0  -- the Xtream type=series paging bug cut the index short
 );
 """
+
+
+def nextFull(lastFull):
+    """When the full re-crawl after one at `lastFull` (epoch seconds) is due."""
+    after = datetime.datetime.fromtimestamp(lastFull + FULL_AGE)
+    due = after.replace(hour=FULL_HOUR, minute=0, second=0, microsecond=0)
+    if due < after:
+        due += datetime.timedelta(days=1)
+    return due.timestamp()
+
+
+def damaged(error):
+    """Whether a sqlite3 error means the file itself is bad (not busy, locked or a
+    constraint): a plain DatabaseError, as "database disk image is malformed" is."""
+    return type(error) is sqlite3.DatabaseError or isinstance(error, sqlite3.InternalError)
 
 
 def normalisedName(title):
@@ -126,21 +164,31 @@ def flag(value):
     return str(value or "").strip().lower() in ("1", "true")
 
 
-def itemRow(portal, row):
+def indexId(id, source):
+    """The id an item or category of the portal's `type=source` listing is indexed by."""
+    return SERIES + str(id) if source == "series" else str(id)
+
+
+def itemRow(portal, row, source="vod"):
     name = str(row.get("name") or "").strip()
     year = re.match(r"\d{4}", str(row.get("year") or ""))
+
+    def slot(key):
+        value = str(row.get(key) or "0")
+        return value if value == "0" else indexId(value, source)
+
     return (
         portal,
-        str(row["id"]),
-        "series" if isSeries(row) else "movie",
+        indexId(row["id"], source),
+        "series" if source == "series" or isSeries(row) else "movie",
         name,
         str(row.get("o_name") or "").strip() or name,
         int(year.group(0)) if year else None,
         str(row.get("added") or ""),
         number(row.get("rating_kinopoisk"), float),
-        str(row.get("category_id") or "0"),
-        str(row.get("category_id_1") or "0"),
-        str(row.get("category_id_2") or "0"),
+        slot("category_id"),
+        slot("category_id_1"),
+        slot("category_id_2"),
         1 if flag(row.get("censored")) or flag(row.get("lock")) else 0,
         json.dumps(row, separators=(",", ":")),
     )
@@ -199,20 +247,23 @@ class Index:
 
     # Writes (the crawler's).
 
-    def setCategories(self, portal, categories):
+    def setCategories(self, portal, categories, source="vod"):
+        """Replace the portal's categories of its `type=source` listing."""
+        offset = 1000000 if source == "series" else 0  # after the Movies' in portal order
         rows = [
-            (portal, str(c["id"]), str(c.get("title") or ""), normalisedName(c.get("title") or ""),
-             1 if flag(c.get("censored")) else 0, position)
+            (portal, indexId(c["id"], source), str(c.get("title") or ""), normalisedName(c.get("title") or ""),
+             1 if flag(c.get("censored")) else 0, offset + position)
             for position, c in enumerate(categories)
             if str(c.get("id")) not in NOT_CATEGORIES and str(c.get("title") or "").strip()
         ]
         with self.transaction() as db:
-            db.execute("DELETE FROM categories WHERE portal = ?", (portal,))
+            db.execute("DELETE FROM categories WHERE portal = ? AND (substr(id, 1, ?) = ?) = ?",
+                       (portal, len(SERIES), SERIES, source == "series"))
             db.executemany("INSERT INTO categories VALUES (?, ?, ?, ?, ?, ?)", rows)
 
-    def addItems(self, portal, items):
-        """Insert or update items, given as the portal's rows."""
-        rows = [itemRow(portal, row) for row in items if row.get("id") not in (None, "")]
+    def addItems(self, portal, items, source="vod"):
+        """Insert or update items, given as the portal's rows of its `type=source` listing."""
+        rows = [itemRow(portal, row, source) for row in items if row.get("id") not in (None, "")]
         with self.transaction() as db:
             db.executemany(
                 "INSERT INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
@@ -224,18 +275,64 @@ class Index:
                 rows,
             )
 
-    def setStatus(self, portal, status, pagesDone=None, pagesTotal=None, lastRefresh=None):
+    def keepOnly(self, portal, ids, source="vod"):
+        """Drop this portal's items of its `type=source` listing whose (indexed) ids aren't
+        in `ids`: what a full crawl no longer found."""
+        with self.transaction() as db:
+            gone = [(portal, id) for (id,) in db.execute(
+                "SELECT id FROM items WHERE portal = ? AND (substr(id, 1, ?) = ?) = ?",
+                (portal, len(SERIES), SERIES, source == "series"),
+            ) if id not in ids]
+            db.executemany("DELETE FROM items WHERE portal = ? AND id = ?", gone)
+        return len(gone)
+
+    def purge(self, portal):
+        """Forget a deleted portal: its items, categories and status."""
+        with self.transaction() as db:
+            for table in ("items", "categories", "portals"):
+                db.execute("DELETE FROM {} WHERE portal = ?".format(table), (portal,))
+
+    def setStatus(self, portal, status, pagesDone=None, pagesTotal=None, lastRefresh=None, lastFull=None,
+                  partial=None):
+        """Set a portal's status. Every other value left as None keeps what it was."""
+        partial = None if partial is None else int(bool(partial))
         with self.transaction() as db:
             db.execute(
-                "INSERT INTO portals (portal, status, pages_done, pages_total, last_refresh) "
-                "VALUES (?, ?, coalesce(?, 0), ?, ?) "
+                "INSERT INTO portals (portal, status, pages_done, pages_total, last_refresh, last_full, partial) "
+                "VALUES (?, ?, coalesce(?, 0), ?, ?, ?, coalesce(?, 0)) "
                 "ON CONFLICT (portal) DO UPDATE SET status = excluded.status, "
                 "pages_done = coalesce(?, pages_done), pages_total = coalesce(?, pages_total), "
-                "last_refresh = coalesce(?, last_refresh)",
-                (portal, status, pagesDone, pagesTotal, lastRefresh, pagesDone, pagesTotal, lastRefresh),
+                "last_refresh = coalesce(?, last_refresh), last_full = coalesce(?, last_full), "
+                "partial = coalesce(?, partial)",
+                (portal, status, pagesDone, pagesTotal, lastRefresh, lastFull, partial,
+                 pagesDone, pagesTotal, lastRefresh, lastFull, partial),
             )
 
     # Reads.
+
+    def addedOf(self, portal, ids):
+        """{id: added} of those of these item ids already indexed."""
+        ids = list(ids)
+        if not ids:
+            return {}
+        with self.lock:
+            return dict(self.db.execute(
+                "SELECT id, added FROM items WHERE portal = ? AND id IN ({})".format(",".join("?" * len(ids))),
+                [portal, *ids],
+            ).fetchall())
+
+    def refreshState(self, portal):
+        """What the crawler needs to know to schedule a portal, or None if never crawled."""
+        with self.lock:
+            row = self.db.execute(
+                "SELECT status, last_refresh, last_full, partial, pages_done FROM portals WHERE portal = ?",
+                (portal,),
+            ).fetchone()
+        if row is None:
+            return None
+        status, lastRefresh, lastFull, partial, pagesDone = row
+        return {"status": status, "lastRefresh": lastRefresh, "lastFull": lastFull, "partial": bool(partial),
+                "pagesDone": pagesDone}
 
     def status(self, portal):
         """{status, progress, lastRefresh} for one portal. A portal never crawled reads
@@ -322,10 +419,12 @@ class Transaction:
 
 
 class Crawler:
-    """Indexes portals not yet indexed, one at a time, in one background thread."""
+    """Keeps every enabled portal's index fresh, one portal at a time, in one background
+    thread: a first crawl for a portal never indexed, then an incremental pull every
+    REFRESH_AGE and a full re-crawl weekly (nextFull)."""
 
     def __init__(self, index, catalogue, sleep=time.sleep, interval=CRAWL_INTERVAL, clock=time.time,
-                 background=True):
+                 background=True, timer=threading.Timer):
         self.index = index
         self.catalogue = catalogue
         self.sleep = sleep
@@ -337,6 +436,11 @@ class Crawler:
         self.lock = threading.Lock()
         self.again = False
         self.requests = 0
+        # {portal: epoch seconds}: after a failure, nothing is tried before then.
+        self.retryAt = {}
+        # The background thread's wake-up for the next refresh due (a threading.Timer).
+        self.timer = timer
+        self.armed = None
 
     def wake(self):
         """Start crawling in the background if some Account wants On Demand and no crawl is
@@ -357,31 +461,92 @@ class Crawler:
 
     def run(self):
         while True:
+            crashed = False
             try:
                 self.crawl()
             except Exception:
                 logger.exception("On Demand crawl stopped")
+                crashed = True
             with self.lock:
                 if not self.again or not self.catalogue.wanted():
                     self.thread = None
+                    # After a crash, don't come straight back to whatever broke.
+                    self.schedule(RETRY_AGE if crashed else 0)
                     return
                 self.again = False
 
+    def schedule(self, atLeast=0):
+        """Arm one wake() for when the next refresh is due. Nothing is armed while every
+        Account is off: refreshes pause until a switch is turned on again."""
+        if self.armed is not None:
+            self.armed.cancel()
+            self.armed = None
+        if not self.catalogue.wanted():
+            return
+        self.armed = self.timer(max(atLeast, self.nextDue()), self.wake)
+        self.armed.daemon = True
+        self.armed.start()
+
+    def nextDue(self):
+        """Seconds until some enabled portal is due a crawl or refresh (at least 1)."""
+        now = self.clock()
+        waits = [REFRESH_AGE]
+        for portal in self.catalogue.portals():
+            if now < self.retryAt.get(portal, 0):
+                waits.append(self.retryAt[portal] - now)
+                continue
+            state = self.index.refreshState(portal)
+            if state is None or state["lastRefresh"] is None:
+                waits.append(0)
+            else:
+                waits.append(state["lastRefresh"] + REFRESH_AGE - now)
+                waits.append(nextFull(state["lastFull"] or state["lastRefresh"]) - now)
+        return max(1, min(waits))
+
+    def due(self, portal):
+        """What a portal needs now: "first" (never indexed), "full", "incremental", or None."""
+        if self.clock() < self.retryAt.get(portal, 0):
+            return None
+        state = self.index.refreshState(portal)
+        if state is None or state["lastRefresh"] is None:
+            return "first"
+        if self.clock() >= nextFull(state["lastFull"] or state["lastRefresh"]):
+            return "full"
+        if self.clock() - state["lastRefresh"] >= REFRESH_AGE:
+            return "incremental"
+        return None
+
     def crawl(self):
-        """Index every enabled portal that isn't indexed yet, in turn. Stops early (keeping
-        what it has) when every Account's On Demand is switched off."""
+        """Do whatever each enabled portal is due, one portal at a time. Stops early
+        (keeping what it has) when every Account's On Demand is switched off."""
         self.requests = 0
         if not self.catalogue.wanted():
             return
-        queue = {portal: name for portal, name in self.catalogue.portals().items()
-                 if self.index.status(portal)["status"] != "ready"}
-        # A portal waiting its turn is indexing too (at 0%), not failed.
-        for portal in queue:
-            self.index.setStatus(portal, "indexing")
-        for portal, name in queue.items():
+        jobs = {}
+        for portal, name in self.catalogue.portals().items():
+            job = self.due(portal)
+            if job:
+                jobs[portal] = (name, job)
+        # A portal waiting its turn for its first crawl is indexing too, not failed. A first
+        # crawl that was paused (every Account off, or a restart) keeps its place.
+        for portal, (name, job) in jobs.items():
+            if job == "first":
+                state = self.index.refreshState(portal)
+                paused = state is not None and state["status"] == "indexing"
+                self.index.setStatus(portal, "indexing", pagesDone=None if paused else 0)
+        for portal, (name, job) in jobs.items():
             if not self.catalogue.wanted():
                 return
-            self.crawlPortal(portal, name)
+            try:
+                self.refresh(portal, name, job)
+            except sqlite3.DatabaseError as e:
+                if not damaged(e):
+                    raise
+                # The file is a disposable cache: start it again, and crawl it afresh.
+                logger.error("On Demand index damaged ({}), starting it again".format(e))
+                self.index.recreate()
+                self.retryAt.clear()
+                return
 
     def request(self, call, *args):
         if self.requests:
@@ -389,35 +554,98 @@ class Crawler:
         self.requests += 1
         return call(*args)
 
-    def crawlPortal(self, portal, name):
-        logger.info("On Demand: indexing {}".format(name))
-        self.index.setStatus(portal, "indexing", pagesDone=0)
-        categories = self.request(self.catalogue.categories, portal)
+    def refresh(self, portal, name, job):
+        first, full = job == "first", job != "incremental"
+        logger.info("On Demand: {} {}".format("indexing" if first else "refreshing", name))
+        state = self.index.refreshState(portal)
+        # A paused first crawl goes on from its last page (again: new items push pages down).
+        start = max(1, state["pagesDone"]) if first and state is not None else 1
+        movies = self.listing(portal, "vod", first, full, start)
+        if movies in ("failed", "paused", "gone"):
+            return self.stopped(portal, name, movies, "the Movie listing failed")
+        # Only Xtream-family portals answer type=series; on Infomir it's no categories.
+        series = self.listing(portal, "series", False, full)
+        if series in ("failed", "paused", "gone"):
+            return self.stopped(portal, name, series, "the Series listing failed")
+        # The Xtream paging bug (type=series page 2 repeats page 1) leaves the index short.
+        # A full crawl finds out afresh; an incremental pull rarely reaches page 2.
+        partial = series == "repeated" or (not full and state is not None and state["partial"])
+        now = int(self.clock())
+        self.retryAt.pop(portal, None)
+        self.index.setStatus(portal, "partial" if partial else "ready", lastRefresh=now,
+                             lastFull=now if full else None, partial=partial)
+        logger.info("On Demand: {} {}{}".format(name, "indexed" if first else "refreshed",
+                                                 " (Series cut short by the portal)" if partial else ""))
+
+    def stopped(self, portal, name, why, failure):
+        if why == "failed":
+            self.fail(portal, name, failure)
+        elif why == "paused":
+            logger.info("On Demand: {} paused, no Account has On Demand on".format(name))
+        else:
+            logger.info("On Demand: {} stopped, the portal is gone or switched off".format(name))
+
+    def listing(self, portal, source, first, full, start=1):
+        """Pull one of the portal's listings (type=source), newest first, into the index.
+
+        A full pull walks every page, then drops what it no longer lists; an incremental
+        one ends at the first page with nothing new or changed. A pull from a `start` past
+        page 1 (a paused first crawl going on) drops nothing. Returns "done",
+        "repeated" (a page repeated the last, so the walk stopped there), "skipped"
+        (type=series not answered), "paused", "gone" (the portal was deleted or switched
+        off meanwhile: nothing more is written for it) or "failed".
+        """
+        categories = self.request(self.catalogue.categories, portal, source)
+        if portal not in self.catalogue.portals():
+            return "gone"
         if categories is None:
-            return self.fail(portal, name, "no categories")
-        self.index.setCategories(portal, categories)
-        page, pages, previous = 1, None, None
+            return "skipped" if source == "series" else "failed"
+        self.index.setCategories(portal, categories, source)
+        page, pages, previous = start, None, None
+        seen, end = set(), "done"
         while True:
             if not self.catalogue.wanted():
-                logger.info("On Demand: indexing {} paused, no Account has On Demand on".format(name))
-                return
-            result = self.request(self.catalogue.page, portal, page)
+                return "paused"
+            result = self.request(self.catalogue.page, portal, page, source)
+            if portal not in self.catalogue.portals():
+                return "gone"
             if result is None:
-                return self.fail(portal, name, "page {} failed".format(page))
+                return "failed"
             ids = [str(row.get("id")) for row in result["items"]]
-            # An empty page, or a repeat of the last one (a portal ignoring p=), is the end.
-            if not ids or ids == previous:
+            if not ids:
+                break
+            # A repeat of the last page is a portal ignoring p=: stop there.
+            if ids == previous:
+                end = "repeated"
                 break
             if result["pageSize"] and result["total"]:
                 pages = -(-result["total"] // result["pageSize"])
-            self.index.addItems(portal, result["items"])
-            self.index.setStatus(portal, "indexing", pagesDone=page, pagesTotal=pages)
+            indexIds = [indexId(id, source) for id in ids]
+            seen.update(indexIds)
+            known = {} if full else self.index.addedOf(portal, indexIds)
+            fresh = [row for id, row in zip(indexIds, result["items"])
+                     if known.get(id) != str(row.get("added") or "")]
+            self.index.addItems(portal, result["items"], source)
+            if first:
+                self.index.setStatus(portal, "indexing", pagesDone=page, pagesTotal=pages)
+            # A Series' added moves when it gains an Episode, so it counts as changed.
+            if not full and not fresh:
+                break
             if pages is not None and page >= pages:
                 break
             page, previous = page + 1, ids
-        self.index.setStatus(portal, "ready", lastRefresh=int(self.clock()))
-        logger.info("On Demand: {} indexed".format(name))
+        if full and end == "done" and start == 1:
+            dropped = self.index.keepOnly(portal, seen, source)
+            if dropped:
+                logger.info("On Demand: {} no longer lists {} items".format(portal, dropped))
+        return end
 
     def fail(self, portal, name, why):
-        logger.error("On Demand: couldn't index {} ({})".format(name, why))
-        self.index.setStatus(portal, "failed")
+        """A portal never indexed reads failed; one indexed before keeps its last good index
+        and reads stale. Either way it is tried again after RETRY_AGE."""
+        state = self.index.refreshState(portal)
+        stale = state is not None and state["lastRefresh"] is not None
+        logger.error("On Demand: couldn't {} {} ({}), retrying in {} s".format(
+            "refresh" if stale else "index", name, why, RETRY_AGE))
+        self.index.setStatus(portal, "stale" if stale else "failed")
+        self.retryAt[portal] = self.clock() + RETRY_AGE
