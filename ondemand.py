@@ -15,6 +15,9 @@ Two parts:
   incremental pull every 2 h, a full re-crawl weekly at about 04:00 local that drops what
   the portal no longer lists, and a retry 5 min after a failure (the portal reads stale
   and keeps its last good index meanwhile).
+- `SeriesCache`: a Series' Seasons and a Season's Episodes, not crawled but fetched when a
+  viewer opens them and kept in the index for about 6 h, the same for all three Series
+  shapes.
 
 Portal access is behind a small "catalogue" object, so tests use a fake portal:
 
@@ -29,6 +32,7 @@ their ids, and their category ids, prefixed `series:` (SERIES), because Xtream n
 apart from the Movies: the Series 7 of a portal is the item "series:7". Its raw row keeps
 the portal's own ids.
 """
+import base64
 import datetime
 import json
 import logging
@@ -41,7 +45,7 @@ import time
 logger = logging.getLogger("STB-Proxy")
 
 # Bump to make every existing index file be thrown away and crawled again.
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 # SQLite's page cache, in KiB (a negative cache_size is KiB): about 8 MB of RAM.
 CACHE_KIB = 8192
 # Category ids that are not real categories: the portal's "All", and Infomir's synthetic
@@ -70,6 +74,12 @@ RETRY_AGE = 300
 # on, so a crawl ending just after 04:00 still waits a week, not six days).
 FULL_AGE = int(6.5 * 24 * 3600)
 FULL_HOUR = 4
+
+# A Series' Seasons and a Season's Episodes are fetched when a viewer opens them, and kept
+# this long before the portal is asked again (ADR 0003).
+SERIES_AGE = 6 * 3600
+# A Season or Episode list is read at most this many portal pages deep.
+MAX_LIST_PAGES = 50
 
 SCHEMA = """
 CREATE TABLE items (
@@ -134,6 +144,34 @@ CREATE TABLE portals (
     last_full INTEGER,               -- epoch seconds of the last complete full crawl
     partial INTEGER NOT NULL DEFAULT 0  -- the Xtream type=series paging bug cut the index short
 );
+
+-- Seasons and Episodes, fetched when a viewer opens a Series (SeriesCache), not crawled.
+CREATE TABLE seasons (
+    portal TEXT NOT NULL,
+    series TEXT NOT NULL,            -- the Series' item id
+    id TEXT NOT NULL,                -- the portal's Season id (on Xtream, the Season number)
+    number INTEGER,
+    name TEXT,
+    episode_count INTEGER,
+    PRIMARY KEY (portal, series, id)
+);
+CREATE TABLE episodes (
+    portal TEXT NOT NULL,
+    series TEXT NOT NULL,
+    season TEXT NOT NULL,
+    id TEXT NOT NULL,                -- the portal's Episode id (Xtream and legacy: its number)
+    number INTEGER,
+    name TEXT,
+    play TEXT NOT NULL,              -- JSON: what minting the Episode's link takes (seriesShape)
+    PRIMARY KEY (portal, series, season, id)
+);
+CREATE TABLE fetched (               -- when each Season list ("" season) or Episode list was fetched
+    portal TEXT NOT NULL,
+    series TEXT NOT NULL,
+    season TEXT NOT NULL,
+    at INTEGER NOT NULL,
+    PRIMARY KEY (portal, series, season)
+);
 """
 
 
@@ -158,8 +196,17 @@ def normalisedName(title):
 
 
 def isSeries(row):
-    # Infomir flags Series inside the Movie catalogue (Shape 2); accept 1, "1" and true.
-    return str(row.get("is_series", "")).strip().lower() in ("1", "true")
+    # Infomir flags Series inside the Movie catalogue (Shape 2); accept 1, "1" and true. A
+    # legacy item (Shape 1) is a Series by its array of Episode numbers alone.
+    return str(row.get("is_series", "")).strip().lower() in ("1", "true") or bool(
+        episodeNumbers(row.get("series")))
+
+
+def episodeNumbers(value):
+    """The Episode numbers of a row's `series` array (Shape 1 items, Xtream Season rows)."""
+    if not isinstance(value, list):
+        return []
+    return [n for n in (number(v, int) for v in value) if n is not None]
 
 
 def number(value, kind):
@@ -321,12 +368,14 @@ class Index:
                 (portal, len(SERIES), SERIES, source == "series"),
             ) if id not in ids]
             db.executemany("DELETE FROM items WHERE portal = ? AND id = ?", gone)
+            for table in ("seasons", "episodes", "fetched"):
+                db.executemany("DELETE FROM {} WHERE portal = ? AND series = ?".format(table), gone)
         return len(gone)
 
     def purge(self, portal):
-        """Forget a deleted portal: its items, categories and status."""
+        """Forget a deleted portal: its items, categories, Seasons, Episodes and status."""
         with self.transaction() as db:
-            for table in ("items", "categories", "portals"):
+            for table in ("items", "categories", "seasons", "episodes", "fetched", "portals"):
                 db.execute("DELETE FROM {} WHERE portal = ?".format(table), (portal,))
 
     def setStatus(self, portal, status, pagesDone=None, pagesTotal=None, lastRefresh=None, lastFull=None,
@@ -504,6 +553,64 @@ class Index:
              for merged, count in counts.items() if count and merged in names),
             key=lambda c: c["id"],
         )
+
+    # A Series' Seasons and Episodes (SeriesCache).
+
+    def fetchedAt(self, portal, series, season=""):
+        """When the Season list (season "") or a Season's Episodes were stored, or None."""
+        with self.lock:
+            row = self.db.execute("SELECT at FROM fetched WHERE portal = ? AND series = ? AND season = ?",
+                                  (portal, series, season)).fetchone()
+        return row and row[0]
+
+    def seasonList(self, portal, series):
+        """The stored Seasons of a Series, [{id, number, name, episodeCount}], ascending."""
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT id, number, name, episode_count FROM seasons WHERE portal = ? AND series = ? "
+                "ORDER BY number IS NULL, number, id", (portal, series)).fetchall()
+        return [{"id": id, "number": n, "name": name, "episodeCount": count} for id, n, name, count in rows]
+
+    def episodeList(self, portal, series, season):
+        """The stored Episodes of a Season, [{id, seasonId, number, name, play}], ascending."""
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT id, number, name, play FROM episodes WHERE portal = ? AND series = ? AND season = ? "
+                "ORDER BY number IS NULL, number, id", (portal, series, season)).fetchall()
+        return [{"id": id, "seasonId": season, "number": n, "name": name, "play": json.loads(play)}
+                for id, n, name, play in rows]
+
+    def setSeasons(self, portal, series, seasons, at):
+        """Replace a Series' Seasons, fetched at `at`. `seasons` is [(season, episodes)],
+        where episodes is None when the portal lists them separately (Shape 2)."""
+        kept = [s["id"] for s, _ in seasons]
+        with self.transaction() as db:
+            db.execute("DELETE FROM seasons WHERE portal = ? AND series = ?", (portal, series))
+            db.executemany("INSERT OR REPLACE INTO seasons VALUES (?, ?, ?, ?, ?, ?)", [
+                (portal, series, s["id"], s["number"], s["name"], s["episodeCount"]) for s, _ in seasons])
+            for table in ("episodes", "fetched"):
+                db.execute("DELETE FROM {} WHERE portal = ? AND series = ? AND season != '' "
+                           "AND season NOT IN ({})".format(table, ",".join("?" * len(kept))),
+                           [portal, series] + kept)
+            self.storeFetched(db, portal, series, "", at)
+            for season, episodes in seasons:
+                if episodes is not None:
+                    self.storeEpisodes(db, portal, series, season["id"], episodes, at)
+
+    def setEpisodes(self, portal, series, season, episodes, at):
+        """Replace a Season's Episodes, fetched at `at`."""
+        with self.transaction() as db:
+            self.storeEpisodes(db, portal, series, season, episodes, at)
+
+    def storeEpisodes(self, db, portal, series, season, episodes, at):
+        db.execute("DELETE FROM episodes WHERE portal = ? AND series = ? AND season = ?", (portal, series, season))
+        db.executemany("INSERT OR REPLACE INTO episodes VALUES (?, ?, ?, ?, ?, ?, ?)", [
+            (portal, series, season, e["id"], e["number"], e["name"], json.dumps(e["play"])) for e in episodes])
+        self.storeFetched(db, portal, series, season, at)
+
+    @staticmethod
+    def storeFetched(db, portal, series, season, at):
+        db.execute("INSERT OR REPLACE INTO fetched VALUES (?, ?, ?, ?)", (portal, series, season, int(at)))
 
 
 class Transaction:
@@ -753,3 +860,160 @@ class Crawler:
             "refresh" if stale else "index", name, why, RETRY_AGE))
         self.index.setStatus(portal, "stale" if stale else "failed")
         self.retryAt[portal] = self.clock() + RETRY_AGE
+
+
+class PortalError(Exception):
+    """The portal didn't answer a Season or Episode list, and there is no copy to serve."""
+
+
+def seriesShape(item):
+    """Which of research 01's three Series shapes an indexed Series has:
+
+    - "legacy" (Shape 1): the item's own `series` array of Episode numbers, no Seasons.
+    - "ministra" (Shape 2, Infomir 5.x): `movie_id` lists the Seasons, then `movie_id` and
+      `season_id` a Season's Episodes, all with DB ids.
+    - "xtream" (Shape 3): type=series `movie_id` lists one row per Season, whose `series`
+      array holds the Episode positions and whose `cmd` plays any of them.
+    """
+    if item["id"].startswith(SERIES):
+        return "xtream"
+    if episodeNumbers(item["raw"].get("series")):
+        return "legacy"
+    return "ministra"
+
+
+def xtreamSeasonNumber(row, position):
+    """An Xtream Season's number. Its row id isn't unique (XC_VM gives every Season the
+    Series id), so read the number from the cmd, the id pattern or the name (research 01)."""
+    try:
+        return int(json.loads(base64.b64decode(str(row.get("cmd") or ""), validate=True))["season_num"])
+    except Exception:
+        pass
+    id, name = str(row.get("id") or ""), str(row.get("name") or "").strip()
+    for pattern, text in ((r"season(\d+)$", id), (r"\d+:(\d+)$", id), (r"season\s*(\d+)", name.lower())):
+        found = re.match(pattern, text)
+        if found:
+            return int(found.group(1))
+    return 0 if name.lower() == "specials" else position + 1
+
+
+def numbered(episodes, season):
+    """Episodes known only by number (Shapes 1 and 3): they have no titles, so names are None."""
+    return [{"id": str(n), "seasonId": season, "number": n, "name": None, "play": play}
+            for n, play in episodes]
+
+
+class SeriesCache:
+    """A Series' Seasons and a Season's Episodes, fetched from the portal when a viewer opens
+    them and kept in the index for SERIES_AGE. If the portal fails, the stale copy is served;
+    with no copy, PortalError. Every shape answers the same:
+
+        seasons(portal, id)            -> [{id, number, name, episodeCount}] ascending
+        episodes(portal, id, seasonId) -> [{id, seasonId, number, name, play}] ascending
+
+    Each returns None for what isn't there (not a Series, or not one of its Seasons). An
+    Episode's `play` is what minting its link takes: {"cmd", "series"} for create_link, or
+    {"movie_id", "season_id", "episode_id"} for Shape 2's Files step first.
+
+    The catalogue answers `list(portal, params, p, source="vod")` with one page (1-based) of
+    a get_ordered_list, {"total", "pageSize", "items"}, or None when the portal fails.
+    """
+
+    def __init__(self, index, catalogue, clock=time.time):
+        self.index = index
+        self.catalogue = catalogue
+        self.clock = clock
+
+    def fresh(self, at):
+        return at is not None and self.clock() - at < SERIES_AGE
+
+    def seasons(self, portal, id):
+        item = self.index.item(portal, id)
+        if item is None or item["kind"] != "series":
+            return None
+        at = self.index.fetchedAt(portal, item["id"])
+        if not self.fresh(at):
+            try:
+                self.index.setSeasons(portal, item["id"], self.fetchSeasons(item), self.clock())
+            except PortalError:
+                if at is None:
+                    raise
+                logger.info("On Demand Seasons of {} {}: the portal failed, serving the copy from {}".format(
+                    portal, item["id"], at))
+        return self.index.seasonList(portal, item["id"])
+
+    def episodes(self, portal, id, seasonId):
+        item = self.index.item(portal, id)
+        if item is None or item["kind"] != "series":
+            return None
+        # The Season list the viewer chose from (any age; opening the Series refreshes it).
+        if self.index.fetchedAt(portal, item["id"]) is not None:
+            seasons = self.index.seasonList(portal, item["id"])
+        else:
+            seasons = self.seasons(portal, id)
+        if seasonId not in [s["id"] for s in seasons]:
+            return None
+        at = self.index.fetchedAt(portal, item["id"], seasonId)
+        if not self.fresh(at):
+            try:
+                self.index.setEpisodes(portal, item["id"], seasonId, self.fetchEpisodes(item, seasonId),
+                                       self.clock())
+            except PortalError:
+                if at is None:
+                    raise
+                logger.info("On Demand Episodes of {} {} {}: the portal failed, serving the copy from {}".format(
+                    portal, item["id"], seasonId, at))
+        return self.index.episodeList(portal, item["id"], seasonId)
+
+    # The portal side, per shape.
+
+    def listAll(self, portal, params, source="vod"):
+        """Every row of a get_ordered_list, page by page. Stops on an empty or repeated page
+        (Xtream's type=series ignores p), or once `total` rows are in."""
+        rows, previous = [], None
+        for p in range(1, MAX_LIST_PAGES + 1):
+            page = self.catalogue.list(portal, params, p, source)
+            if page is None:
+                raise PortalError(portal)
+            items = page["items"]
+            if not items or items == previous:
+                break
+            rows.extend(items)
+            previous = items
+            if len(rows) >= page["total"]:
+                break
+        return rows
+
+    def fetchSeasons(self, item):
+        """[(season, episodes or None)] from the portal (Shape 1 needs no request)."""
+        raw, shape = item["raw"], seriesShape(item)
+        if shape == "legacy":
+            numbers = episodeNumbers(raw.get("series"))
+            season = {"id": "1", "number": 1, "name": None, "episodeCount": len(numbers)}
+            return [(season, numbered([(n, {"cmd": raw.get("cmd"), "series": n}) for n in numbers], "1"))]
+        if shape == "xtream":
+            seasons = {}
+            for position, row in enumerate(self.listAll(item["portal"], {"movie_id": raw["id"]}, "series")):
+                n = xtreamSeasonNumber(row, position)
+                numbers = episodeNumbers(row.get("series"))
+                season = {"id": str(n), "number": n, "name": present(row.get("name")),
+                          "episodeCount": len(numbers)}
+                seasons[season["id"]] = (season, numbered(
+                    [(e, {"cmd": row.get("cmd"), "series": e}) for e in numbers], season["id"]))
+            return list(seasons.values())
+        return [({"id": str(row["id"]), "number": number(row.get("season_number"), int),
+                  "name": present(row.get("season_name")),
+                  "episodeCount": number(row.get("season_series"), int)}, None)
+                for row in self.listAll(item["portal"], {"movie_id": raw["id"]})
+                if row.get("id") not in (None, "")]
+
+    def fetchEpisodes(self, item, seasonId):
+        raw = item["raw"]
+        if seriesShape(item) != "ministra":
+            # Their Episodes come with the Season rows.
+            return next((episodes for season, episodes in self.fetchSeasons(item) if season["id"] == seasonId), [])
+        rows = self.listAll(item["portal"], {"movie_id": raw["id"], "season_id": seasonId})
+        return [{"id": str(row["id"]), "seasonId": seasonId, "number": number(row.get("series_number"), int),
+                 "name": present(row.get("series_name")),
+                 "play": {"movie_id": str(raw["id"]), "season_id": seasonId, "episode_id": str(row["id"])}}
+                for row in rows if row.get("id") not in (None, "")]

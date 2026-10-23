@@ -3722,7 +3722,7 @@ def apiLineup():
 # background crawler while some Account has On Demand switched on.
 ONDEMAND_BACKGROUND = True
 ONDEMAND_CRAWL_INTERVAL = ondemand.CRAWL_INTERVAL
-onDemand = {"index": None, "crawler": None}
+onDemand = {"index": None, "crawler": None, "series": None}
 onDemandLock = threading.Lock()
 
 
@@ -3745,6 +3745,15 @@ def onDemandCrawler():
                 index, PortalCatalogue(), interval=ONDEMAND_CRAWL_INTERVAL, background=ONDEMAND_BACKGROUND
             )
         return onDemand["crawler"]
+
+
+def onDemandSeries():
+    """Seasons and Episodes, fetched when a viewer opens a Series and cached in the index."""
+    index = onDemandIndex()
+    with onDemandLock:
+        if onDemand["series"] is None:
+            onDemand["series"] = ondemand.SeriesCache(index, PortalCatalogue())
+        return onDemand["series"]
 
 
 def purgeOnDemandPortal(portalId):
@@ -3803,6 +3812,9 @@ class PortalCatalogue:
 
     def page(self, portalId, page, source="vod"):
         return self.call(portalId, stb.getOnDemandPage, page, source=source)
+
+    def list(self, portalId, params, page, source="vod"):
+        return self.call(portalId, stb.getOnDemandList, params, page, source=source)
 
 
 def onDemandError(status, code, text):
@@ -3891,11 +3903,36 @@ def onDemandDetail(portal, id):
 @feedAuthorise
 @onDemandAuthorise
 def apiOnDemandItem(portal, id):
-    """A Movie's (or Series') detail. Items of a portal switched off are not found."""
+    """A Movie's or Series' detail; a Series' also lists its Seasons, fetched from the portal
+    when stale. Items of a portal switched off are not found."""
     detail = onDemandDetail(portal, id)
     if detail is None:
         return onDemandError(404, "not_found", "That isn't in On Demand")
-    return flask.jsonify(onDemandListItem(detail, enabledOnDemandPortals()))
+    detail = onDemandListItem(detail, enabledOnDemandPortals())
+    if detail["kind"] == "series":
+        try:
+            detail["seasons"] = onDemandSeries().seasons(portal, id) or []
+        except ondemand.PortalError:
+            return onDemandError(502, "portal_error", "The portal didn't send this Series' Seasons, try again")
+    return flask.jsonify(detail)
+
+
+@app.route("/api/ondemand/series/<portal>/<seriesId>/season/<seasonId>", methods=["GET"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandSeason(portal, seriesId, seasonId):
+    """One Season's Episodes, [{id, seasonId, number, name}] in ascending order. The Series
+    must be one this viewer may see (onDemandDetail), and the Season one of its own."""
+    detail = onDemandDetail(portal, seriesId)
+    episodes = None
+    if detail is not None and detail["kind"] == "series":
+        try:
+            episodes = onDemandSeries().episodes(portal, seriesId, seasonId)
+        except ondemand.PortalError:
+            return onDemandError(502, "portal_error", "The portal didn't send this Season's Episodes, try again")
+    if episodes is None:
+        return onDemandError(404, "not_found", "That Season isn't in On Demand")
+    return flask.jsonify([{key: e[key] for key in ("id", "seasonId", "number", "name")} for e in episodes])
 
 
 # Proxied posters: at most this many portal fetches at once, each with this timeout, and a

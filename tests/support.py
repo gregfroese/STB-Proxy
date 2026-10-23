@@ -62,6 +62,7 @@ def loadApp(testCase, config):
         # On Demand tests give these a fake catalogue.
         "getOnDemandCategories": None,
         "getOnDemandPage": None,
+        "getOnDemandList": None,
     }
     for name, value in stubs.items():
         patcher = mock.patch.object(appModule.stb, name, return_value=value)
