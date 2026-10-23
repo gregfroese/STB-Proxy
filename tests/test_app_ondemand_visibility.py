@@ -5,11 +5,13 @@ import json
 import os
 import re
 import unittest
+from unittest import mock
 
 from tests.support import loadApp
 from tests.test_app_ondemand import onDemandConfig
 from tests.test_api_lineup import basic
 from tests.test_app_ondemand_browse import BrowseTestCase, movie
+from tests.test_ondemand_series import infomirEpisode, infomirSeason, infomirSeries
 
 CATEGORIES = (
     {"id": "10", "title": "Action"},
@@ -110,6 +112,51 @@ class AdultTest(VisibilityTestCase):
         self.hide("adults only", "kids")
         self.assertEqual(self.listed(username="grown"), ["Censored film", "Family film", "Locked film"])
         self.assertEqual(self.counts("grown"), {"action": 3})
+
+
+class HiddenSeriesTest(VisibilityTestCase):
+    """A Series removed by the viewer's filter is not found on its Season route either,
+    and the portal is never asked for its Seasons or Episodes."""
+
+    def setUp(self):
+        super().setUp()
+        self.fill("p1", [
+            dict(infomirSeries(77, "Kids show"), category_id_1="20"),
+            dict(infomirSeries(78, "Grown show"), category_id_2="40"),
+            dict(infomirSeries(79, "Locked show"), lock="1"),
+        ], categories=CATEGORIES)
+        self.requests = []
+        patcher = mock.patch.object(self.app.stb, "getOnDemandList", side_effect=self.portal)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def portal(self, url, mac, token, params, page, proxy=None, source="vod"):
+        self.requests.append(dict(params))
+        if "season_id" in params:
+            rows = [infomirEpisode(901, params["season_id"], 1, "One")]
+        else:
+            rows = [infomirSeason(31684, 1, "", 1)]
+        return {"total": len(rows), "pageSize": 14, "items": rows}
+
+    def code(self, path, username="viewer"):
+        response = self.get(path, username)
+        body = response.get_json()
+        return response.status_code, body.get("code") if isinstance(body, dict) else None
+
+    def test_a_hidden_series_is_not_found_on_its_detail_or_season_route(self):
+        self.hide("kids")
+        for path in ("/api/ondemand/item/p1/77", "/api/ondemand/series/p1/77/season/31684"):
+            self.assertEqual(self.code(path), (404, "not_found"), path)
+            self.assertEqual(self.code(path, "grown"), (404, "not_found"), path)
+        self.assertEqual(self.requests, [])
+
+    def test_an_adult_series_is_not_found_unless_adult_on_demand_is_on(self):
+        for id in ("78", "79"):
+            path = "/api/ondemand/series/p1/{}/season/31684".format(id)
+            self.assertEqual(self.code("/api/ondemand/item/p1/" + id), (404, "not_found"), id)
+            self.assertEqual(self.code(path), (404, "not_found"), id)
+        self.assertEqual(self.requests, [])
+        self.assertEqual(self.code("/api/ondemand/series/p1/78/season/31684", "grown"), (200, None))
 
 
 class OperatorPageTest(VisibilityTestCase):

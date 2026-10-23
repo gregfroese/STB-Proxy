@@ -520,12 +520,17 @@ def getOnDemandPage(url, mac, token, page, proxy=None, source="vod"):
     Returns {"total", "pageSize", "items"}. The page size is fixed by the portal (14 on
     Infomir), and total_items comes back as a string on some portals.
     """
+    return getOnDemandList(url, mac, token, {"category": "*", "sortby": "added"}, page, proxy, source)
+
+
+def getOnDemandList(url, mac, token, params, page, proxy=None, source="vod"):
+    """One page (1-based) of a type=`source` get_ordered_list with these extra `params`,
+    such as a Series' Seasons (movie_id) or a Season's Episodes (movie_id, season_id), or
+    None. Returns {"total", "pageSize", "items"}, as getOnDemandPage does.
+    """
     try:
-        js = onDemandRequest(
-            url, mac, token,
-            {"type": source, "action": "get_ordered_list", "category": "*", "sortby": "added", "p": page},
-            proxy,
-        )
+        query = dict(params, type=source, action="get_ordered_list", p=page)
+        js = onDemandRequest(url, mac, token, query, proxy)
         return {
             "total": int(js.get("total_items") or 0),
             "pageSize": int(js.get("max_page_items") or 0),

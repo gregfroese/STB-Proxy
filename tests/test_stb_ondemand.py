@@ -54,7 +54,20 @@ class OnDemandCallsTest(unittest.TestCase):
         stb.getOnDemandPage(URL, MAC, "token", 1, source="series")
         self.assertEqual((self.params()["type"], self.params()["sortby"]), ("series", "added"))
 
+    def test_a_page_of_a_series_drill_down_passes_the_ids_through(self):
+        self.get.return_value = response({"total_items": 2, "max_page_items": 14,
+                                          "data": [{"id": "31685"}, {"id": "31684"}]})
+        page = stb.getOnDemandList(URL, MAC, "token", {"movie_id": "77", "season_id": "31685"}, 2)
+        self.assertEqual(page, {"total": 2, "pageSize": 14, "items": [{"id": "31685"}, {"id": "31684"}]})
+        params = self.params()
+        self.assertEqual((params["type"], params["action"], params["p"]), ("vod", "get_ordered_list", 2))
+        self.assertEqual((params["movie_id"], params["season_id"]), ("77", "31685"))
+        stb.getOnDemandList(URL, MAC, "token", {"movie_id": "9"}, 1, source="series")
+        self.assertEqual((self.params()["type"], self.params()["movie_id"]), ("series", "9"))
+
     def test_failures_return_none(self):
+        self.get.return_value = response(False)
+        self.assertIsNone(stb.getOnDemandList(URL, MAC, "token", {"movie_id": "1"}, 1))
         self.get.return_value = response(False)
         self.assertIsNone(stb.getOnDemandCategories(URL, MAC, "token"))
         self.assertIsNone(stb.getOnDemandPage(URL, MAC, "token", 1))
