@@ -481,3 +481,51 @@ def getShortEpg(url, mac, token, channelIds, proxy=None):
             pass
     if epg:
         return epg
+
+
+# On Demand (the portal's type=vod catalogue). Catalogue calls take no stream slot, and
+# go through the session already held (getToken), so a crawl needs no extra login.
+def onDemandRequest(url, mac, token, params, proxy=None):
+    proxies = {"http": proxy, "https": proxy}
+    query = {"type": "vod", "JsHttpRequest": "1-xml"}
+    query.update(params)
+    response = s.get(
+        url,
+        params=query,
+        cookies=deviceCookies(mac),
+        headers=deviceHeaders(mac, token),
+        proxies=proxies,
+        timeout=TIMEOUT,
+    )
+    return response.json()["js"]
+
+
+def getOnDemandCategories(url, mac, token, proxy=None):
+    """The portal's On Demand categories, [{id, title, alias, censored}], or None."""
+    try:
+        categories = onDemandRequest(url, mac, token, {"action": "get_categories"}, proxy)
+        if isinstance(categories, list):
+            return categories
+    except Exception:
+        pass
+
+
+def getOnDemandPage(url, mac, token, page, proxy=None):
+    """One page (1-based) of every On Demand item, newest added first, or None.
+
+    Returns {"total", "pageSize", "items"}. The page size is fixed by the portal (14 on
+    Infomir), and total_items comes back as a string on some portals.
+    """
+    try:
+        js = onDemandRequest(
+            url, mac, token,
+            {"action": "get_ordered_list", "category": "*", "sortby": "added", "p": page},
+            proxy,
+        )
+        return {
+            "total": int(js.get("total_items") or 0),
+            "pageSize": int(js.get("max_page_items") or 0),
+            "items": list(js.get("data") or []),
+        }
+    except Exception:
+        pass

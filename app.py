@@ -7,6 +7,7 @@ import jellyfin
 import guide
 import logos
 import recordings
+import ondemand
 import changelog
 import version
 import os
@@ -1524,6 +1525,8 @@ def accountsToggle():
     saveAccounts(getAccounts())
     logger.info("Account({}) {}".format(username, "enabled" if enabled else "disabled"))
     flash("{} {}".format(username, "enabled" if enabled else "disabled"), "success")
+    if enabled:
+        startOnDemand()  # it may be the first Account with On Demand on
     return redirect("/accounts", code=302)
 
 
@@ -1547,6 +1550,8 @@ def accountsOnDemand():
     label = "On Demand" if switch == "on demand" else "Adult On Demand"
     logger.info("Account({}) {} {}".format(username, label, "on" if on else "off"))
     flash("{} for {} {}".format(label, username, "on" if on else "off"), "success")
+    if on:
+        startOnDemand()  # the first Account switched on starts indexing the portals
     return redirect("/accounts", code=302)
 
 
@@ -3712,6 +3717,82 @@ def apiLineup():
     })
 
 
+# The On Demand index (ADR 0003): ondemand.sqlite beside config.json, filled by one
+# background crawler while some Account has On Demand switched on.
+ONDEMAND_BACKGROUND = True
+ONDEMAND_CRAWL_INTERVAL = ondemand.CRAWL_INTERVAL
+onDemand = {"index": None, "crawler": None}
+onDemandLock = threading.Lock()
+
+
+def onDemandIndex():
+    with onDemandLock:
+        if onDemand["index"] is None:
+            onDemand["index"] = ondemand.Index(os.path.join(os.path.dirname(os.path.abspath(configFile)), "ondemand.sqlite"))
+        return onDemand["index"]
+
+
+def onDemandCrawler():
+    index = onDemandIndex()
+    with onDemandLock:
+        if onDemand["crawler"] is None:
+            onDemand["crawler"] = ondemand.Crawler(
+                index, PortalCatalogue(), interval=ONDEMAND_CRAWL_INTERVAL, background=ONDEMAND_BACKGROUND
+            )
+        return onDemand["crawler"]
+
+
+def enabledOnDemandPortals():
+    """{portal id: name} of the enabled portals, in config order."""
+    return {portal: p["name"] for portal, p in getPortals().items() if p["enabled"] == "true"}
+
+
+def anyAccountOnDemand():
+    return any(a["enabled"] and a.get("on demand") is True for a in getAccounts())
+
+
+def startOnDemand():
+    """Index any portal not yet indexed, if some Account has On Demand on (at boot, and
+    whenever an Account's On Demand is switched on)."""
+    if anyAccountOnDemand():
+        onDemandCrawler().wake()
+
+
+class PortalCatalogue:
+    """The crawler's view of the portals (see ondemand.py), through the sessions already
+    held: getToken reuses the cached session, so a crawl adds no logins of its own."""
+
+    def portals(self):
+        return enabledOnDemandPortals()
+
+    def wanted(self):
+        return anyAccountOnDemand()
+
+    def call(self, portalId, fetch, *args):
+        portal = getPortals().get(portalId)
+        if not portal:
+            return None
+        url, proxy = portal["url"], portal["proxy"]
+        for mac in portal["macs"]:
+            try:
+                token = stb.getToken(url, mac, proxy)
+                if not token:
+                    continue
+                stb.getProfile(url, mac, token, proxy)
+                result = fetch(url, mac, token, *args, proxy=proxy)
+                if result is not None:
+                    return result
+            except Exception:
+                continue
+        return None
+
+    def categories(self, portalId):
+        return self.call(portalId, stb.getOnDemandCategories)
+
+    def page(self, portalId, page):
+        return self.call(portalId, stb.getOnDemandPage, page)
+
+
 def onDemandError(status, code, text):
     """The /api/ondemand/* error shape: {"error": <human text>, "code": <machine>}."""
     return flask.jsonify({"error": text, "code": code}), status
@@ -3735,8 +3816,14 @@ def onDemandAuthorise(f):
 @feedAuthorise
 @onDemandAuthorise
 def apiOnDemandCategories():
-    """The merged On Demand categories and per-portal index status (filled in by the index)."""
-    return flask.jsonify({"categories": [], "portals": []})
+    """The merged On Demand categories, with exact counts, and each enabled portal's index
+    status (ADR 0003). Items from a portal still indexing are counted as they arrive."""
+    index = onDemandIndex()
+    portals = enabledOnDemandPortals()
+    return flask.jsonify({
+        "categories": index.categories(list(portals)),
+        "portals": [dict(portal=portal, name=name, **index.status(portal)) for portal, name in portals.items()],
+    })
 
 
 lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}
@@ -3862,6 +3949,7 @@ if __name__ == "__main__":
     # Carry on recordings that were running when STB-Proxy stopped, once it's listening:
     # they read from its own /play.
     threading.Timer(3, getRecorder().resume).start()
+    startOnDemand()  # carry on indexing On Demand if an Account has it on
     if any(looksUpLogos(p) for p in config["portals"].values()):
         currentLogoIndex()  # start fetching channel logos in the background
     if config.get("xmltv ids") != "short":

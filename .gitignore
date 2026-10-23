@@ -15,3 +15,5 @@ devices.json
 logo-index.json
 # The Android APK offered for download (dropped in at deploy time, not committed).
 static/*.apk
+# On Demand index and its SQLite side files (live next to config.json).
+ondemand.sqlite*

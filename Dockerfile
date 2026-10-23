@@ -31,6 +31,7 @@ COPY /jellyfin.py /app/jellyfin.py
 COPY /guide.py /app/guide.py
 COPY /logos.py /app/logos.py
 COPY /recordings.py /app/recordings.py
+COPY /ondemand.py /app/ondemand.py
 COPY /changelog.py /app/changelog.py
 COPY /version.py /app/version.py
 COPY /CHANGELOG.md /app/CHANGELOG.md
