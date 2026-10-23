@@ -46,6 +46,14 @@ class OnDemandCallsTest(unittest.TestCase):
         self.assertEqual((params["type"], params["action"]), ("vod", "get_ordered_list"))
         self.assertEqual((params["category"], params["sortby"], params["p"]), ("*", "added", 2))
 
+    def test_xtream_series_are_read_with_type_series(self):
+        self.get.return_value = response([{"id": "3", "title": "Kids", "alias": "kids"}])
+        stb.getOnDemandCategories(URL, MAC, "token", source="series")
+        self.assertEqual((self.params()["type"], self.params()["action"]), ("series", "get_categories"))
+        self.get.return_value = response({"total_items": 1, "max_page_items": 14, "data": [{"id": "9"}]})
+        stb.getOnDemandPage(URL, MAC, "token", 1, source="series")
+        self.assertEqual((self.params()["type"], self.params()["sortby"]), ("series", "added"))
+
     def test_failures_return_none(self):
         self.get.return_value = response(False)
         self.assertIsNone(stb.getOnDemandCategories(URL, MAC, "token"))

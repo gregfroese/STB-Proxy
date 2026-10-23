@@ -86,22 +86,34 @@ def row(id, name, cat0, cat1="0", cat2="0", series=0):
 
 
 class FakePortals:
-    """The portals' On Demand catalogues, served through the stubbed stb calls (no network)."""
+    """The portals' On Demand catalogues, served through the stubbed stb calls (no network).
+
+    A catalogue with a "series" entry ({"categories", "items"}) also answers type=series
+    (an Xtream-family portal); without one, type=series answers None (Infomir).
+    """
 
     def __init__(self, testCase, app, catalogues):
         self.catalogues = catalogues  # {portal url: {"categories": [...], "items": [...]}}
         self.pages = []
+        self.seriesPages = []
         for name, fake in (("getOnDemandCategories", self.categories), ("getOnDemandPage", self.page)):
             patcher = mock.patch.object(app.stb, name, side_effect=fake)
             patcher.start()
             testCase.addCleanup(patcher.stop)
 
-    def categories(self, url, mac, token, proxy=None):
-        return self.catalogues[url]["categories"]
+    def listing(self, url, source):
+        return self.catalogues[url] if source == "vod" else self.catalogues[url].get("series")
 
-    def page(self, url, mac, token, page, proxy=None):
-        self.pages.append((url, page))
-        items = self.catalogues[url]["items"]
+    def categories(self, url, mac, token, proxy=None, source="vod"):
+        listing = self.listing(url, source)
+        return listing and listing["categories"]
+
+    def page(self, url, mac, token, page, proxy=None, source="vod"):
+        (self.pages if source == "vod" else self.seriesPages).append((url, page))
+        listing = self.listing(url, source)
+        if listing is None:
+            return None
+        items = listing["items"]
         return {"total": len(items), "pageSize": 14, "items": items[(page - 1) * 14:page * 14]}
 
 
@@ -199,6 +211,43 @@ class CrawlGatingTest(OnDemandTestCase):
         self.client.post("/accounts/toggle", headers=basic("admin", "12345"),
                          data={"username": "disabled", "enabled": "true"})
         self.assertEqual(len(self.fake.pages), 1)
+
+
+class PortalLifecycleTest(OnDemandTestCase):
+    def setUp(self):
+        self.app = loadApp(self, onDemandConfig(portals={
+            "p1": portalConfig(name="First", url=URL1),
+            "p2": portalConfig(name="Xtream", url=URL2),
+        }))
+        self.client = self.app.app.test_client()
+        self.app.getSettings()["enable security"] = "true"
+        self.addAccount("viewer", onDemand=True)
+        self.fake = FakePortals(self, self.app, {
+            URL1: {"categories": [{"id": "10", "title": "Action", "alias": "action"}],
+                   "items": [row(1, "A", "10"), row(2, "B", "10")]},
+            URL2: {"categories": [{"id": "10", "title": "Action", "alias": "action"}],
+                   "items": [row(1, "C", "10")],
+                   "series": {"categories": [{"id": "3", "title": "Kids", "alias": "kids"}],
+                              "items": [row(1, "Show", "3", series=1)]}},
+        })
+        self.app.startOnDemand()
+
+    def categories(self):
+        body = self.get("/api/ondemand/categories", "viewer").get_json()
+        return {c["name"]: c["count"] for c in body["categories"]}
+
+    def test_an_xtream_portal_is_crawled_for_series_too(self):
+        self.assertEqual(self.fake.seriesPages, [(URL2, 1)])
+        self.assertEqual(self.categories(), {"Action": 3, "Kids": 1})
+
+    def test_deleting_a_portal_purges_its_index_rows(self):
+        response = self.client.post("/portal/remove", headers=basic("admin", "12345"), data={"deleteId": "p2"})
+        self.assertEqual(response.status_code, 302)
+        index = self.app.onDemandIndex()
+        self.assertIsNone(index.item("p2", "1"))
+        self.assertEqual(index.categories(["p2"]), [])
+        self.assertEqual(index.status("p2")["status"], "failed")
+        self.assertEqual(self.categories(), {"Action": 2})
 
 
 if __name__ == "__main__":

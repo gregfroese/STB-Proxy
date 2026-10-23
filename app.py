@@ -746,6 +746,7 @@ def portalRemove():
     name = portals[id]["name"]
     del portals[id]
     savePortals(portals)
+    purgeOnDemandPortal(id)
     logger.info("Portal ({}) removed!".format(name))
     flash("Portal ({}) removed!".format(name), "success")
     return redirect("/portals", code=302)
@@ -3725,10 +3726,14 @@ onDemand = {"index": None, "crawler": None}
 onDemandLock = threading.Lock()
 
 
+def onDemandIndexFile():
+    return os.path.join(os.path.dirname(os.path.abspath(configFile)), "ondemand.sqlite")
+
+
 def onDemandIndex():
     with onDemandLock:
         if onDemand["index"] is None:
-            onDemand["index"] = ondemand.Index(os.path.join(os.path.dirname(os.path.abspath(configFile)), "ondemand.sqlite"))
+            onDemand["index"] = ondemand.Index(onDemandIndexFile())
         return onDemand["index"]
 
 
@@ -3740,6 +3745,13 @@ def onDemandCrawler():
                 index, PortalCatalogue(), interval=ONDEMAND_CRAWL_INTERVAL, background=ONDEMAND_BACKGROUND
             )
         return onDemand["crawler"]
+
+
+def purgeOnDemandPortal(portalId):
+    """Drop a deleted portal's On Demand index rows (a disabled one keeps them, hidden)."""
+    if onDemand["index"] is None and not os.path.exists(onDemandIndexFile()):
+        return  # never indexed anything
+    onDemandIndex().purge(portalId)
 
 
 def enabledOnDemandPortals():
@@ -3768,7 +3780,7 @@ class PortalCatalogue:
     def wanted(self):
         return anyAccountOnDemand()
 
-    def call(self, portalId, fetch, *args):
+    def call(self, portalId, fetch, *args, source="vod"):
         portal = getPortals().get(portalId)
         if not portal:
             return None
@@ -3779,18 +3791,18 @@ class PortalCatalogue:
                 if not token:
                     continue
                 stb.getProfile(url, mac, token, proxy)
-                result = fetch(url, mac, token, *args, proxy=proxy)
+                result = fetch(url, mac, token, *args, proxy=proxy, source=source)
                 if result is not None:
                     return result
             except Exception:
                 continue
         return None
 
-    def categories(self, portalId):
-        return self.call(portalId, stb.getOnDemandCategories)
+    def categories(self, portalId, source="vod"):
+        return self.call(portalId, stb.getOnDemandCategories, source=source)
 
-    def page(self, portalId, page):
-        return self.call(portalId, stb.getOnDemandPage, page)
+    def page(self, portalId, page, source="vod"):
+        return self.call(portalId, stb.getOnDemandPage, page, source=source)
 
 
 def onDemandError(status, code, text):
