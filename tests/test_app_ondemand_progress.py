@@ -6,6 +6,7 @@ from unittest import mock
 
 from tests.test_api_lineup import basic
 from tests.test_app_ondemand_browse import URL1, BrowseTestCase, movie
+from tests.test_app_ondemand_play import PlayTestCase
 from tests.test_ondemand_series import infomirEpisode, infomirSeason, infomirSeries
 
 T0 = 1_800_000_000
@@ -338,6 +339,21 @@ class ProgressRequestTest(ProgressTestCase):
         self.assertEqual(response.get_json()["code"], "on_demand_off")
         response = self.get("/api/ondemand/continue", "off")
         self.assertEqual((response.status_code, response.get_json()["code"]), (404, "on_demand_off"))
+
+
+class SessionTest(PlayTestCase):
+    def test_reports_never_keep_a_paused_session_alive(self):
+        started = self.play({"portal": "p1", "id": "5"})
+        self.text(started["url"])
+        for _ in range(4):  # paused: the player only reports
+            self.now += 30
+            response = self.client.put("/api/ondemand/progress", headers=basic("viewer", "secret"),
+                                       json={"portal": "p1", "id": "5", "positionSec": 600, "durationSec": 6000})
+            self.assertEqual(response.status_code, 204)
+        self.assertEqual(self.streaming(), [])
+        body = self.fetch(started["url"], status=410).get_json()
+        self.assertEqual(body["reason"], "idle")
+        self.assertEqual(self.fetch("/api/ondemand/item/p1/5").get_json()["progress"]["positionSec"], 600)
 
 
 if __name__ == "__main__":
