@@ -37,6 +37,92 @@ function loadPolicy(retries: number) {
   };
 }
 
+interface VodOptions {
+  url: string;
+  media: HTMLVideoElement;
+  /** Where to start once loaded (a Resume point), in seconds. */
+  startSec: number;
+  /** The stream can't carry on; `status` is the failing request's HTTP status, if any. */
+  onFatal: (status: number | null) => void;
+  /** The browser refused to autoplay with sound, so playback started muted. */
+  onMutedAutoplay?: () => void;
+}
+
+function playWithFallback(media: HTMLVideoElement, onMuted?: () => void) {
+  const play = media.play() as unknown as Promise<void> | undefined;
+  if (!play || typeof play.catch !== "function") return;
+  play.catch((error: unknown) => {
+    if (!(error instanceof DOMException) || error.name !== "NotAllowedError" || media.muted) return;
+    media.muted = true;
+    onMuted?.();
+    const retry = media.play() as unknown as Promise<void> | undefined;
+    if (retry && typeof retry.catch === "function") retry.catch(() => undefined);
+  });
+}
+
+/**
+ * An On Demand session's HLS (ticket 12): VOD, seekable, starting at `startSec`. hls.js
+ * where MSE exists, else the browser's own HLS (Safari). The session's segments are never
+ * shared, so a 4xx (410 when the session ended) is fatal straight away.
+ */
+export function attachVod(options: VodOptions): HlsHandle {
+  const media = options.media;
+  let failed = false;
+  const fail = (status: number | null) => {
+    if (failed) return;
+    failed = true;
+    options.onFatal(status);
+  };
+
+  if (!Hls.isSupported() && media.canPlayType("application/vnd.apple.mpegurl")) {
+    const onMeta = () => {
+      if (options.startSec > 0) media.currentTime = options.startSec;
+      playWithFallback(media, options.onMutedAutoplay);
+    };
+    const onError = () => fail(null);
+    media.addEventListener("loadedmetadata", onMeta, { once: true });
+    media.addEventListener("error", onError);
+    media.src = options.url;
+    return {
+      destroy() {
+        media.removeEventListener("loadedmetadata", onMeta);
+        media.removeEventListener("error", onError);
+        media.removeAttribute("src");
+        media.load();
+      },
+    };
+  }
+
+  const hls = new Hls({
+    // No blob worker (strict CSP), as for live.
+    enableWorker: false,
+    startPosition: options.startSec > 0 ? options.startSec : -1,
+    maxBufferLength: 30,
+    backBufferLength: 30,
+    manifestLoadPolicy: loadPolicy(1),
+    playlistLoadPolicy: loadPolicy(2),
+    fragLoadPolicy: loadPolicy(3),
+  });
+  hls.on(Hls.Events.ERROR, (_event, data) => {
+    const status = data.response?.code ?? null;
+    // A 410 is the session ending: don't let hls.js stall on it as a non-fatal error.
+    if (data.fatal || status === 410) fail(status || null);
+  });
+  hls.on(Hls.Events.MANIFEST_PARSED, () => playWithFallback(media, options.onMutedAutoplay));
+  hls.loadSource(options.url);
+  hls.attachMedia(media);
+
+  return {
+    destroy() {
+      try {
+        hls.destroy();
+      } catch {
+        /* already torn down */
+      }
+    },
+  };
+}
+
 export function attachHls(options: AttachOptions): HlsHandle | null {
   if (!Hls.isSupported()) return null;
 

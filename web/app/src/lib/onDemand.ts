@@ -80,9 +80,10 @@ async function onDemandMutate<T>(
   path: string,
   body: unknown,
   method: "POST" | "PUT" | "DELETE",
+  keepalive = false,
 ): Promise<T> {
   try {
-    return await mutate<T>(path, body, method);
+    return await mutate<T>(path, body, method, keepalive);
   } catch (error) {
     if (isOnDemandOff(error)) onDemandOff();
     throw error;
@@ -98,9 +99,48 @@ export function startSession(key: OnDemandKey, replaces?: string): Promise<OnDem
   );
 }
 
-/** Release a session now (DELETE /session/<sid>). */
-export function endSession(sid: string): Promise<void> {
-  return onDemandMutate<void>(`/api/ondemand/session/${part(sid)}`, undefined, "DELETE");
+/** Release a session now (DELETE /session/<sid>); `keepalive` as the page goes away. */
+export function endSession(sid: string, keepalive = false): Promise<void> {
+  return onDemandMutate<void>(`/api/ondemand/session/${part(sid)}`, undefined, "DELETE", keepalive);
+}
+
+/**
+ * A playback report (07): fire-and-forget, never retried. `keepalive` when the page is
+ * being hidden or left, so the report still lands.
+ */
+export function reportProgress(
+  key: OnDemandKey,
+  sample: { positionSec: number; durationSec: number | null },
+  keepalive = false,
+): Promise<void> {
+  return onDemandMutate<void>(
+    "/api/ondemand/progress",
+    { ...key, positionSec: sample.positionSec, durationSec: sample.durationSec },
+    "PUT",
+    keepalive,
+  );
+}
+
+/**
+ * Fetch a session's playlist again after the stream failed, for its status and body: a
+ * 410 `session_ended` names the reason (hls.js only sees the status). null when it can't
+ * be reached at all.
+ */
+export async function probeSession(url: string): Promise<{ status: number | null; body: unknown }> {
+  try {
+    const response = await fetch(url, { credentials: "same-origin", cache: "no-store" });
+    let body: unknown = null;
+    if (!response.ok) {
+      try {
+        body = await response.json();
+      } catch {
+        /* not JSON */
+      }
+    }
+    return { status: response.status, body };
+  } catch {
+    return { status: null, body: null };
+  }
 }
 
 /** The hand mark (07): Watched, or not (which also clears the Resume point). */
