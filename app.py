@@ -8,6 +8,7 @@ import guide
 import logos
 import recordings
 import ondemand
+import ondemandsession
 import changelog
 import version
 import collections
@@ -2863,23 +2864,30 @@ def makeRoom(portalId, kind, starting):
     the portal's streams per MAC, stopping streams with a lower claim, oldest first, if it
     doesn't. starting is the new channel's own shared stream. True if it fits."""
     with admissionLock:
-        while True:
-            with sharedStreamsLock:
-                others = [s for s in sharedStreams.values() if s is not starting and not s.done]
-            tunersFull = len(others) >= tunerCount()
-            portalFull = not portalHasFreeSlot(portalId)
-            if not tunersFull and not portalFull:
-                return True
-            # Only streams nobody but previews watches (or nobody at all), including ones
-            # still connecting; and only for a recording or a player.
-            victims = [
-                s for s in others
-                if s.priority() == KIND_PRIORITY["preview"] < KIND_PRIORITY[kind]
-                and (not portalFull or s.key[0] == portalId)
-            ]
-            if not victims:
-                return False
-            stopForRoom(min(victims, key=lambda s: s.created), kind)
+        return roomFor(portalId, kind, starting)
+
+
+def roomFor(portalId, kind, starting=None, tuner=True):
+    """makeRoom's work, for a caller already holding admissionLock. tuner=False is an On
+    Demand session: it needs a slot on the portal's MACs but no Tuner (ADR 0005)."""
+    onDemandSessions.sweep()  # an idle session's slot is free
+    while True:
+        with sharedStreamsLock:
+            others = [s for s in sharedStreams.values() if s is not starting and not s.done]
+        tunersFull = tuner and len(others) >= tunerCount()
+        portalFull = not portalHasFreeSlot(portalId)
+        if not tunersFull and not portalFull:
+            return True
+        # Only streams nobody but previews watches (or nobody at all), including ones
+        # still connecting; and only for a recording or a player.
+        victims = [
+            s for s in others
+            if s.priority() == KIND_PRIORITY["preview"] < KIND_PRIORITY[kind]
+            and (not portalFull or s.key[0] == portalId)
+        ]
+        if not victims:
+            return False
+        stopForRoom(min(victims, key=lambda s: s.created), kind)
 
 
 @app.route("/play/<portalId>/<channelId>", methods=["GET"])
@@ -3468,6 +3476,7 @@ def dashboard():
 @app.route("/streaming")
 @authorise
 def streaming():
+    onDemandSessions.sweep()  # an idle On Demand session is gone, not still streaming
     return flask.jsonify(occupied)
 
 
@@ -3481,7 +3490,16 @@ def streams():
 @authorise
 def stopStream():
     """Stop an active stream from the Streams page: kill its ffmpeg and drop its viewers,
-    freeing its tuner."""
+    freeing its tuner. An On Demand session is named by `session` instead, and ends with
+    the reason "stopped"."""
+    sid = request.form.get("session")
+    if sid:
+        session = onDemandSessions.sessions.get(sid)
+        if session is None or session.reason is not None:
+            return flask.jsonify({"error": "That stream is not running"}), 404
+        logger.info("Operator stopped the On Demand session of {} ({})".format(session.account, session.title))
+        session.end("stopped")
+        return flask.jsonify({"ok": True})
     portalId = request.form.get("portal")
     channelId = request.form.get("channel")
     with sharedStreamsLock:
@@ -4185,6 +4203,256 @@ def apiOnDemandPoster(portal, id):
                               content_type=upstream.headers.get("Content-Type", "image/jpeg"))
     response.headers["Cache-Control"] = "public, max-age={}".format(ONDEMAND_POSTER_AGE)
     return response
+
+
+# On Demand sessions (ADR 0005): POST /play admits the viewer and mints the link, then the
+# session's rewritten HLS is served under /api/ondemand/session/<sid>/. A session holds one
+# Streams Per MAC slot (its line in `occupied`) and no Tuner, and never re-mints.
+ONDEMAND_SESSION_SWEEP = 15  # seconds between sweeps for idle sessions (0: requests sweep)
+onDemandSessions = ondemandsession.Sessions()
+onDemandSweeper = {"thread": None}
+SESSION_ENDED = {
+    "evicted": "Playback stopped: the portal ended this stream",
+    "idle": "Playback stopped after a while with nothing playing",
+    "stopped": "Playback was stopped",
+}
+
+
+class OnDemandRefusal(Exception):
+    """A /play that can't go ahead, as its onDemandError."""
+
+    def __init__(self, status, code, text):
+        super().__init__(text)
+        self.status, self.code, self.text = status, code, text
+
+
+def startOnDemandSweeper():
+    """End idle sessions even when nobody asks, so their slots come back for live viewing."""
+    with onDemandLock:
+        if ONDEMAND_SESSION_SWEEP <= 0 or onDemandSweeper["thread"] is not None:
+            return
+
+        def sweep():
+            while True:
+                time.sleep(ONDEMAND_SESSION_SWEEP)
+                try:
+                    onDemandSessions.sweep()
+                except Exception as e:
+                    logger.info("On Demand session sweep failed ({})".format(e))
+
+        onDemandSweeper["thread"] = threading.Thread(target=sweep, daemon=True)
+        onDemandSweeper["thread"].start()
+
+
+def onDemandId(value):
+    """An id from a JSON body as text, or None if it isn't one."""
+    if isinstance(value, bool) or not isinstance(value, (str, int)) or str(value) == "":
+        return None
+    return str(value)
+
+
+def onDemandPlayable(body):
+    """(portal, title, play) for a /play body: `play` is {"cmd", "series"} for create_link,
+    or the get_ordered_list params of the Files step that finds the cmd (ondemand.SeriesCache).
+    The item goes through onDemandDetail first, so what this viewer can't see is not found."""
+    notFound = OnDemandRefusal(404, "not_found", "That isn't in On Demand")
+    malformed = OnDemandRefusal(400, "bad_request", "Send portal and id, or portal, seriesId, seasonId and episodeId")
+    portal = body.get("portal")
+    if not isinstance(portal, str):
+        raise malformed
+    if "id" in body:
+        id = onDemandId(body["id"])
+        if id is None:
+            raise malformed
+        detail = onDemandDetail(portal, id)
+        if detail is None or detail["kind"] != "movie":
+            raise notFound
+        raw = onDemandIndex().item(portal, id)["raw"]
+        if str(raw.get("has_files") or "0") != "0":
+            return portal, detail["name"], {"movie_id": str(raw["id"])}  # Infomir: choose a file
+        return portal, detail["name"], {"cmd": raw.get("cmd"), "series": 0}
+    seriesId, seasonId, episodeId = (onDemandId(body.get(k)) for k in ("seriesId", "seasonId", "episodeId"))
+    if None in (seriesId, seasonId, episodeId):
+        raise malformed
+    detail = onDemandDetail(portal, seriesId)
+    if detail is None or detail["kind"] != "series":
+        raise notFound
+    try:
+        episodes = onDemandSeries().episodes(portal, seriesId, seasonId) or []
+    except ondemand.PortalError:
+        raise OnDemandRefusal(502, "portal_error", "The portal didn't send this Season's Episodes, try again")
+    episode = next((e for e in episodes if e["id"] == episodeId), None)
+    if episode is None:
+        raise notFound
+    season = next((s for s in onDemandIndex().seasonList(portal, seriesId) if s["id"] == seasonId), {})
+    label = " ".join(part.format(n) for part, n in (("S{}", season.get("number")), ("E{}", episode["number"]))
+                     if n is not None)
+    return portal, detail["name"] + (" - " + label if label else ""), episode["play"]
+
+
+def mintOnDemandLink(portalId, mac, play):
+    """The session's link, minted with `mac` (the session's pinned MAC). Raises
+    ondemandsession.Denied or UpstreamError."""
+    portal = getPortals()[portalId]
+    url, proxy = portal["url"], portal.get("proxy") or None
+    token = stb.getToken(url, mac, proxy)
+    if not token:
+        raise ondemandsession.UpstreamError("no portal session")
+    stb.getProfile(url, mac, token, proxy)
+    if "cmd" in play:
+        cmd, series = play["cmd"], play["series"]
+    else:
+        page = stb.getOnDemandList(url, mac, token, play, 1, proxy)
+        if page is None:
+            raise ondemandsession.UpstreamError("the Files step failed")
+        files = [row for row in page["items"] if isinstance(row, dict) and row.get("cmd")]
+        if not files:
+            raise ondemandsession.Denied("no file to play")
+        cmd, series = files[0]["cmd"], 0
+    if not cmd:
+        raise ondemandsession.Denied("nothing to play")
+    if "://" in str(cmd):
+        return ondemandsession.linkFrom(cmd, url)  # a direct URL plays without create_link
+    return ondemandsession.linkFrom(stb.getOnDemandLink(url, mac, token, cmd, series, proxy), url)
+
+
+def freeOnDemandMac(portalId, preferred=None):
+    """A MAC of the portal with a free slot, `preferred` if it has one. Under admissionLock."""
+    portal = getPortals()[portalId]
+    perMac = int(portal.get("streams per mac"))
+    entries = occupied.get(portalId, [])
+    free = [mac for mac in portal["macs"]
+            if perMac == 0 or sum(1 for e in entries if e["mac"] == mac) < perMac]
+    return preferred if preferred in free else (free[0] if free else None)
+
+
+def startOnDemandSession(portalId, title, play, account, replaces, ip):
+    """Admit, mint and open a session: {session, type, url, durationSec}. Raises
+    OnDemandRefusal."""
+    portal = getPortals()[portalId]
+    replaced = onDemandSessions.find(replaces, account) if replaces else None
+    with admissionLock:
+        preferred = None
+        if replaced is not None and replaced.reason is None:
+            # The viewer's own next Episode or title: its slot passes straight over.
+            preferred = replaced.mac if replaced.portal == portalId else None
+            replaced.end("stopped")
+        mac = freeOnDemandMac(portalId, preferred) if roomFor(portalId, "client", tuner=False) else None
+        if mac is None:
+            logger.info("No free slot for an On Demand session on Portal({})".format(portalId))
+            raise OnDemandRefusal(503, "busy", TUNER_BUSY)
+        entry = {
+            "mac": mac,
+            "channel id": None,
+            "channel name": title,
+            "client": ip,
+            "account": account,
+            "portal name": portal["name"],
+            "start time": datetime.now(timezone.utc).timestamp(),
+            "kind": "on demand",
+            "kinds": ["on demand"],
+            "viewers": 1,
+            "accounts": [account],
+        }
+        occupied.setdefault(portalId, []).append(entry)
+
+    def release():
+        entries = occupied.get(portalId, [])
+        for i, e in enumerate(entries):
+            if e is entry:
+                del entries[i]
+                break
+        logger.info("Unoccupied Portal({}):MAC({})".format(portalId, mac))
+
+    session = onDemandSessions.new(
+        account, portalId, mac, title, proxy=portal.get("proxy") or None,
+        headers={"User-Agent": stb.deviceHeaders(mac)["User-Agent"]}, onEnd=release)
+    entry["session"] = session.sid
+    logger.info("Occupied Portal({}):MAC({}) for On Demand ({}) by {}".format(portalId, mac, title, account))
+    try:
+        durationSec = session.open(mintOnDemandLink(portalId, mac, play))
+    except Exception as e:
+        session.end("stopped")
+        onDemandSessions.discard(session)
+        if isinstance(e, ondemandsession.Denied):
+            logger.info("Portal({}) won't play {} ({})".format(portalId, title, e))
+            raise OnDemandRefusal(404, "not_found", "The portal won't play that")
+        if isinstance(e, ondemandsession.NotHls):
+            logger.info("Portal({}) sent {} as {}, not HLS".format(portalId, title, e))
+            raise OnDemandRefusal(502, "unsupported_stream", "That isn't a stream STB-Proxy can play yet")
+        logger.info("On Demand link for {} on Portal({}):MAC({}) failed ({})".format(title, portalId, mac, e))
+        moveMac(portalId, mac)
+        raise OnDemandRefusal(502, "portal_error", "The portal didn't start playback, try again")
+    startOnDemandSweeper()
+    return {"session": session.sid, "type": "hls",
+            "url": "/api/ondemand/session/{}/{}".format(session.sid, ondemandsession.MASTER),
+            "durationSec": durationSec}
+
+
+@app.route("/api/ondemand/play", methods=["POST"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandPlay():
+    """Start an On Demand session for a Movie ({portal, id}) or an Episode ({portal,
+    seriesId, seasonId, episodeId}), handing over the slot of the viewer's own session
+    named by `replaces`."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return onDemandError(400, "bad_request", "Send a JSON object")
+    replaces = body.get("replaces")
+    try:
+        portal, title, play = onDemandPlayable(body)
+        started = startOnDemandSession(portal, title, play, viewerOnDemand().account["username"],
+                                       replaces if isinstance(replaces, str) else None, request.remote_addr)
+    except OnDemandRefusal as refusal:
+        return onDemandError(refusal.status, refusal.code, refusal.text)
+    return flask.jsonify(started)
+
+
+def onDemandSession(sid):
+    """This viewer's session `sid` (ended or not), else None: another login's is not found."""
+    return onDemandSessions.find(sid, viewerOnDemand().account["username"])
+
+
+def sessionEnded(reason):
+    return flask.jsonify({"error": SESSION_ENDED[reason], "code": "session_ended", "reason": reason}), 410
+
+
+@app.route("/api/ondemand/session/<sid>/<name>", methods=["GET"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandSessionFile(sid, name):
+    """A session's rewritten playlist, or a segment streamed through from the portal's
+    storage. Its URIs are names relative to /api/ondemand/session/<sid>/."""
+    session = onDemandSession(sid)
+    if session is None:
+        return onDemandError(404, "not_found", "No such session")
+    try:
+        if name.endswith(".m3u8"):
+            response = flask.Response(session.playlist(name), content_type=ondemandsession.PLAYLIST_TYPE)
+        else:
+            status, headers, chunks = session.segment(name, request.headers.get("Range"))
+            response = flask.Response(
+                chunks, status=status, direct_passthrough=True,
+                content_type=headers.pop("Content-Type", "application/octet-stream"), headers=headers)
+    except ondemandsession.Ended as ended:
+        return sessionEnded(ended.reason)
+    except KeyError:
+        return onDemandError(404, "not_found", "No such file in this session")
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/api/ondemand/session/<sid>", methods=["DELETE"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandSessionEnd(sid):
+    """Release a session's slot now (the player closed)."""
+    session = onDemandSession(sid)
+    if session is None:
+        return onDemandError(404, "not_found", "No such session")
+    session.end("stopped")
+    return "", 204
 
 
 lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}
