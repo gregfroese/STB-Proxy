@@ -5,17 +5,16 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import cc.selfhosters.stbproxy.data.OnDemandChanges
 import cc.selfhosters.stbproxy.data.SessionController
 import cc.selfhosters.stbproxy.data.SessionState
 import cc.selfhosters.stbproxy.data.model.OnDemandCategory
-import cc.selfhosters.stbproxy.data.model.OnDemandDetail
 import cc.selfhosters.stbproxy.data.model.OnDemandItem
 import cc.selfhosters.stbproxy.data.model.OnDemandPortalStatus
 import cc.selfhosters.stbproxy.data.network.ApiClient
 import cc.selfhosters.stbproxy.data.network.ApiException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -51,12 +50,6 @@ data class OnDemandUiState(
     }
 }
 
-/** The TV preview pane: the focused title at once, its details once focus settles. */
-data class PreviewState(
-    val item: OnDemandItem? = null,
-    val detail: OnDemandDetail? = null,
-)
-
 /**
  * On Demand browse (ticket 13). One instance drives the TV three panes or the phone's
  * top screen ([overview] = true: categories, status and Continue watching), and one per
@@ -64,11 +57,15 @@ data class PreviewState(
  *
  * Errors: a 401 drops to Login; a 404 `on_demand_off` has already switched On Demand
  * off app-wide (in [ApiClient]), and the shell leaves these screens.
+ *
+ * When a title's viewer state changes ([OnDemandChanges]: back from the player, Mark
+ * watched), its row, the preview pane and Continue watching are refetched.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class OnDemandViewModel(
     private val api: ApiClient,
     private val session: SessionController,
+    changes: OnDemandChanges,
     private val overview: Boolean,
     category: String = ALL_ID,
 ) : ViewModel() {
@@ -90,14 +87,26 @@ class OnDemandViewModel(
         .flatMapLatest { it.state }
         .stateIn(viewModelScope, SharingStarted.Eagerly, TitleListState())
 
-    private val _preview = MutableStateFlow(PreviewState())
-    val preview: StateFlow<PreviewState> = _preview.asStateFlow()
-    private var previewJob: Job? = null
-    private val details = LinkedHashMap<String, OnDemandDetail>()
+    /** The TV preview pane: Play, Seasons and Episodes of the focused title. */
+    val detail = TitleDetailController(api, viewModelScope, changes, session::reportUnauthorized)
+    val preview: StateFlow<TitleDetailState> get() = detail.state
 
     init {
         if (overview) refreshOverview()
         loadPage()
+        viewModelScope.launch { changes.changes.collect(::onTitleChanged) }
+    }
+
+    /** [key]'s viewer state changed: refetch its row, the pane (if showing it) and Continue watching. */
+    private fun onTitleChanged(key: String) {
+        refreshContinue()
+        detail.refresh(key)
+        val listed = pager.value.state.value.items.firstOrNull { itemKey(it) == key } ?: return
+        viewModelScope.launch {
+            guarded(onError = {}) {
+                pager.value.replace(api.fetchOnDemandItem(listed.portal, listed.id).asItem())
+            }
+        }
     }
 
     /** Categories, portal status and Continue watching (the overview), then the list. */
@@ -168,29 +177,10 @@ class OnDemandViewModel(
 
     /**
      * The TV preview pane follows focus: the row shows at once, and its details (for a
-     * Series, its Seasons; 14 adds Episodes) are asked for only once focus has stayed
+     * Series, its Seasons, then Episodes) are asked for only once focus has stayed
      * [PREVIEW_SETTLE_MS], so walking the list doesn't fire a request per row.
      */
-    fun onPreviewFocus(item: OnDemandItem) {
-        val key = itemKey(item)
-        if (_preview.value.item?.let(::itemKey) == key) return
-        previewJob?.cancel()
-        _preview.value = PreviewState(item = item, detail = details[key])
-        if (details.containsKey(key)) return
-        previewJob = viewModelScope.launch {
-            delay(PREVIEW_SETTLE_MS)
-            guarded(onError = {}) {
-                val detail = api.fetchOnDemandItem(item.portal, item.id)
-                remember(key, detail)
-                _preview.update { if (it.item?.let(::itemKey) == key) it.copy(detail = detail) else it }
-            }
-        }
-    }
-
-    private fun remember(key: String, detail: OnDemandDetail) {
-        details[key] = detail
-        if (details.size > DETAIL_CACHE) details.remove(details.keys.first())
-    }
+    fun onPreviewFocus(item: OnDemandItem) = detail.show(item, PREVIEW_SETTLE_MS)
 
     private fun restartList() {
         pagerJob?.cancel()
@@ -231,15 +221,14 @@ class OnDemandViewModel(
     }
 
     companion object {
-        private const val DETAIL_CACHE = 50
-
         fun factory(
             api: ApiClient,
             session: SessionController,
+            changes: OnDemandChanges,
             overview: Boolean,
             category: String = ALL_ID,
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { OnDemandViewModel(api, session, overview, category) }
+            initializer { OnDemandViewModel(api, session, changes, overview, category) }
         }
     }
 }

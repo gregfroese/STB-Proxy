@@ -9,6 +9,7 @@ import cc.selfhosters.stbproxy.data.AccountStore
 import cc.selfhosters.stbproxy.data.AccountStorage
 import cc.selfhosters.stbproxy.data.AndroidAccountStorage
 import cc.selfhosters.stbproxy.data.OnDemandAvailability
+import cc.selfhosters.stbproxy.data.OnDemandChanges
 import cc.selfhosters.stbproxy.data.SessionController
 import cc.selfhosters.stbproxy.data.ViewerPreferences
 import cc.selfhosters.stbproxy.data.ZapScopeStore
@@ -18,6 +19,9 @@ import cc.selfhosters.stbproxy.data.network.ApiClient
 import cc.selfhosters.stbproxy.data.network.BasicAuthInterceptor
 import cc.selfhosters.stbproxy.data.network.ConnectionProbe
 import cc.selfhosters.stbproxy.data.network.sameOriginAs
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -66,6 +70,15 @@ class AppContainer(
 
     /** Whether this login gets On Demand: the lineup's flag, dropped on any `on_demand_off`. */
     val onDemandAvailability: OnDemandAvailability = OnDemandAvailability()
+
+    /** A title's viewer state changed (left the player, Mark watched): screens refetch it. */
+    val onDemandChanges: OnDemandChanges = OnDemandChanges()
+
+    /**
+     * For fire-and-forget calls that must outlive the screen making them: ending an
+     * On Demand session and its last progress report as the player closes.
+     */
+    val backgroundScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     val apiClient: ApiClient = ApiClient(
         client = okHttpClient,

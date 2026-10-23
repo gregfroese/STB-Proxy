@@ -34,9 +34,14 @@ import cc.selfhosters.stbproxy.ui.common.isTvDevice
 import cc.selfhosters.stbproxy.ui.guide.GuideScreen
 import cc.selfhosters.stbproxy.ui.login.LoginScreen
 import cc.selfhosters.stbproxy.ui.multiview.MultiviewScreen
+import cc.selfhosters.stbproxy.data.model.OnDemandKey
+import cc.selfhosters.stbproxy.data.model.OnDemandPlayback
 import cc.selfhosters.stbproxy.ui.ondemand.OnDemandCategoryScreen
 import cc.selfhosters.stbproxy.ui.ondemand.OnDemandItemScreen
+import cc.selfhosters.stbproxy.ui.ondemand.OnDemandPlayStart
+import cc.selfhosters.stbproxy.ui.ondemand.OnDemandPlayerScreen
 import cc.selfhosters.stbproxy.ui.ondemand.OnDemandScreen
+import cc.selfhosters.stbproxy.ui.ondemand.PlayChoice
 import cc.selfhosters.stbproxy.ui.picker.PickerScreen
 import cc.selfhosters.stbproxy.ui.player.PlayerScreen
 import cc.selfhosters.stbproxy.ui.settings.SettingsScreen
@@ -72,6 +77,71 @@ object Routes {
 
     fun onDemandItem(portal: String, id: String, backLabel: String): String =
         "$ON_DEMAND/item?$ARG_PORTAL=${Uri.encode(portal)}&$ARG_ID=${Uri.encode(id)}&$ARG_BACK=${Uri.encode(backLabel)}"
+
+    const val ARG_SERIES = "series"
+    const val ARG_SEASON = "season"
+    const val ARG_EPISODE = "episode"
+    const val ARG_START = "start"
+    const val ARG_TITLE = "title"
+    const val ARG_SUBTITLE = "subtitle"
+    const val ARG_SESSION = "session"
+    const val ARG_URL = "url"
+    const val ARG_DURATION = "duration"
+
+    /** The On Demand player, with the session Play started (ticket 14 → 15). */
+    const val ON_DEMAND_PLAYER_ROUTE = "$ON_DEMAND/play?$ARG_PORTAL={$ARG_PORTAL}&$ARG_ID={$ARG_ID}" +
+        "&$ARG_SERIES={$ARG_SERIES}&$ARG_SEASON={$ARG_SEASON}&$ARG_EPISODE={$ARG_EPISODE}" +
+        "&$ARG_START={$ARG_START}&$ARG_TITLE={$ARG_TITLE}&$ARG_SUBTITLE={$ARG_SUBTITLE}" +
+        "&$ARG_SESSION={$ARG_SESSION}&$ARG_URL={$ARG_URL}&$ARG_DURATION={$ARG_DURATION}"
+
+    val ON_DEMAND_PLAYER_ARGS: List<String> = listOf(
+        ARG_PORTAL, ARG_ID, ARG_SERIES, ARG_SEASON, ARG_EPISODE, ARG_START,
+        ARG_TITLE, ARG_SUBTITLE, ARG_SESSION, ARG_URL, ARG_DURATION,
+    )
+
+    fun onDemandPlayer(start: OnDemandPlayStart): String {
+        val key = start.choice.key
+        val args = mapOf(
+            ARG_PORTAL to key.portal,
+            ARG_ID to (key as? OnDemandKey.Movie)?.id.orEmpty(),
+            ARG_SERIES to (key as? OnDemandKey.Episode)?.seriesId.orEmpty(),
+            ARG_SEASON to (key as? OnDemandKey.Episode)?.seasonId.orEmpty(),
+            ARG_EPISODE to (key as? OnDemandKey.Episode)?.episodeId.orEmpty(),
+            ARG_START to start.choice.startSec.toString(),
+            ARG_TITLE to start.choice.title,
+            ARG_SUBTITLE to start.choice.subtitle.orEmpty(),
+            ARG_SESSION to start.playback.session,
+            ARG_URL to start.playback.absoluteUrl,
+            ARG_DURATION to (start.playback.durationSec?.toString() ?: ""),
+        )
+        return "$ON_DEMAND/play?" + args.entries.joinToString("&") { (k, v) -> "$k=${Uri.encode(v)}" }
+    }
+
+    /** The player route's args back as the hand-off [onDemandPlayer] encoded. */
+    fun onDemandPlayStartOf(arg: (String) -> String): OnDemandPlayStart {
+        val portal = arg(ARG_PORTAL)
+        val series = arg(ARG_SERIES)
+        val key = if (series.isEmpty()) {
+            OnDemandKey.Movie(portal, arg(ARG_ID))
+        } else {
+            OnDemandKey.Episode(portal, series, arg(ARG_SEASON), arg(ARG_EPISODE))
+        }
+        val url = arg(ARG_URL)
+        return OnDemandPlayStart(
+            choice = PlayChoice(
+                key = key,
+                startSec = arg(ARG_START).toIntOrNull() ?: 0,
+                title = arg(ARG_TITLE),
+                subtitle = arg(ARG_SUBTITLE).takeIf { it.isNotEmpty() },
+            ),
+            playback = OnDemandPlayback(
+                session = arg(ARG_SESSION),
+                url = url,
+                durationSec = arg(ARG_DURATION).toIntOrNull(),
+                absoluteUrl = url,
+            ),
+        )
+    }
 
     /** True for On Demand's screens (its destination and the phone's pushed screens). */
     fun isOnDemand(route: String): Boolean = route == ON_DEMAND || route.startsWith("$ON_DEMAND/")
@@ -317,6 +387,19 @@ private fun AppNavHost(
             OnDemandScreen(
                 onOpenCategory = { id, name -> navController.navigate(Routes.onDemandCategory(id, name)) },
                 onOpenItem = { item, back -> navController.navigate(Routes.onDemandItem(item.portal, item.id, back)) },
+                onPlay = { navController.navigate(Routes.onDemandPlayer(it)) },
+            )
+        }
+        composable(
+            route = Routes.ON_DEMAND_PLAYER_ROUTE,
+            arguments = Routes.ON_DEMAND_PLAYER_ARGS.map { name ->
+                navArgument(name) { type = NavType.StringType; defaultValue = "" }
+            },
+        ) { entry ->
+            val args = entry.arguments
+            OnDemandPlayerScreen(
+                start = Routes.onDemandPlayStartOf { args?.getString(it).orEmpty() },
+                onBack = { navController.popBackStack() },
             )
         }
         composable(
@@ -348,6 +431,7 @@ private fun AppNavHost(
                 id = args?.getString(Routes.ARG_ID).orEmpty(),
                 backLabel = args?.getString(Routes.ARG_BACK).orEmpty(),
                 onBack = { navController.popBackStack() },
+                onPlay = { navController.navigate(Routes.onDemandPlayer(it)) },
             )
         }
         composable(Routes.MULTIVIEW) {
