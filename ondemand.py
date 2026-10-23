@@ -29,6 +29,7 @@ their ids, and their category ids, prefixed `series:` (SERIES), because Xtream n
 apart from the Movies: the Series 7 of a portal is the item "series:7". Its raw row keeps
 the portal's own ids.
 """
+import collections
 import datetime
 import json
 import logging
@@ -221,6 +222,48 @@ def searchQuery(text):
     return " ".join('"{}"*'.format(word) for word in re.findall(r"\w+", text))
 
 
+class Filter(collections.namedtuple("Filter", "hidden adult")):
+    """What one viewer may see of the catalogue (ADR 0004).
+
+    - `hidden`: merged category names (normalisedName) no viewer sees.
+    - `adult`: whether adult content is allowed. When it isn't, categories the portal flags
+      censored and items flagged censored or lock are removed too.
+
+    Hiding is strict: an item with a removed category in any of its 3 slots is gone.
+    Filter() removes nothing (the operator's view).
+    """
+
+    def __new__(cls, hidden=(), adult=True):
+        return super().__new__(cls, frozenset(normalisedName(name) for name in hidden), bool(adult))
+
+    def where(self, alias="i"):
+        """(SQL condition on the items row `alias`, args): true for an item this viewer may
+        see, or None when nothing is removed. The one place the filter is applied."""
+        removed, args = [], []
+        if self.hidden:
+            removed.append("hc.merged IN ({})".format(",".join("?" * len(self.hidden))))
+            args.extend(sorted(self.hidden))
+        if not self.adult:
+            removed.append("hc.censored = 1")
+        if not removed:
+            return None
+        sql = ("NOT EXISTS (SELECT 1 FROM categories hc WHERE hc.portal = {0}.portal "
+               "AND hc.id IN ({0}.category_0, {0}.category_1, {0}.category_2) AND ({1}))").format(
+            alias, " OR ".join(removed))
+        if not self.adult:
+            sql = "{}.adult = 0 AND {}".format(alias, sql)
+        return sql, args
+
+
+def visibleWhere(where, args, visible, alias="i"):
+    """A list of SQL conditions and their args, joined with AND, plus the Filter's."""
+    extra = visible.where(alias)
+    if extra is not None:
+        where = list(where) + [extra[0]]
+        args = list(args) + extra[1]
+    return " AND ".join(where), args
+
+
 def listItem(portal, id, kind, name, year, rating, added, raw):
     """A list item for the viewer API, placeholders read None. `poster` is the portal's
     own poster URL here; the caller adds `portalName` and swaps in its proxied poster."""
@@ -387,13 +430,14 @@ class Index:
             progress = min(99, int(100 * done / total)) if total else 0
         return {"status": status, "progress": progress, "lastRefresh": lastRefresh}
 
-    def item(self, portal, id):
-        """One indexed item, or None: its indexed columns plus the portal's row as `raw`."""
+    def item(self, portal, id, visible=Filter()):
+        """One indexed item `visible` (a Filter) lets through, or None: its indexed columns
+        plus the portal's row as `raw`."""
+        where, args = visibleWhere(["i.portal = ?", "i.id = ?"], [portal, str(id)], visible)
         with self.lock:
             row = self.db.execute(
                 "SELECT kind, name, original_name, year, added, rating, category_0, category_1, "
-                "category_2, adult, json FROM items WHERE portal = ? AND id = ?",
-                (portal, str(id)),
+                "category_2, adult, json FROM items i WHERE " + where, args,
             ).fetchone()
         if row is None:
             return None
@@ -405,10 +449,11 @@ class Index:
             "raw": json.loads(raw),
         }
 
-    def detail(self, portal, id):
-        """A Movie's or Series' detail for the viewer API, or None: its list item plus
-        the portal's facts, placeholders None, `categories` as merged ids."""
-        item = self.item(portal, id)
+    def detail(self, portal, id, visible=Filter()):
+        """A Movie's or Series' detail for the viewer API, or None (also when `visible`, a
+        Filter, removes it): its list item plus the portal's facts, placeholders None,
+        `categories` as merged ids."""
+        item = self.item(portal, id, visible)
         if item is None:
             return None
         raw = item["raw"]
@@ -433,8 +478,9 @@ class Index:
         )
         return detail
 
-    def items(self, portals, category=None, q=None, sort=None, offset=0, limit=60):
-        """A page of the items of these portals: (exact total, [list item]).
+    def items(self, portals, category=None, q=None, sort=None, offset=0, limit=60, visible=Filter()):
+        """A page of the items of these portals that `visible` (a Filter) lets through:
+        (exact total, [list item]).
 
         - `category` is a merged category id; None is "All", where an item in several
           categories is still one item.
@@ -458,7 +504,7 @@ class Index:
             where.append("EXISTS (SELECT 1 FROM categories c WHERE c.portal = i.portal "
                          "AND c.merged = ? AND c.id IN (i.category_0, i.category_1, i.category_2))")
             args = args + [category]
-        where = " AND ".join(where)
+        where, args = visibleWhere(where, args, visible)
         if sort:
             order = SORTS[sort]
         else:
@@ -472,8 +518,9 @@ class Index:
                 args + [limit, offset]).fetchall()
         return total, [listItem(*row[:-1], json.loads(row[-1])) for row in rows]
 
-    def categories(self, portals):
-        """The On Demand categories of these portals, merged by normalised name.
+    def categories(self, portals, visible=Filter()):
+        """The On Demand categories of these portals, merged by normalised name, counting
+        only the items `visible` (a Filter) lets through.
 
         [{id, name, count}] in name order. `id` is the merged name, `name` takes its casing
         from the first of `portals` that has the category, and `count` is the exact number
@@ -484,11 +531,12 @@ class Index:
         if not portals:
             return []
         marks = ",".join("?" * len(portals))
+        where, args = visibleWhere(["i.portal IN ({})".format(marks)], portals, visible)
         with self.lock:
             counts = dict(self.db.execute(
                 "SELECT c.merged, count(DISTINCT i.rowid) FROM items i JOIN categories c "
                 "ON c.portal = i.portal AND c.id IN (i.category_0, i.category_1, i.category_2) "
-                "WHERE i.portal IN ({}) GROUP BY c.merged".format(marks), portals
+                "WHERE {} GROUP BY c.merged".format(where), args
             ).fetchall())
             titles = self.db.execute(
                 "SELECT portal, merged, title FROM categories WHERE portal IN ({}) "
@@ -504,6 +552,49 @@ class Index:
              for merged, count in counts.items() if count and merged in names),
             key=lambda c: c["id"],
         )
+
+    def catalogue(self, portals):
+        """The operator's view of the merged categories of these portals, nothing filtered:
+        [{id, name, portals, count, adult}] by id, empty categories included. `portals` lists
+        the portals carrying the category (in the order given) and `adult` is whether any of
+        them flags it censored.
+        """
+        portals = list(portals)
+        if not portals:
+            return []
+        marks = ",".join("?" * len(portals))
+        with self.lock:
+            counts = dict(self.db.execute(
+                "SELECT c.merged, count(DISTINCT i.rowid) FROM items i JOIN categories c "
+                "ON c.portal = i.portal AND c.id IN (i.category_0, i.category_1, i.category_2) "
+                "WHERE i.portal IN ({}) GROUP BY c.merged".format(marks), portals
+            ).fetchall())
+            rows = self.db.execute(
+                "SELECT portal, merged, title, censored FROM categories WHERE portal IN ({}) "
+                "ORDER BY position".format(marks), portals
+            ).fetchall()
+        merged = {}
+        for portal in portals:
+            for owner, id, title, censored in rows:
+                if owner != portal:
+                    continue
+                category = merged.setdefault(
+                    id, {"id": id, "name": title, "portals": [], "count": counts.get(id, 0), "adult": False})
+                if portal not in category["portals"]:
+                    category["portals"].append(portal)
+                category["adult"] = category["adult"] or bool(censored)
+        return sorted(merged.values(), key=lambda c: c["id"])
+
+    def itemCounts(self, portals):
+        """{portal: number of indexed items} for these portals, nothing filtered."""
+        portals = list(portals)
+        if not portals:
+            return {}
+        with self.lock:
+            counts = dict(self.db.execute(
+                "SELECT portal, count(*) FROM items WHERE portal IN ({}) GROUP BY portal".format(
+                    ",".join("?" * len(portals))), portals).fetchall())
+        return {portal: counts.get(portal, 0) for portal in portals}
 
 
 class Transaction:

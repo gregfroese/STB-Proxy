@@ -10,6 +10,7 @@ import recordings
 import ondemand
 import changelog
 import version
+import collections
 import os
 import shutil
 import json
@@ -174,6 +175,11 @@ def loadConfig():
         data["default blocks"] = []
     else:
         data["default blocks"] = [name for name in data["default blocks"] if isinstance(name, str)]
+    # Keyed by merged, normalised name, like the categories viewers see (ADR 0004).
+    hiddenOnDemand = data.get("hidden on demand categories")
+    hiddenOnDemand = hiddenOnDemand if isinstance(hiddenOnDemand, list) else []
+    data["hidden on demand categories"] = list(dict.fromkeys(
+        ondemand.normalisedName(name) for name in hiddenOnDemand if isinstance(name, str) and name.strip()))
     if not isinstance(data.get("block order"), list):
         data["block order"] = []
     else:
@@ -415,8 +421,18 @@ def viewerBlocks():
     return None
 
 
+def getHiddenOnDemand():
+    """The merged names of the On Demand categories no viewer sees (ADR 0004)."""
+    return config.setdefault("hidden on demand categories", [])
+
+
+OnDemandViewer = collections.namedtuple("OnDemandViewer", "account filter")
+
+
 def viewerOnDemand():
-    """The Account this request may use On Demand as, else None (ADR 0004).
+    """Who this request may use On Demand as, else None (ADR 0004): an OnDemandViewer of
+    the Account and its effective ondemand.Filter (the hidden categories, plus adult
+    content unless its "adult on demand" switch is on).
 
     Only an enabled Account with its "on demand" switch on. Anonymous requests and the
     operator login (which Plex and Jellyfin use) never get On Demand. Requires
@@ -424,7 +440,8 @@ def viewerOnDemand():
     """
     account = getattr(g, "account", None) if flask.has_request_context() else None
     if account is not None and account["enabled"] and account.get("on demand") is True:
-        return account
+        return OnDemandViewer(account, ondemand.Filter(
+            hidden=getHiddenOnDemand(), adult=account.get("adult on demand") is True))
     return None
 
 
@@ -3747,11 +3764,18 @@ def onDemandCrawler():
         return onDemand["crawler"]
 
 
+def existingOnDemandIndex():
+    """The On Demand index, or None if nothing was ever indexed (so the file isn't made)."""
+    if onDemand["index"] is None and not os.path.exists(onDemandIndexFile()):
+        return None
+    return onDemandIndex()
+
+
 def purgeOnDemandPortal(portalId):
     """Drop a deleted portal's On Demand index rows (a disabled one keeps them, hidden)."""
-    if onDemand["index"] is None and not os.path.exists(onDemandIndexFile()):
-        return  # never indexed anything
-    onDemandIndex().purge(portalId)
+    index = existingOnDemandIndex()
+    if index is not None:
+        index.purge(portalId)
 
 
 def enabledOnDemandPortals():
@@ -3768,6 +3792,62 @@ def startOnDemand():
     whenever an Account's On Demand is switched on)."""
     if anyAccountOnDemand():
         onDemandCrawler().wake()
+
+
+@app.route("/ondemand", methods=["GET"])
+@authorise
+def onDemandPage():
+    """The operator's On Demand page (ADR 0004): each enabled portal's index status, the
+    merged categories with Hide toggles, and hidden names no portal has any more. Visibility
+    controls only, not an On Demand browser."""
+    portals = enabledOnDemandPortals()
+    index = existingOnDemandIndex()
+    hidden = getHiddenOnDemand()
+    statuses, categories = [], []
+    if index is not None:
+        counts = index.itemCounts(portals)
+        for portal, name in portals.items():
+            status = index.status(portal)
+            lastRefresh = status["lastRefresh"]
+            statuses.append(dict(
+                status, portal=portal, name=name, items=counts[portal],
+                lastRefreshIso=datetime.fromtimestamp(lastRefresh, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                if lastRefresh else None,
+                lastRefreshText=datetime.fromtimestamp(lastRefresh).strftime("%Y-%m-%d %H:%M")
+                if lastRefresh else None,
+            ))
+        categories = [dict(c, portalNames=[portals[p] for p in c["portals"]], hidden=c["id"] in hidden)
+                      for c in index.catalogue(portals)]
+    known = {c["id"] for c in categories}
+    return render_template(
+        "ondemand.html",
+        indexed=index is not None,
+        anyOn=anyAccountOnDemand(),
+        statuses=statuses,
+        categories=categories,
+        stale=[name for name in hidden if name not in known],
+    )
+
+
+@app.route("/ondemand/hide", methods=["POST"])
+@authorise
+def onDemandHide():
+    """Hide an On Demand category from every viewer, or show it again, by merged name."""
+    name = ondemand.normalisedName(request.form.get("name", ""))
+    hidden = request.form.get("hidden") == "true"
+    names = [n for n in getHiddenOnDemand() if n != name]
+    if hidden:
+        index = existingOnDemandIndex()
+        known = {c["id"] for c in index.catalogue(enabledOnDemandPortals())} if index else set()
+        if name not in known:
+            flash("No On Demand category called {}".format(name), "danger")
+            return redirect("/ondemand", code=302)
+        names.append(name)
+    config["hidden on demand categories"] = names
+    writeConfig(config)
+    logger.info("On Demand category({}) {}".format(name, "hidden" if hidden else "shown"))
+    flash("{} is {}".format(name, "hidden from every viewer" if hidden else "shown to viewers again"), "success")
+    return redirect("/ondemand", code=302)
 
 
 class PortalCatalogue:
@@ -3833,7 +3913,7 @@ def apiOnDemandCategories():
     index = onDemandIndex()
     portals = enabledOnDemandPortals()
     return flask.jsonify({
-        "categories": index.categories(list(portals)),
+        "categories": index.categories(list(portals), visible=viewerOnDemand().filter),
         "portals": [dict(portal=portal, name=name, **index.status(portal)) for portal, name in portals.items()],
     })
 
@@ -3872,7 +3952,8 @@ def apiOnDemandItems():
     if q is not None and len(q.strip()) < 2:
         return onDemandError(400, "bad_request", "Search for at least 2 characters")
     total, items = onDemandIndex().items(
-        list(portals), category=request.args.get("category") or None, q=q, sort=sort, offset=offset, limit=limit)
+        list(portals), category=request.args.get("category") or None, q=q, sort=sort, offset=offset, limit=limit,
+        visible=viewerOnDemand().filter)
     return flask.jsonify({
         "items": [onDemandListItem(item, portals) for item in items],
         "total": total, "offset": offset, "limit": limit,
@@ -3880,11 +3961,14 @@ def apiOnDemandItems():
 
 
 def onDemandDetail(portal, id):
-    """An item's detail if this viewer may see it, else None: the one lookup the item and
-    poster routes share. A portal switched off hides its items at once (its rows stay)."""
-    if portal not in enabledOnDemandPortals():
+    """An item's detail if this viewer may see it, else None: the one visibility lookup
+    for a single item, shared by every route that opens one (detail, poster, Seasons and
+    Episodes, play, progress). A portal switched off hides its items at once (its rows
+    stay), and the viewer's Filter removes hidden and, unless allowed, adult items."""
+    viewer = viewerOnDemand()
+    if viewer is None or portal not in enabledOnDemandPortals():
         return None
-    return onDemandIndex().detail(portal, id)
+    return onDemandIndex().detail(portal, id, visible=viewer.filter)
 
 
 @app.route("/api/ondemand/item/<portal>/<id>", methods=["GET"])
