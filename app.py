@@ -687,6 +687,7 @@ def portalsAdd():
         savePortals(portals)
         logger.info("Portal({}) added!".format(portal["name"]))
         flash("Portal({}) added!".format(name), "success")
+        startOnDemand()  # index its On Demand now, not at the next refresh
 
     else:
         logger.error("None of the MACs tested OK for Portal({}). Not added".format(name))
@@ -744,6 +745,8 @@ def portalUpdate():
         savePortals(portals)
         logger.info("Portal({}) updated!".format(name))
         flash("Portal({}) updated!".format(name), "success")
+        if enabled == "true":
+            startOnDemand()  # a portal switched on (again) is indexed now if it's due
         if logosChanged:
             portalLogos.pop(id, None)
             if looksUpLogos(portals[id]):
@@ -2829,13 +2832,19 @@ def tunerCount():
         return 1
 
 
-def portalHasFreeSlot(portalId):
+def portalHasFreeSlot(portalId, ignoring=None):
+    """Whether a MAC of the portal has a free slot. `ignoring` is an `occupied` entry to count
+    as free: the session a `replaces` hands its slot over from."""
+    return freeMacs(portalId, ignoring) != []
+
+
+def freeMacs(portalId, ignoring=None):
+    """The portal's MACs with a free slot (all of them with no streams per MAC limit)."""
     portal = getPortals()[portalId]
     perMac = int(portal.get("streams per mac"))
-    if perMac == 0:
-        return True
-    entries = occupied.get(portalId, [])
-    return any(sum(1 for e in entries if e["mac"] == mac) < perMac for mac in portal["macs"])
+    entries = [e for e in occupied.get(portalId, []) if e is not ignoring]
+    return [mac for mac in portal["macs"]
+            if perMac == 0 or sum(1 for e in entries if e["mac"] == mac) < perMac]
 
 
 def noteOutcome(tile, reason):
@@ -2867,15 +2876,16 @@ def makeRoom(portalId, kind, starting):
         return roomFor(portalId, kind, starting)
 
 
-def roomFor(portalId, kind, starting=None, tuner=True):
+def roomFor(portalId, kind, starting=None, tuner=True, ignoring=None):
     """makeRoom's work, for a caller already holding admissionLock. tuner=False is an On
-    Demand session: it needs a slot on the portal's MACs but no Tuner (ADR 0005)."""
+    Demand session: it needs a slot on the portal's MACs but no Tuner (ADR 0005). `ignoring`
+    is an `occupied` entry whose slot counts as free (see portalHasFreeSlot)."""
     onDemandSessions.sweep()  # an idle session's slot is free
     while True:
         with sharedStreamsLock:
             others = [s for s in sharedStreams.values() if s is not starting and not s.done]
         tunersFull = tuner and len(others) >= tunerCount()
-        portalFull = not portalHasFreeSlot(portalId)
+        portalFull = not portalHasFreeSlot(portalId, ignoring)
         if not tunersFull and not portalFull:
             return True
         # Only streams nobody but previews watches (or nobody at all), including ones
@@ -3010,7 +3020,7 @@ def playChannel(portalId, channelId):
     url = portal.get("url")
     macs = list(portal["macs"].keys())
     streamsPerMac = int(portal.get("streams per mac"))
-    proxy = portal.get("proxy")
+    proxy = portal["proxy"]
     web = request.args.get("web")
     recording = request.args.get("recording")
     kind = "preview" if web else "recording" if recording else "client"
@@ -3129,7 +3139,7 @@ def playChannel(portalId, channelId):
                 if channelName in fallbackChannels.values():
                     url = portals[portal].get("url")
                     macs = list(portals[portal]["macs"].keys())
-                    proxy = portals[portal].get("proxy")
+                    proxy = portals[portal]["proxy"]
                     for mac in macs:
                         channels = None
                         cmd = None
@@ -4184,9 +4194,9 @@ def apiOnDemandPoster(portal, id):
         return onDemandError(404, "not_found", "No poster")
     parsed = urlparse(getPortals()[portal]["url"])
     url = urljoin(parsed.scheme + "://" + parsed.netloc + "/", detail["poster"])
-    proxy = getPortals()[portal].get("proxy") or None
+    proxy = getPortals()[portal]["proxy"]
     if not onDemandPosterSlots.acquire(timeout=ONDEMAND_POSTER_WAIT):
-        return flask.jsonify({"error": "Too many posters at once, try again"}), 504
+        return onDemandError(504, "timeout", "Too many posters at once, try again")
     try:
         upstream = requests.get(url, timeout=ONDEMAND_POSTER_TIMEOUT,
                                 proxies={"http": proxy, "https": proxy} if proxy else None)
@@ -4213,6 +4223,7 @@ onDemandSessions = ondemandsession.Sessions()
 onDemandSweeper = {"thread": None}
 SESSION_ENDED = {
     "evicted": "Playback stopped: the portal ended this stream",
+    "failed": "Playback was interrupted: the portal stopped sending this stream",
     "idle": "Playback stopped after a while with nothing playing",
     "stopped": "Playback was stopped",
 }
@@ -4294,7 +4305,7 @@ def mintOnDemandLink(portalId, mac, play):
     """The session's link, minted with `mac` (the session's pinned MAC). Raises
     ondemandsession.Denied or UpstreamError."""
     portal = getPortals()[portalId]
-    url, proxy = portal["url"], portal.get("proxy") or None
+    url, proxy = portal["url"], portal["proxy"]
     token = stb.getToken(url, mac, proxy)
     if not token:
         raise ondemandsession.UpstreamError("no portal session")
@@ -4316,28 +4327,34 @@ def mintOnDemandLink(portalId, mac, play):
     return ondemandsession.linkFrom(stb.getOnDemandLink(url, mac, token, cmd, series, proxy), url)
 
 
-def freeOnDemandMac(portalId, preferred=None):
+def freeOnDemandMac(portalId, preferred=None, ignoring=None):
     """A MAC of the portal with a free slot, `preferred` if it has one. Under admissionLock."""
-    portal = getPortals()[portalId]
-    perMac = int(portal.get("streams per mac"))
-    entries = occupied.get(portalId, [])
-    free = [mac for mac in portal["macs"]
-            if perMac == 0 or sum(1 for e in entries if e["mac"] == mac) < perMac]
+    free = freeMacs(portalId, ignoring)
     return preferred if preferred in free else (free[0] if free else None)
+
+
+def sessionEntry(session):
+    """The `occupied` entry holding a playing session's slot, else None."""
+    return next((e for e in occupied.get(session.portal, []) if e.get("session") == session.sid), None)
 
 
 def startOnDemandSession(portalId, title, play, account, replaces, ip):
     """Admit, mint and open a session: {session, type, url, durationSec}. Raises
-    OnDemandRefusal."""
+    OnDemandRefusal.
+
+    `replaces` (the viewer's own playing session, for its next Episode or title) is swapped
+    atomically: admission counts its slot as free, and only once the new session is minted and
+    has its first playlist does the old one end ("stopped") and its slot pass over. Until then
+    both hold a slot in `occupied`, so live viewing can't squeeze in between; if anything fails
+    the old session plays on."""
     portal = getPortals()[portalId]
     replaced = onDemandSessions.find(replaces, account) if replaces else None
     with admissionLock:
-        preferred = None
-        if replaced is not None and replaced.reason is None:
-            # The viewer's own next Episode or title: its slot passes straight over.
-            preferred = replaced.mac if replaced.portal == portalId else None
-            replaced.end("stopped")
-        mac = freeOnDemandMac(portalId, preferred) if roomFor(portalId, "client", tuner=False) else None
+        handover, preferred = None, None
+        if replaced is not None and replaced.reason is None and replaced.portal == portalId:
+            handover, preferred = sessionEntry(replaced), replaced.mac
+        room = roomFor(portalId, "client", tuner=False, ignoring=handover)
+        mac = freeOnDemandMac(portalId, preferred, ignoring=handover) if room else None
         if mac is None:
             logger.info("No free slot for an On Demand session on Portal({})".format(portalId))
             raise OnDemandRefusal(503, "busy", TUNER_BUSY)
@@ -4365,7 +4382,7 @@ def startOnDemandSession(portalId, title, play, account, replaces, ip):
         logger.info("Unoccupied Portal({}):MAC({})".format(portalId, mac))
 
     session = onDemandSessions.new(
-        account, portalId, mac, title, proxy=portal.get("proxy") or None,
+        account, portalId, mac, title, proxy=portal["proxy"],
         headers={"User-Agent": stb.deviceHeaders(mac)["User-Agent"]}, onEnd=release)
     entry["session"] = session.sid
     logger.info("Occupied Portal({}):MAC({}) for On Demand ({}) by {}".format(portalId, mac, title, account))
@@ -4383,6 +4400,9 @@ def startOnDemandSession(portalId, title, play, account, replaces, ip):
         logger.info("On Demand link for {} on Portal({}):MAC({}) failed ({})".format(title, portalId, mac, e))
         moveMac(portalId, mac)
         raise OnDemandRefusal(502, "portal_error", "The portal didn't start playback, try again")
+    if replaced is not None:
+        with admissionLock:
+            replaced.end("stopped")  # its slot is the new session's now (a no-op if it ended)
     startOnDemandSweeper()
     return {"session": session.sid, "type": "hls",
             "url": "/api/ondemand/session/{}/{}".format(session.sid, ondemandsession.MASTER),

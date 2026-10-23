@@ -250,5 +250,44 @@ class PortalLifecycleTest(OnDemandTestCase):
         self.assertEqual(self.categories(), {"Action": 2})
 
 
+class PortalWakesCrawlerTest(OnDemandTestCase):
+    """Adding or (re-)enabling a portal starts indexing it at once, not at the next refresh."""
+
+    def setUp(self):
+        self.app = loadApp(self, onDemandConfig(portals={
+            "p1": portalConfig(name="First", url=URL1),
+            "p3": portalConfig(name="Switched off", url=OFF_URL, enabled="false"),
+        }))
+        self.client = self.app.app.test_client()
+        self.app.getSettings()["enable security"] = "true"
+        self.addAccount("viewer", onDemand=True)
+        catalogue = {"categories": [{"id": "10", "title": "Action", "alias": "action"}], "items": [row(1, "A", "10")]}
+        self.fake = FakePortals(self, self.app, {URL1: catalogue, URL2: catalogue, OFF_URL: catalogue})
+        self.app.startOnDemand()
+        self.fake.pages.clear()
+
+    def post(self, path, form):
+        with mock.patch.object(self.app.stb, "findPortal", side_effect=lambda url, macs, proxy: (url, [url])), \
+                mock.patch.object(self.app.stb, "getExpires", return_value="2027-01-01"):
+            response = self.client.post(path, headers=basic("admin", "12345"), data=form)
+        self.assertEqual(response.status_code, 302)
+
+    def test_adding_a_portal_indexes_it_at_once(self):
+        self.post("/portal/add", {"name": "Second", "url": URL2, "macs": "00:1A:79:00:00:02",
+                                  "streams per mac": "1", "proxy": ""})
+        self.assertEqual(self.fake.pages, [(URL2, 1)])
+
+    def test_enabling_a_portal_indexes_it_at_once(self):
+        self.post("/portal/update", {"id": "p3", "name": "Switched off", "url": OFF_URL, "enabled": "true",
+                                     "macs": "00:1A:79:00:00:01", "streams per mac": "1", "proxy": ""})
+        self.assertEqual(self.fake.pages, [(OFF_URL, 1)])
+
+    def test_no_crawl_for_a_new_portal_while_every_account_is_off(self):
+        self.app.accounts.findAccount(self.app.getAccounts(), "viewer")["on demand"] = False
+        self.post("/portal/add", {"name": "Second", "url": URL2, "macs": "00:1A:79:00:00:02",
+                                  "streams per mac": "1", "proxy": ""})
+        self.assertEqual(self.fake.pages, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -7,9 +7,10 @@ so that every URI is a bare name, relative to the session's own URL, and each na
 the upstream URL server-side: storage hosts and tokens never reach a client. Segments are
 streamed a chunk at a time, never held whole.
 
-A session never re-mints. An upstream 403 (on the user's portal: a newer session on the
-MAC evicted it) or any other upstream failure ends it, and from then on every request
-gets Ended with its reason: "evicted", "idle" (IDLE seconds with no request) or "stopped"
+A session never re-mints. Any upstream failure ends it, and from then on every request
+gets Ended with its reason: "evicted" (the storage host refused the link with a 401, 403 or
+404: a newer session on the MAC took it over), "failed" (any other upstream failure: a
+timeout, a dropped connection, a 5xx), "idle" (IDLE seconds with no request) or "stopped"
 (the viewer, the operator, or a session that replaced it).
 """
 import logging
@@ -35,10 +36,17 @@ PLAYLIST_TYPE = "application/vnd.apple.mpegurl"
 # a key, an init section) passed through as it is.
 PLAYLIST_TAGS = ("#EXT-X-MEDIA:", "#EXT-X-I-FRAME-STREAM-INF:")
 AD_TYPES = ("vclub_ad", "advert")
+# What the storage host answers once the link no longer belongs to this session.
+EVICTED_STATUSES = (401, 403, 404)
+
+
+def endReason(status):
+    """Why an upstream answer of `status` (None: no answer at all) ends a session."""
+    return "evicted" if status in EVICTED_STATUSES else "failed"
 
 
 class Ended(Exception):
-    """The session ended; `reason` is "evicted", "idle" or "stopped"."""
+    """The session ended; `reason` is "evicted", "failed", "idle" or "stopped"."""
 
     def __init__(self, reason):
         super().__init__(reason)
@@ -50,7 +58,11 @@ class NotHls(Exception):
 
 
 class UpstreamError(Exception):
-    """The portal or its storage failed."""
+    """The portal or its storage failed; `status` is the HTTP status it answered, if any."""
+
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 class Denied(Exception):
@@ -60,13 +72,13 @@ class Denied(Exception):
 def linkFrom(js, portalUrl):
     """The playable URL in a type=vod create_link `js`, resolved against the portal.
 
-    `js` is an object {cmd, error}, a list with ads first (the film is the entry that isn't
+    `js` is an object {cmd, error}, a list with ads first (the Movie is the entry that isn't
     an ad), or a bare string (research 01). cmd may carry a "solution" prefix ("ffmpeg
     http://..."), be relative to the portal, or name localhost. Raises Denied when the
     portal refuses the item, UpstreamError when it fails."""
     if isinstance(js, list):
-        films = [entry for entry in js if isinstance(entry, dict) and entry.get("media_type") not in AD_TYPES]
-        js = films[-1] if films else None
+        movies = [entry for entry in js if isinstance(entry, dict) and entry.get("media_type") not in AD_TYPES]
+        js = movies[-1] if movies else None
     if isinstance(js, dict):
         error = js.get("error") or ""
         if error in ("access_denied", "nothing_to_play", "player_file_missing"):
@@ -191,7 +203,7 @@ class Session:
             return self.fetchPlaylist(name)
         except (UpstreamError, NotHls) as e:
             logger.info("On Demand session of {}: playlist failed ({})".format(self.account, e))
-            self.end("evicted")
+            self.end(endReason(getattr(e, "status", None)))
             raise Ended(self.reason)
 
     def fetchPlaylist(self, name):
@@ -201,7 +213,7 @@ class Session:
             raise UpstreamError(str(e))
         try:
             if response.status_code != 200:
-                raise UpstreamError("HTTP {}".format(response.status_code))
+                raise UpstreamError("HTTP {}".format(response.status_code), response.status_code)
             # Judge by the first bytes, so a progressive file is never read past one chunk.
             body, checked = b"", False
             for chunk in response.iter_content(CHUNK):
@@ -273,12 +285,12 @@ class Session:
             response = self.http.get(self.urls[name], headers=headers, stream=True, timeout=TIMEOUT)
         except requests.RequestException as e:
             logger.info("On Demand session of {}: segment failed ({})".format(self.account, e))
-            self.end("evicted")
+            self.end("failed")
             raise Ended(self.reason)
         if response.status_code not in (200, 206, 416):
             response.close()
             logger.info("On Demand session of {}: segment got HTTP {}".format(self.account, response.status_code))
-            self.end("evicted")
+            self.end(endReason(response.status_code))
             raise Ended(self.reason)
         passed = {k: response.headers[k] for k in ("Content-Type", "Content-Length", "Content-Range")
                   if k in response.headers}
@@ -296,7 +308,7 @@ class Session:
         except Exception as e:
             if self.reason is None:  # not just closed under it by end()
                 logger.info("On Demand session of {}: segment broke off ({})".format(self.account, e))
-                self.end("evicted")
+                self.end("failed")
         finally:
             response.close()
             self.lastSeen = self.clock()

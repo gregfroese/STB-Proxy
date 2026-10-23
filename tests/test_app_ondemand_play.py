@@ -46,6 +46,7 @@ class FakePortal:
         self.mints = []  # (cmd, series) of every create_link
         self.fetches = []  # storage paths requested
         self.forbidden = False  # every storage request gets 403 (a newer session evicted it)
+        self.failWith = None  # every storage request gets this status instead
         self.lists = {}
         self.files = {}  # more storage paths: (body, Content-Type)
 
@@ -64,6 +65,7 @@ class FakePortal:
             "/media/6.mpg": {"id": "6", "cmd": self.base + "/s1/tok/movie.mkv?token=T1"},
             "/media/7.mpg": {"id": "7", "cmd": "", "error": "access_denied"},
             "/media/file_901.mpg": {"id": "901", "cmd": self.base + "/s1/tok/playlist.m3u8?token=T1"},
+            "/media/9.mpg": {"id": "9", "cmd": self.base + "/s1/tok/event.m3u8?token=T1"},
         }
         threading.Thread(target=self.server.serve_forever, args=(0.05,), daemon=True).start()
 
@@ -77,6 +79,8 @@ class FakePortal:
         if parsed.path == "/stalker_portal/server/load.php":
             return self.portal(request, query)
         self.fetches.append(parsed.path)
+        if self.failWith:
+            return self.send(request, self.failWith, b"Failed", "text/plain")
         if self.forbidden or query.get("token") != "T1":
             return self.send(request, 403, b"Forbidden", "text/plain")
         if parsed.path == "/s1/tok/playlist.m3u8" and "again" not in query:
@@ -159,6 +163,7 @@ class PlayTestCase(unittest.TestCase):
             movie(6, "Progressive", "2026-10-01 10:00:00", cmd="/media/6.mpg", has_files="0"),
             movie(7, "Not rented", "2026-10-01 10:00:00", cmd="/media/7.mpg", has_files="0"),
             movie(8, "Secret", "2026-10-01 10:00:00", cat0="11", cmd="/media/8.mpg", has_files="0"),
+            movie(9, "Premiere", "2026-10-01 10:00:00", cmd="/media/9.mpg", has_files="0"),
             infomirSeries(77, "Show"),
         ])
         index.setStatus(PORTAL, "ready", lastRefresh=1)
@@ -379,6 +384,45 @@ class ReplacesTest(PlayTestCase):
         self.assertTrue(self.text(second["url"]).startswith("#EXTM3U"))
         self.assertEqual([e["channel name"] for e in self.streaming()], ["Show - S2 E3"])
 
+    def assertStillPlaying(self, started):
+        self.assertTrue(self.text(started["url"]).startswith("#EXTM3U"))
+        self.assertEqual([(e["session"], e["channel name"]) for e in self.streaming()],
+                         [(started["session"], "Heat")])
+
+    def test_a_replacement_the_portal_refuses_leaves_the_old_session_playing(self):
+        first = self.play({"portal": PORTAL, "id": "5"})
+        for movieId, status, code in (("7", 404, "not_found"), ("6", 502, "unsupported_stream")):
+            body = self.play({"portal": PORTAL, "id": movieId, "replaces": first["session"]}, status=status)
+            self.assertEqual(body["code"], code)
+            self.assertStillPlaying(first)
+
+    def test_a_replacement_whose_link_fails_leaves_the_old_session_playing(self):
+        first = self.play({"portal": PORTAL, "id": "5"})
+        with mock.patch.object(stb, "getToken", return_value=None):
+            body = self.play({"portal": PORTAL, "id": "5", "replaces": first["session"]}, status=502)
+        self.assertEqual(body["code"], "portal_error")
+        self.assertStillPlaying(first)
+
+    def test_a_replacement_the_viewer_cant_see_leaves_the_old_session_playing(self):
+        first = self.play({"portal": PORTAL, "id": "5"})
+        self.app.getHiddenOnDemand().append(self.app.ondemand.normalisedName("Hidden"))
+        self.assertEqual(self.play({"portal": PORTAL, "id": "8", "replaces": first["session"]}, status=404)["code"],
+                         "not_found")
+        self.assertStillPlaying(first)
+
+    def test_a_replacement_on_a_full_portal_is_busy_and_leaves_the_old_session_playing(self):
+        self.app.getPortals()["p2"] = portalConfig(name="Second", url=self.portal.url,
+                                                   macs={"00:1A:79:00:00:02": "10.19.2026"})
+        self.app.onDemandIndex().addItems("p2", [movie(5, "Heat", "2026-10-01 10:00:00", cmd="/media/5.mpg",
+                                                       has_files="0")])
+        self.app.onDemandIndex().setStatus("p2", "ready", lastRefresh=1)
+        self.play({"portal": "p2", "id": "5"}, "other")  # p2's one slot
+        first = self.play({"portal": PORTAL, "id": "5"})
+        body = self.play({"portal": "p2", "id": "5", "replaces": first["session"]}, status=503)
+        self.assertEqual(body["code"], "busy")
+        self.assertTrue(self.text(first["url"]).startswith("#EXTM3U"))
+        self.assertEqual([(e["session"], e["mac"]) for e in self.streaming()], [(first["session"], MAC)])
+
     def test_replaces_naming_another_accounts_session_is_ignored(self):
         first = self.play({"portal": PORTAL, "id": "5"})
         body = self.play({"portal": PORTAL, "id": "5", "replaces": first["session"]}, "other", status=503)
@@ -416,6 +460,41 @@ class SessionEndTest(PlayTestCase):
         self.assertEqual(self.fetch(self.base + self.segments[1], status=410).get_json()["reason"], "evicted")
         self.portal.forbidden = False
         self.assertEnded("evicted")
+
+    def test_a_storage_host_that_says_not_found_or_unauthorised_evicts_the_session(self):
+        for status in (404, 401):
+            with self.subTest(status=status):
+                self.portal.failWith = None
+                started = self.play({"portal": PORTAL, "id": "5", "replaces": self.started["session"]})
+                self.started = started
+                base = "/api/ondemand/session/{}/".format(started["session"])
+                [variant] = self.uris(self.text(started["url"]))
+                segment = self.uris(self.text(base + variant))[0]
+                self.portal.failWith = status
+                self.assertEqual(self.fetch(base + segment, status=410).get_json()["reason"], "evicted")
+
+    def test_an_upstream_server_error_ends_the_session_as_failed_not_evicted(self):
+        self.portal.failWith = 503
+        self.assertEqual(self.fetch(self.base + self.segments[1], status=410).get_json()["reason"], "failed")
+        self.portal.failWith = None
+        self.assertEnded("failed")
+
+    def test_an_unreachable_storage_host_ends_the_session_as_failed(self):
+        self.portal.close()
+        self.assertEqual(self.fetch(self.base + self.segments[1], status=410).get_json()["reason"], "failed")
+        self.assertEqual(self.streaming(), [])
+
+    def test_a_playlist_that_fails_to_refresh_ends_the_session_as_failed_or_evicted(self):
+        self.portal.files["/s1/tok/event.m3u8"] = (
+            b"#EXTM3U\n#EXT-X-TARGETDURATION:8\n#EXTINF:8,\nevent1.ts?token=T1\n",
+            "application/vnd.apple.mpegurl")
+        for status, reason in ((500, "failed"), (403, "evicted")):
+            with self.subTest(status=status):
+                self.portal.failWith = None
+                started = self.play({"portal": PORTAL, "id": "9", "replaces": self.started["session"]})
+                self.started = started
+                self.portal.failWith = status
+                self.assertEqual(self.fetch(started["url"], status=410).get_json()["reason"], reason)
 
     def test_the_viewer_can_end_the_session(self):
         response = self.client.delete(self.base.rstrip("/"), headers=basic("viewer", "secret"))

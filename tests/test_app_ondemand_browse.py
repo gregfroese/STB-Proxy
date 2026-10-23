@@ -355,6 +355,7 @@ class PosterTest(BrowseTestCase):
         started = time.monotonic()
         response = self.poster(7)
         self.assertEqual(response.status_code, 504)
+        self.assertEqual(response.get_json(), {"error": "Too many posters at once, try again", "code": "timeout"})
         self.assertGreaterEqual(time.monotonic() - started, 0.2)
         release.set()
         for thread in threads:
