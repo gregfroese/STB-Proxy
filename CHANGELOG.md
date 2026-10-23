@@ -2,6 +2,32 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.20.0] - 2026-10-23
+
+### Server and Operator UI
+
+- **On Demand catalogue**: once an Account has On Demand switched on, STB-Proxy reads every enabled portal's Movies and Series into a local index beside `config.json` (`ondemand.sqlite`). The first read of a large portal takes a while; after that each portal is checked for new titles every 2 hours and read in full once a week. A portal that fails keeps its last good catalogue and is retried after 5 minutes. Adding or switching on a portal starts reading it straight away. Deleting a portal removes its titles; a switched-off portal keeps them, hidden.
+- **On Demand page**: a new **On Demand** page (nav **Programme**) shows each portal's catalogue status and title counts, and lists the categories merged across portals, with an **Adult** badge and a **Hide** toggle. A hidden category disappears for every viewer, in browsing, search and playback. Adult categories stay hidden from an Account unless its **Adult** switch is on.
+- **Playing On Demand**: a Movie or Episode plays as its own **On Demand session**, passed through STB-Proxy so the portal's address never reaches a viewer. A session uses one of its portal's Streams Per MAC slots but no Tuner, so it competes with live TV on that portal: when the slot is taken, live viewers and On Demand viewers get "All tuners are busy" rather than knocking each other off. A session ends when the viewer leaves, after 2 minutes with nothing playing, when the operator stops it, or when the portal stops sending it. Set Streams Per MAC to the portal's real limit.
+- **Streams page**: On Demand sessions are listed with an **on demand** badge, the title and the Account, and **Stop** ends them.
+- **Resume, Watched and Up next**: STB-Proxy keeps each Account's Resume points (from a minute in), Watched marks (at 90%, or by hand) and each Series' Up next Episode in `ondemand-progress.sqlite`, so they follow the viewer between the web viewer and the app. Deleting an Account or a portal removes its rows.
+- **Viewer API**: `/api/ondemand/*` now answers categories, browse and search, title detail, posters, Seasons and Episodes, Continue watching, progress and playback, for Accounts with On Demand on.
+
+### Web viewer
+
+- **On Demand**: an **On Demand** button in the Channels bar, for Accounts that have it, opens the catalogue: **Continue watching**, **Recently added** and a shelf per category, a category grid with sorting, and search across every portal.
+- **Title pages**: a Movie's page has **Play**, **Resume from** with **Start over**, and **Mark watched**. A Series has its Up next button, Season chips and an Episode list showing what's watched and how far in.
+- **Player**: play, 10-second skips, a seek bar, mute, **Aspect** and full screen, with keyboard shortcuts and TV remote seeking that speeds up while held. At the end of an Episode the next one starts after a 15-second countdown, with **Still watching?** after three in a row. A long pause restarts the stream where it was, without asking. If the stream is taken by another device, stopped from the Streams page or interrupted, the player says so and offers **Resume**.
+- If On Demand is switched off for the login, the button disappears and the viewer returns to Channels with a notice.
+
+### Android app
+
+- **On Demand**: an **On Demand** entry between Guide and Multiview, for Accounts that have it. On Android TV it's a categories pane, a title list with search and sorting, and a preview pane with the title's detail. On phones it's Continue watching and the categories, then a category's titles, then the title.
+- **Title detail and Series**: **Play**, **Resume from** with **Start over**, **Play again** and **Mark watched**; Series get Up next, Season chips and the Episode list with progress.
+- **Player**: seeking (accelerating on a held D-pad), the next-Episode countdown and **Still watching?**, a silent restart after a long pause, and the **Resume** overlay when the stream is taken by another device, stopped or interrupted. Progress is saved as you watch, so Resume picks up on the web too.
+- If On Demand is switched off for the login, its entry disappears and the app returns to Channels with a notice, including in the middle of playback.
+- The app is now version 1.12.0.
+
 ## [1.19.0] - 2026-10-23
 
 ### Accounts

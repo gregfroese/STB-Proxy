@@ -1335,6 +1335,534 @@ a.btn {
   background: var(--accent);
 }
 
+/* ---------- On Demand browse (ticket 10) ---------- */
+
+.noticerow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.odmain {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.odhint {
+  color: var(--dim);
+  font-size: 12px;
+  align-self: center;
+  padding: 0 4px;
+}
+
+.odstatus {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 14px 8px;
+  font-size: 12px;
+}
+
+.pill {
+  border-radius: 20px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+  color: var(--dim);
+}
+
+.pill.indexing {
+  color: var(--accent);
+  border-color: #3ba6ff55;
+}
+
+.pill.stale,
+.pill.partial {
+  color: var(--warn);
+  border-color: #e3b34155;
+}
+
+.pill.failed {
+  color: var(--bad);
+  border-color: #f8514955;
+}
+
+.pgrid {
+  display: grid;
+  gap: 14px 12px;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  padding: 14px;
+  align-content: start;
+}
+
+.sentinel {
+  grid-column: 1/-1;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+  color: var(--dim);
+  font-size: 12px;
+  padding: 14px;
+}
+
+.pcard {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--ink);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pcard:focus-visible {
+  outline: none;
+}
+
+.poster {
+  position: relative;
+  aspect-ratio: 2/3;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--panel2);
+}
+
+.poster img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.poster.none {
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  color: var(--dim);
+  text-align: center;
+  font-size: 13px;
+}
+
+.pcard:hover .poster {
+  border-color: #3ba6ff66;
+}
+
+.pcard:focus-visible .poster {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
+.poster .kind {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  background: #000a;
+  color: #fff;
+  padding: 1px 6px;
+  border-radius: 10px;
+  text-transform: uppercase;
+}
+
+.poster .wmark {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ok);
+  color: #04121f;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+}
+
+.poster .prog,
+.cwcard .prog {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 4px;
+  background: #0008;
+}
+
+.poster .prog i,
+.cwcard .prog i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.ptitle {
+  font-size: 12.5px;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pmeta {
+  font-size: 11px;
+  color: var(--dim);
+  display: flex;
+  gap: 6px;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.pmeta .star {
+  color: var(--star);
+}
+
+.pmeta .src {
+  margin-left: auto;
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rowhead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 16px 14px 8px;
+}
+
+.rowhead h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.rowhead .rc {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.rowhead .more {
+  margin-left: auto;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  padding: 3px 6px;
+}
+
+.rowhead .more:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+}
+
+.shelf {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 136px;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 2px 14px 6px;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 14px;
+  min-height: 60px;
+}
+
+.shelf > * {
+  scroll-snap-align: start;
+}
+
+.shelf.cw {
+  grid-auto-columns: 240px;
+}
+
+.shelfhint {
+  color: var(--dim);
+  font-size: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.cwcard {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  color: var(--ink);
+  text-align: left;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cwcard:hover {
+  border-color: #3ba6ff66;
+}
+
+.cwcard:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
+.cwcard .art {
+  height: 112px;
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  padding: 8px;
+  background: var(--panel2);
+  overflow: hidden;
+}
+
+.cwcard .art img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.55;
+}
+
+.cwcard .cwname {
+  position: relative;
+  font-weight: 600;
+  text-shadow: 0 1px 3px #000a;
+}
+
+.cwcard .sub {
+  font-size: 11.5px;
+  color: var(--dim);
+  padding: 7px 9px 9px;
+}
+
+/* ---------- On Demand title page (ticket 11) ---------- */
+
+.odtitle-msg {
+  padding: 18px;
+  max-width: 760px;
+}
+
+.oddetail {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 22px;
+  padding: 18px;
+  max-width: 1100px;
+}
+
+.odposter .poster {
+  font-size: 15px;
+}
+
+.odinfo {
+  min-width: 0;
+}
+
+.odinfo h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+}
+
+.odinfo .orig {
+  color: var(--dim);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--dim);
+  font-size: 13px;
+  align-items: center;
+}
+
+.facts .age {
+  border: 1px solid var(--dim);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 11px;
+}
+
+.facts .star {
+  color: var(--star);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+  align-items: center;
+}
+
+.actions .btn.primary {
+  font-size: 15px;
+  padding: 10px 20px;
+}
+
+.actions .btn.watched {
+  color: var(--ok);
+  border-color: #3fb95066;
+}
+
+.rsub {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.playerr {
+  margin: 0 0 12px;
+  max-width: 70ch;
+}
+
+.odinfo .noticerow .btn {
+  flex: none;
+  white-space: nowrap;
+}
+
+.inlineerr {
+  color: var(--bad);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.odinfo .desc {
+  line-height: 1.5;
+  font-size: 14px;
+  max-width: 70ch;
+  margin: 0;
+}
+
+.genretags {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.genretags .tag {
+  font-size: 11px;
+}
+
+.credits {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+.credits dt {
+  color: var(--dim);
+}
+
+.credits dd {
+  margin: 0;
+}
+
+.credits .more {
+  color: var(--dim);
+}
+
+.chips.seasons {
+  padding: 0;
+  margin: 16px 0 10px;
+}
+
+.eplist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 760px;
+}
+
+.ep {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--ink);
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+
+.ep:hover {
+  border-color: #3ba6ff66;
+}
+
+.ep:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
+.ep.upnext {
+  border-color: var(--accent);
+  background: #3ba6ff12;
+}
+
+.ep .n {
+  color: var(--dim);
+  width: 30px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ep .nm {
+  flex: 1;
+  min-width: 0;
+}
+
+.ep .st {
+  font-size: 11px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.ep .st.w {
+  color: var(--ok);
+}
+
+.ep .prog {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--accent);
+}
+
+.ep .badge {
+  font-size: 10px;
+  color: var(--accent);
+  border: 1px solid #3ba6ff55;
+  padding: 1px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.src-line {
+  color: var(--dim);
+  font-size: 12px;
+  margin-top: 14px;
+}
+
 /* ---------- responsive: phone ---------- */
 
 @media (max-width: 720px) {
@@ -1355,6 +1883,34 @@ a.btn {
     grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
     padding: 10px;
     gap: 9px;
+  }
+
+  /* Channels' four app-bar buttons (with On Demand) don't fit beside the title. */
+  .appbar {
+    flex-wrap: wrap;
+  }
+
+  .pgrid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    padding: 10px;
+    gap: 12px 9px;
+  }
+
+  .shelf {
+    grid-auto-columns: 112px;
+  }
+
+  .shelf.cw {
+    grid-auto-columns: 210px;
+  }
+
+  .oddetail {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .odposter .poster {
+    max-width: 160px;
   }
 
   .split {
@@ -1431,4 +1987,382 @@ a.btn {
 .tv .side,
 .tv .side .body {
   overflow: visible;
+}
+
+/* On Demand on TV: the page scrolls and the rail stays pinned, as on the Channels picker. */
+.tv .odmain {
+  overflow: visible;
+}
+
+/* ---------- On Demand player (ticket 12) ---------- */
+
+.odp-stage {
+  container-type: size;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.odp-stage video {
+  grid-area: 1 / 1;
+}
+
+/* Aspect: 16:9 and 4:3 stretch the picture into that box, Zoom fills and crops. */
+.odp-stage video.a169 {
+  width: min(100cqw, calc(100cqh * 16 / 9));
+  height: min(100cqh, calc(100cqw * 9 / 16));
+  object-fit: fill;
+}
+
+.odp-stage video.a43 {
+  width: min(100cqw, calc(100cqh * 4 / 3));
+  height: min(100cqh, calc(100cqw * 3 / 4));
+  object-fit: fill;
+}
+
+.odp-stage video.zoom {
+  object-fit: cover;
+}
+
+.odp-stage.bare {
+  cursor: none;
+}
+
+.odp-tap {
+  position: absolute;
+  inset: 0;
+}
+
+.odp-controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transition: opacity 0.25s;
+}
+
+.odp-controls.hidden {
+  opacity: 0;
+}
+
+.odp-controls > * {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
+.odp-controls:not(.hidden) button,
+.odp-controls:not(.hidden) .odp-bar {
+  pointer-events: auto;
+}
+
+.odp-top {
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px 30px;
+  background: linear-gradient(#000000c0, transparent);
+}
+
+.odp-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.odp-sub {
+  font-size: 12.5px;
+  color: #ffffffb3;
+}
+
+.odp-center {
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 34px;
+}
+
+.odp-bottom {
+  bottom: 0;
+  padding: 30px 16px 12px;
+  background: linear-gradient(transparent, #000000cc);
+}
+
+.odp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 0;
+  background: #ffffff1f;
+  color: #fff;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.odp-btn.big {
+  min-width: 60px;
+  height: 60px;
+  border-radius: 30px;
+  font-size: 20px;
+}
+
+.odp-btn:focus-visible,
+.odp-end .btn:focus-visible,
+.odp-modal .btn:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.odp-barrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font:
+    12.5px ui-monospace,
+    monospace;
+}
+
+.odp-bar {
+  position: relative;
+  flex: 1;
+  height: 22px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.odp-bar .track,
+.odp-bar .played {
+  position: absolute;
+  left: 0;
+  top: 9px;
+  height: 4px;
+  border-radius: 2px;
+}
+
+.odp-bar .track {
+  right: 0;
+  background: #ffffff40;
+}
+
+.odp-bar .played {
+  background: var(--accent);
+}
+
+.odp-bar .thumb {
+  position: absolute;
+  top: 4px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.odp-bar:focus-visible {
+  outline: none;
+}
+
+.odp-bar:focus-visible .thumb {
+  box-shadow: 0 0 0 4px var(--focus);
+  transform: scale(1.25);
+}
+
+.odp-bar .bubble {
+  position: absolute;
+  bottom: 24px;
+  transform: translateX(-50%);
+  background: #000000d9;
+  border: 1px solid #ffffff40;
+  padding: 3px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.odp-btnrow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* The bottom row's own ▶ only on a phone in portrait, where the centre row goes. */
+.odp-btnrow .odp-pp {
+  display: none;
+}
+
+.odp-spin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  margin: -23px;
+  border-radius: 50%;
+  border: 4px solid #ffffff33;
+  border-top-color: var(--accent);
+  animation: odp-spin 0.8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes odp-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.odp-flash {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: #ffffff1f;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 600;
+  pointer-events: none;
+}
+
+.odp-flash.l {
+  left: 12%;
+}
+
+.odp-flash.r {
+  right: 12%;
+}
+
+.odp-flash.c {
+  left: 50%;
+  margin-left: -55px;
+}
+
+.odp-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 80px;
+  transform: translateX(-50%);
+  background: #2a2a2a;
+  padding: 9px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  box-shadow: 0 4px 20px #00000080;
+  z-index: 4;
+}
+
+.odp-modal {
+  z-index: 3;
+}
+
+/* The end card: the last frame shrinks into a corner, the card takes the rest. */
+.odp-end {
+  position: absolute;
+  inset: 0;
+  background: #08080e;
+}
+
+.odp-stage.carded video {
+  position: absolute;
+  right: 4%;
+  top: 8%;
+  width: 34%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  border-radius: 6px;
+  z-index: 2;
+}
+
+.odp-end .txt {
+  position: absolute;
+  left: 6%;
+  right: 42%;
+  bottom: 12%;
+}
+
+.odp-end .k {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+
+.odp-end .watched {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.odp-end .n {
+  font-size: 26px;
+  font-weight: 600;
+  margin: 4px 0;
+}
+
+.odp-end .d {
+  color: var(--dim);
+  font-size: 13px;
+}
+
+.odp-end .btns {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+/* Below the video on a phone in portrait; hidden everywhere else. */
+.odp-info {
+  display: none;
+}
+
+@media (max-width: 720px) and (orientation: portrait) {
+  .odp-player:not(.full) .odp-info {
+    display: block;
+    padding: 12px 16px;
+    overflow: auto;
+  }
+
+  .odp-info p {
+    color: var(--dim);
+    font-size: 13px;
+  }
+
+  .odp-info .odp-wide {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+  }
+
+  .odp-player:not(.full) .odp-center {
+    display: none;
+  }
+
+  .odp-player:not(.full) .odp-btnrow .odp-pp {
+    display: inline-flex;
+  }
+
+  .odp-player:not(.full) .odp-stage {
+    flex: none;
+    aspect-ratio: 16 / 9;
+  }
+
+  .odp-end .txt {
+    right: 6%;
+    bottom: 8%;
+  }
+
+  .odp-end .n {
+    font-size: 18px;
+  }
+
+  .odp-stage.carded video {
+    width: 44%;
+  }
 }

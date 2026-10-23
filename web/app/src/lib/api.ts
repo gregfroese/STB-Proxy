@@ -88,17 +88,23 @@ export async function read<T>(path: string, signal?: AbortSignal): Promise<T> {
   throw lastError;
 }
 
-/** A mutation: no retry (never replay a state change). */
+/**
+ * A mutation: no retry (never replay a state change). `keepalive` lets it outlive the
+ * page (a progress report or DELETE as the tab is hidden or closed); it still sends the
+ * CSRF header.
+ */
 export async function mutate<T>(
   path: string,
   body?: unknown,
   method: "POST" | "PUT" | "DELETE" = "POST",
+  keepalive = false,
 ): Promise<T> {
   const response = await fetch(path, {
     method,
     headers: headersFor({ method }),
     body: body !== undefined ? JSON.stringify(body) : undefined,
     credentials: "same-origin",
+    keepalive,
   });
   return parse<T>(response);
 }

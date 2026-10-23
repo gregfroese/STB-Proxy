@@ -22,8 +22,8 @@ android {
         applicationId = "cc.selfhosters.stbproxy"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "1.11.0"
+        versionCode = 15
+        versionName = "1.12.0"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -108,6 +108,7 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.ui.compose)
     implementation(libs.androidx.media3.datasource.okhttp)
+    implementation(libs.androidx.media3.exoplayer.hls)
 
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)

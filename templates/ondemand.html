@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="page">
+
+    <div class="d-flex align-items-center mb-2">
+        <h4 class="mb-0">On Demand</h4>
+    </div>
+
+    <p class="text-body-secondary">
+        Movies and Series from the portals, for Accounts with On Demand switched on (Accounts page).
+        A hidden category is gone for every viewer: anything in it, even if it is also in a
+        visible category, leaves every listing, search and play. Adult categories are only
+        shown to Accounts with Adult switched on.
+    </p>
+
+    {% if not anyOn %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle-fill"></i>
+        No Account has On Demand switched on, so the portals aren't being indexed.
+    </div>
+    {% endif %}
+
+    <h6 class="mt-4">Index</h6>
+    {% if statuses %}
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>Portal</th>
+                <th>Status</th>
+                <th>Items</th>
+                <th>Last good refresh</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in statuses %}
+            <tr data-portal="{{ s.portal }}">
+                <td>{{ s.name }}</td>
+                <td>
+                    {% if s.status == "indexing" %}
+                    <span class="text-info"><i class="bi bi-arrow-repeat"></i> Indexing {{ s.progress }}%</span>
+                    {% elif s.status == "ready" %}
+                    <span class="text-success"><i class="bi bi-check-circle-fill"></i> Ready</span>
+                    {% elif s.status == "stale" %}
+                    <span class="text-warning" title="The last refresh failed; viewers get the last good index">
+                        <i class="bi bi-exclamation-triangle-fill"></i> Stale</span>
+                    {% elif s.status == "partial" %}
+                    <span class="text-warning" title="The portal's Series listing broke off part way, so some Series are missing">
+                        <i class="bi bi-exclamation-triangle-fill"></i> Partial</span>
+                    {% else %}
+                    <span class="text-danger" title="Never indexed, or the first crawl failed">
+                        <i class="bi bi-x-octagon-fill"></i> Failed</span>
+                    {% endif %}
+                </td>
+                <td>{{ s["items"] }} item{{ "" if s["items"] == 1 else "s" }}</td>
+                <td>
+                    {% if s.lastRefreshIso %}
+                    <time datetime="{{ s.lastRefreshIso }}">{{ s.lastRefreshText }}</time>
+                    {% else %}
+                    <span class="text-body-secondary">Never</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% elif not indexed %}
+    <div class="empty-state">
+        <i class="bi bi-film"></i>
+        <span>Nothing indexed yet. Switch On Demand on for an Account to start indexing the portals.</span>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="bi bi-server"></i>
+        <span>No portal is switched on.</span>
+    </div>
+    {% endif %}
+
+    <h6 class="mt-4">Categories</h6>
+    {% if categories or stale %}
+    <table class="table table-striped align-middle">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Portals</th>
+                <th>Items</th>
+                <th style="width: 0%;">Hide</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in categories %}
+            <tr data-category="{{ c.id }}">
+                <td>
+                    {{ c.name }}
+                    {% if c.adult %}<span class="badge bg-danger ms-1" title="The portal flags this category as adult">Adult</span>{% endif %}
+                    {% if c.hidden %}<span class="badge bg-secondary ms-1">Hidden</span>{% endif %}
+                </td>
+                <td>{% for name in c.portalNames %}<span class="tag">{{ name }}</span> {% endfor %}</td>
+                <td>{{ c.count }}</td>
+                <td>
+                    <form action="/ondemand/hide" method="post" class="d-inline">
+                        <input type="hidden" name="name" value="{{ c.id }}">
+                        <input type="hidden" name="hidden" value="{{ 'false' if c.hidden else 'true' }}">
+                        <button class="btn btn-sm btn-outline-light"
+                            aria-label="{{ 'Show ' ~ c.name ~ ' to viewers' if c.hidden else 'Hide ' ~ c.name ~ ' from every viewer' }}"
+                            title="{{ 'Show to viewers again' if c.hidden else 'Hide from every viewer' }}">
+                            <i class="bi {{ 'bi-eye-fill' if c.hidden else 'bi-eye-slash-fill' }}"></i></button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            {% for name in stale %}
+            <tr data-category="{{ name }}">
+                <td>
+                    {{ name }}
+                    <span class="badge bg-secondary ms-1">Hidden</span>
+                    <span class="text-warning small ms-1" title="Perhaps the portal renamed it">
+                        <i class="bi bi-exclamation-triangle-fill"></i> not on any portal</span>
+                </td>
+                <td></td>
+                <td></td>
+                <td>
+                    <form action="/ondemand/hide" method="post" class="d-inline">
+                        <input type="hidden" name="name" value="{{ name }}">
+                        <input type="hidden" name="hidden" value="false">
+                        <button class="btn btn-sm btn-outline-light" aria-label="Forget {{ name }}"
+                            title="Take it off the hidden list">
+                            <i class="bi bi-eye-fill"></i></button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <i class="bi bi-tags"></i>
+        <span>No On Demand categories yet. They appear as the portals are indexed.</span>
+    </div>
+    {% endif %}
+
+</div>
+
+{% endblock %}

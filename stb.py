@@ -481,3 +481,73 @@ def getShortEpg(url, mac, token, channelIds, proxy=None):
             pass
     if epg:
         return epg
+
+
+# On Demand (the portal's type=vod catalogue). Catalogue calls take no stream slot, and
+# go through the session already held (getToken), so a crawl needs no extra login.
+def onDemandRequest(url, mac, token, params, proxy=None):
+    proxies = {"http": proxy, "https": proxy}
+    query = {"type": "vod", "JsHttpRequest": "1-xml"}
+    query.update(params)
+    response = s.get(
+        url,
+        params=query,
+        cookies=deviceCookies(mac),
+        headers=deviceHeaders(mac, token),
+        proxies=proxies,
+        timeout=TIMEOUT,
+    )
+    return response.json()["js"]
+
+
+def getOnDemandCategories(url, mac, token, proxy=None, source="vod"):
+    """The portal's On Demand categories, [{id, title, alias, censored}], or None.
+
+    `source` is the listing's type=: "vod", or "series" (Xtream-family portals only).
+    """
+    try:
+        categories = onDemandRequest(url, mac, token, {"type": source, "action": "get_categories"}, proxy)
+        if isinstance(categories, list):
+            return categories
+    except Exception:
+        pass
+
+
+def getOnDemandPage(url, mac, token, page, proxy=None, source="vod"):
+    """One page (1-based) of every On Demand item of the type=`source` listing ("vod", or
+    "series" on Xtream-family portals), newest added first, or None.
+
+    Returns {"total", "pageSize", "items"}. The page size is fixed by the portal (14 on
+    Infomir), and total_items comes back as a string on some portals.
+    """
+    return getOnDemandList(url, mac, token, {"category": "*", "sortby": "added"}, page, proxy, source)
+
+
+def getOnDemandLink(url, mac, token, cmd, series=0, proxy=None):
+    """The `js` of a type=vod create_link for `cmd` (Episode `series`, or 0), or None if
+    the portal didn't answer. ondemandsession.linkFrom reads the link out of it. The link
+    is short-lived and bound to this MAC's session: mint it at play time, server-side."""
+    try:
+        return onDemandRequest(url, mac, token, {
+            "action": "create_link", "cmd": cmd, "series": series,
+            "forced_storage": "", "disable_ad": "0", "download": "0",
+        }, proxy)
+    except Exception:
+        return None
+
+
+def getOnDemandList(url, mac, token, params, page, proxy=None, source="vod"):
+    """One page (1-based) of a type=`source` get_ordered_list with these extra `params`,
+    such as a Series' Seasons (movie_id) or a Season's Episodes (movie_id, season_id), or
+    None. Returns {"total", "pageSize", "items"}, as getOnDemandPage does.
+    """
+    try:
+        query = dict(params, type=source, action="get_ordered_list", p=page)
+        js = onDemandRequest(url, mac, token, query, proxy)
+        return {
+            "total": int(js.get("total_items") or 0),
+            "pageSize": int(js.get("max_page_items") or 0),
+            "items": list(js.get("data") or []),
+        }
+    except Exception:
+        pass

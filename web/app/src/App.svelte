@@ -8,6 +8,9 @@
   import Multiview from "./routes/Multiview.svelte";
   import Guide from "./routes/Guide.svelte";
   import Settings from "./routes/Settings.svelte";
+  import OnDemand from "./routes/OnDemand.svelte";
+  import OnDemandTitle from "./routes/OnDemandTitle.svelte";
+  import OnDemandWatch from "./routes/OnDemandWatch.svelte";
 
   onMount(() => {
     installUnauthorizedHandler();
@@ -35,6 +38,12 @@
   <Multiview />
 {:else if $route.name === "guide"}
   <Guide />
+{:else if $route.name === "ondemand"}
+  <OnDemand />
+{:else if $route.name === "ondemandTitle"}
+  <OnDemandTitle />
+{:else if $route.name === "ondemandWatch"}
+  <OnDemandWatch />
 {:else}
   <Picker />
 {/if}

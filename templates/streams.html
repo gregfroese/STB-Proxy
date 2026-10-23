@@ -22,8 +22,8 @@
     }
 
     function kindBadges(kinds) {
-        var labels = { client: "client", recording: "recording", preview: "preview" };
-        var colours = { client: "bg-success", recording: "bg-danger", preview: "bg-warning" };
+        var labels = { client: "client", recording: "recording", preview: "preview", "on demand": "on demand" };
+        var colours = { client: "bg-success", recording: "bg-danger", preview: "bg-warning", "on demand": "bg-primary" };
         return (kinds || []).map(function (k) {
             return '<span class="badge dot ' + (colours[k] || "") + ' ms-1">' + (labels[k] || k) + "</span>";
         }).join("");
@@ -51,6 +51,10 @@
                     total++;
                     var who = s["account"] ? s["account"] : s["client"];
                     var ip = s["account"] ? " (" + esc(s["client"]) + ")" : "";
+                    // An On Demand session is stopped by its session id, a channel by its id.
+                    var target = s["session"]
+                        ? ' data-session="' + esc(s["session"]) + '"'
+                        : ' data-channel="' + esc(s["channel id"]) + '"';
                     var sharing = s["viewers"] > 1
                         ? ' <span class="badge dot bg-info ms-1" title="Players sharing this portal connection">' +
                           s["viewers"] + " viewers</span>"
@@ -62,8 +66,8 @@
                         '<i class="bi bi-person-fill me-2"></i>' + esc(who) + ip +
                         '<span class="ms-auto">' + kindBadges(s["kinds"]) + sharing +
                         '<button class="btn btn-sm btn-outline-danger ms-2" data-stop data-portal="' +
-                        esc(portal) + '" data-channel="' + esc(s["channel id"]) +
-                        '" title="Stop this stream and free its tuner"><i class="bi bi-stop-fill"></i></button>' +
+                        esc(portal) + '"' + target +
+                        ' title="Stop this stream and free its tuner"><i class="bi bi-stop-fill"></i></button>' +
                         "</span></div>" +
                         '<div class="card-body"><table class="table table-sm mb-0">' +
                         row("bi-play-fill", esc(s["channel name"])) +
@@ -92,10 +96,9 @@
         fetch("/streams/stop", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-                portal: button.dataset.portal,
-                channel: button.dataset.channel,
-            }),
+            body: new URLSearchParams(button.dataset.session
+                ? { portal: button.dataset.portal, session: button.dataset.session }
+                : { portal: button.dataset.portal, channel: button.dataset.channel }),
         })
             .then(update)
             .catch(function () { button.disabled = false; });

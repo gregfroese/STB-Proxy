@@ -20,6 +20,8 @@ export interface Lineup {
   blocks: string[];
   channels: Channel[];
   failedPortals: string[];
+  /** True when this login's Account may use On Demand (ADR 0004). */
+  onDemand?: boolean;
 }
 
 export interface SessionInfo {
@@ -98,4 +100,122 @@ export interface GuideChannelProgrammes {
   portal: string;
   channelId: string;
   programmes: GuideProgramme[];
+}
+
+// On Demand — the viewer catalogue (/api/ondemand/*, ADRs 0003-0006).
+
+export type OnDemandKind = "movie" | "series";
+
+/** A Movie's viewing state for this Account (ADR 0006). */
+export interface OnDemandProgress {
+  positionSec: number | null;
+  durationSec: number | null;
+  watched: boolean;
+  updatedAt: number;
+}
+
+/** A Series' next Episode for this Account (ADR 0006). */
+export interface OnDemandUpNext {
+  seasonId: string;
+  seasonNumber: number | null;
+  episodeId: string;
+  episodeNumber: number | null;
+  name: string | null;
+  positionSec: number | null;
+  durationSec: number | null;
+}
+
+/** One Movie or Series in a list (/items, /continue). */
+export interface OnDemandItem {
+  portal: string;
+  portalName: string;
+  id: string;
+  kind: OnDemandKind;
+  name: string;
+  year: number | null;
+  rating: number | null;
+  added: string | null;
+  poster: string | null;
+  /** Movies only; null when never played. */
+  progress?: OnDemandProgress | null;
+  /** Series only; null when there is none. */
+  upNext?: OnDemandUpNext | null;
+}
+
+export interface OnDemandCategory {
+  id: string;
+  name: string;
+  count: number;
+}
+
+export type OnDemandPortalStatus = "indexing" | "ready" | "stale" | "partial" | "failed";
+
+export interface OnDemandPortal {
+  portal: string;
+  name: string;
+  status: OnDemandPortalStatus;
+  /** Percent indexed while indexing, else null. */
+  progress: number | null;
+  /** Epoch seconds of the last good refresh, or null. */
+  lastRefresh: number | null;
+}
+
+export interface OnDemandCategories {
+  categories: OnDemandCategory[];
+  portals: OnDemandPortal[];
+}
+
+export interface OnDemandPage {
+  items: OnDemandItem[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+/** A Season of a Series' detail (ascending). */
+export interface OnDemandSeason {
+  id: string;
+  number: number | null;
+  name: string | null;
+  episodeCount: number | null;
+}
+
+/** GET /api/ondemand/item/<portal>/<id>: the list item plus the portal's facts. */
+export interface OnDemandDetail extends OnDemandItem {
+  /** Only when it differs from `name`. */
+  originalName?: string | null;
+  description: string | null;
+  /** Comma-separated, as the portal writes it. */
+  genres: string | null;
+  director: string | null;
+  /** Comma-separated, as the portal writes it. */
+  actors: string | null;
+  country: string | null;
+  durationMin: number | null;
+  ageRating: string | null;
+  categories: string[];
+  /** Series only. */
+  seasons?: OnDemandSeason[];
+}
+
+/** One Episode of GET /api/ondemand/series/<portal>/<seriesId>/season/<seasonId>. */
+export interface OnDemandEpisode {
+  id: string;
+  seasonId: string;
+  number: number | null;
+  name: string | null;
+  progress: OnDemandProgress | null;
+}
+
+/** What POST /play and PUT progress name: a Movie, or one Episode of a Series. */
+export type OnDemandKey =
+  | { portal: string; id: string }
+  | { portal: string; seriesId: string; seasonId: string; episodeId: string };
+
+/** POST /api/ondemand/play's answer: an On Demand session (ADR 0005). */
+export interface OnDemandSession {
+  session: string;
+  type: "hls";
+  url: string;
+  durationSec: number | null;
 }

@@ -59,6 +59,10 @@ def loadApp(testCase, config):
         "getGenreNames": {"9": "Sports"},
         "getEpg": None,
         "getShortEpg": {"1": [], "2": [], "3": []},
+        # On Demand tests give these a fake catalogue.
+        "getOnDemandCategories": None,
+        "getOnDemandPage": None,
+        "getOnDemandList": None,
     }
     for name, value in stubs.items():
         patcher = mock.patch.object(appModule.stb, name, return_value=value)
@@ -66,6 +70,9 @@ def loadApp(testCase, config):
         testCase.addCleanup(patcher.stop)
     # No background Plex retries in tests; tests of retrying set the delays themselves.
     appModule.PLEX_RETRY_DELAYS = []
+    # On Demand crawls run in the request (not a thread) and without pausing between calls.
+    appModule.ONDEMAND_BACKGROUND = False
+    appModule.ONDEMAND_CRAWL_INTERVAL = 0
     # Never download the logo database in tests; tests that need one set logoIndex themselves.
     appModule.realRefreshLogoIndex = appModule.refreshLogoIndex
     patcher = mock.patch.object(appModule, "refreshLogoIndex", return_value=None)

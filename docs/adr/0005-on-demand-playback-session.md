@@ -5,7 +5,7 @@ Viewers reach On Demand through a third door, `/api/ondemand/*`, next to `/api/l
 - STB-Proxy rewrites the portal's HLS master and media playlists so that every URI points back at `/api/ondemand/session/<sid>/…`, and passes the segments through. Storage hosts and tokens never reach a client.
 - A session is never shared between viewers. It holds one **Streams Per MAC** slot but no **Tuner**, and it releases the slot after 120 s with no request or on `DELETE`.
 
-The user's portal really allows one playback session per MAC, and the newest session wins. Re-minting a link after a 403 would then evict whoever just started playing, so **the server never re-mints mid-session**. A session that gets a 403 ends, and the client gets **410 `session_ended`** with a reason (`idle`, `evicted`, `stopped`). Clients restart silently only after `idle`, which is STB-Proxy's own timeout, and always through normal admission. After `evicted` or `stopped` the viewer has to press Resume.
+The user's portal really allows one playback session per MAC, and the newest session wins. Re-minting a link after a 403 would then evict whoever just started playing, so **the server never re-mints mid-session**. A session that gets a 403 ends, and the client gets **410 `session_ended`** with a reason (`idle`, `evicted`, `failed`, `stopped`). `evicted` is a 401, 403 or 404 from the storage host; any other upstream failure (a timeout, a dropped connection, a 5xx) is `failed`, so a flaky portal isn't reported as another device taking over. Clients restart silently only after `idle`, which is STB-Proxy's own timeout, and always through normal admission. After `evicted`, `failed` or `stopped` the viewer has to press Resume.
 
 ## Considered options
 

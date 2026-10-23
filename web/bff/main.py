@@ -13,6 +13,7 @@ import re
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 from fastapi import FastAPI, Request, Response
@@ -321,23 +322,200 @@ async def guide_channel(request: Request):
     return data
 
 
-@app.get("/stream/{portal}/{channel_id}")
-async def stream(portal: str, channel_id: str, request: Request):
+# On Demand (ADR 0005): /api/ondemand/* is mirrored 1:1 onto STB-Proxy with the session's
+# Basic login, so the web viewer and the Companion app share one URL shape. Status codes and
+# the {error, code} bodies pass through unchanged; only an upstream 401 is mapped, to the
+# BFF's session_invalid, so the SPA signs the viewer out.
+
+
+def _ondemand_path(*parts: str) -> str:
+    """The upstream path for these route params, each one a single quoted segment."""
+    for part in parts:
+        if part in ("", ".", ".."):
+            raise not_found("Not found.")
+    return "/api/ondemand/" + "/".join(quote(part, safe="") for part in parts)
+
+
+def _ondemand_reply(request: Request, session: Session, upstream: httpx.Response) -> Response:
+    """An upstream JSON (or empty) reply, passed through as it came."""
+    if upstream.status_code == 401:
+        request.app.state.store.delete_hash(session.token_hash)
+        raise session_invalid()
+    content_type = upstream.headers.get("content-type", "")
+    if upstream.content and not content_type.startswith("application/json"):
+        raise proxy_error()
+    headers = {"Cache-Control": "no-store"}
+    if upstream.content:
+        headers["Content-Type"] = content_type
+    return Response(upstream.content, status_code=upstream.status_code, headers=headers)
+
+
+async def _ondemand_json(request: Request, method: str, path: str) -> Response:
+    """Forward one On Demand JSON call; uncached, since progress changes what it returns.
+
+    A change (anything but GET) needs the session's CSRF token, as logout does. Its body is
+    forwarded as JSON whatever type the browser labelled it, so a progress report sent by a
+    keepalive fetch while the page hides still lands."""
+    session = _get_session(request)
+    headers = {}
+    content = None
+    if method != "GET":
+        if not valid_csrf(session.csrf, request.headers.get("x-csrf-token")):
+            raise ApiError(403, "csrf", "Invalid CSRF token.")
+        content = await request.body()
+        if content:
+            headers["Content-Type"] = "application/json"
+    client: httpx.AsyncClient = request.app.state.client
+    try:
+        upstream = await client.request(
+            method,
+            path,
+            params=request.url.query,
+            content=content,
+            headers=headers,
+            auth=_basic(request, session),
+        )
+    except httpx.HTTPError:
+        raise proxy_unreachable()
+    return _ondemand_reply(request, session, upstream)
+
+
+@app.get("/api/ondemand/categories")
+async def ondemand_categories(request: Request):
+    return await _ondemand_json(request, "GET", _ondemand_path("categories"))
+
+
+@app.get("/api/ondemand/items")
+async def ondemand_items(request: Request):
+    return await _ondemand_json(request, "GET", _ondemand_path("items"))
+
+
+@app.get("/api/ondemand/item/{portal}/{item_id}")
+async def ondemand_item(portal: str, item_id: str, request: Request):
+    return await _ondemand_json(request, "GET", _ondemand_path("item", portal, item_id))
+
+
+@app.get("/api/ondemand/series/{portal}/{series_id}/season/{season_id}")
+async def ondemand_season(portal: str, series_id: str, season_id: str, request: Request):
+    return await _ondemand_json(
+        request, "GET", _ondemand_path("series", portal, series_id, "season", season_id)
+    )
+
+
+@app.get("/api/ondemand/continue")
+async def ondemand_continue(request: Request):
+    return await _ondemand_json(request, "GET", _ondemand_path("continue"))
+
+
+def _peek_session(request: Request) -> Session:
+    """The BFF session, without sliding its idle timer: a playing video alone doesn't keep
+    a login alive."""
     token = request.cookies.get(config.cookie_name)
     session = request.app.state.store.peek(token) if token else None
     if session is None:
         raise unauthorized()
+    return session
 
+
+async def _open_upstream(
+    request: Request, session: Session, path: str, headers: dict[str, str] | None = None
+) -> httpx.Response:
+    """GET `path` from STB-Proxy as this session's Account, unread (stream=True)."""
     client: httpx.AsyncClient = request.app.state.client
     upstream_request = client.build_request(
-        "GET",
-        f"/play/{portal}/{channel_id}",
-        headers={"Accept-Encoding": "identity"},
+        "GET", path, headers={"Accept-Encoding": "identity", **(headers or {})}
     )
     try:
-        upstream = await client.send(upstream_request, stream=True, auth=_basic(request, session))
+        return await client.send(upstream_request, stream=True, auth=_basic(request, session))
     except httpx.HTTPError:
         raise proxy_unreachable()
+
+
+def _relay(upstream: httpx.Response, status_code: int, headers: dict[str, str]) -> StreamingResponse:
+    """Stream an opened upstream body through as it arrives; a client that goes away closes
+    the upstream."""
+
+    async def body():
+        try:
+            async for chunk in upstream.aiter_raw(65536):
+                yield chunk
+        finally:
+            await upstream.aclose()
+
+    return StreamingResponse(
+        body(), status_code=status_code, headers={**headers, "X-Accel-Buffering": "no"}
+    )
+
+
+async def _ondemand_stream(
+    request: Request, path: str, pass_headers: tuple[str, ...], forward: tuple[str, ...] = ()
+) -> Response:
+    """Stream one On Demand file (a poster, a playlist, a segment) through as-is: no rewrite,
+    no remux. The named response headers pass through. Uses peek, like /stream."""
+    session = _peek_session(request)
+    upstream = await _open_upstream(
+        request,
+        session,
+        path,
+        {name: request.headers[name] for name in forward if name in request.headers},
+    )
+
+    if upstream.status_code >= 400:
+        try:
+            await upstream.aread()
+        except httpx.HTTPError:
+            raise proxy_unreachable()
+        finally:
+            await upstream.aclose()
+        return _ondemand_reply(request, session, upstream)
+
+    return _relay(
+        upstream,
+        upstream.status_code,
+        {name: upstream.headers[name] for name in pass_headers if name in upstream.headers},
+    )
+
+
+@app.get("/api/ondemand/poster/{portal}/{item_id}")
+async def ondemand_poster(portal: str, item_id: str, request: Request):
+    return await _ondemand_stream(
+        request,
+        _ondemand_path("poster", portal, item_id),
+        ("Content-Type", "Content-Length", "Cache-Control", "ETag", "Last-Modified"),
+    )
+
+
+@app.get("/api/ondemand/session/{sid}/{name}")
+async def ondemand_session_file(sid: str, name: str, request: Request):
+    """A session's playlist or segment. STB-Proxy already made every playlist URI a bare
+    name relative to this path, so nothing is rewritten; a seek is a Range or a new segment."""
+    return await _ondemand_stream(
+        request,
+        _ondemand_path("session", sid, name),
+        ("Content-Type", "Content-Length", "Content-Range", "Accept-Ranges", "Cache-Control"),
+        forward=("Range",),
+    )
+
+
+@app.put("/api/ondemand/progress")
+async def ondemand_progress(request: Request):
+    return await _ondemand_json(request, "PUT", _ondemand_path("progress"))
+
+
+@app.post("/api/ondemand/play")
+async def ondemand_play(request: Request):
+    return await _ondemand_json(request, "POST", _ondemand_path("play"))
+
+
+@app.delete("/api/ondemand/session/{sid}")
+async def ondemand_session_end(sid: str, request: Request):
+    return await _ondemand_json(request, "DELETE", _ondemand_path("session", sid))
+
+
+@app.get("/stream/{portal}/{channel_id}")
+async def stream(portal: str, channel_id: str, request: Request):
+    session = _peek_session(request)
+    upstream = await _open_upstream(request, session, f"/play/{portal}/{channel_id}")
 
     if upstream.status_code == 503:
         await upstream.aclose()
@@ -354,23 +532,7 @@ async def stream(portal: str, channel_id: str, request: Request):
         raise proxy_error()
 
     content_type = upstream.headers.get("content-type", "application/octet-stream")
-
-    async def body():
-        try:
-            async for chunk in upstream.aiter_raw(65536):
-                yield chunk
-        finally:
-            await upstream.aclose()
-
-    return StreamingResponse(
-        body(),
-        status_code=200,
-        headers={
-            "Content-Type": content_type,
-            "Cache-Control": "no-store",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return _relay(upstream, 200, {"Content-Type": content_type, "Cache-Control": "no-store"})
 
 
 _HLS_NAME = re.compile(r"^(index\.m3u8|init\.mp4|seg\d+\.m4s)$")
