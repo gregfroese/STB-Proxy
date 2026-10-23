@@ -16,7 +16,7 @@
     zapIndex,
     type PlaybackError,
   } from "../lib/playerLogic";
-  import { navigate, route } from "../lib/router";
+  import { guardPopState, navigate, route } from "../lib/router";
   import { parseScope, watchUrl } from "../lib/zapScope";
   import type { Channel } from "../lib/types";
 
@@ -146,7 +146,11 @@
   });
 
   function goto(target: Channel) {
-    navigate(watchUrl(target, scope));
+    // In "window" full screen the current history entry is the full-screen one
+    // (Back leaves full screen), so a zap replaces it rather than stacking.
+    const url = watchUrl(target, scope);
+    if (fullWindowEntry) fullWindowUrl = url;
+    navigate(url, fullWindowEntry);
   }
 
   function zap(delta: number) {
@@ -189,6 +193,23 @@
     }, 50);
   }
 
+  // "window" full screen pushes a history entry, so the remote's Back (which a TV
+  // app's WebView turns into history.back()) leaves full screen, not the page.
+  let fullWindowEntry = false;
+  // The playing channel's URL while in "window" full screen, restored on Back.
+  let fullWindowUrl = "";
+
+  // Claims Back before the router follows it: after zaps the entry below is an
+  // older channel, and switching to it would restart the stream. Put the playing
+  // channel's URL there instead.
+  function onBack(): boolean {
+    if (!fullWindowEntry) return false;
+    fullWindowEntry = false;
+    navigate(fullWindowUrl, true);
+    setFullWindow(false);
+    return true;
+  }
+
   function setFullWindow(on: boolean) {
     fullWindow = on;
     isFullscreen = on || document.fullscreenElement != null;
@@ -197,17 +218,28 @@
 
   function toggleFullscreen() {
     if (isFullscreen) {
+      if (fullWindowEntry) {
+        history.back();
+        return;
+      }
       setFullWindow(false);
       if (document.fullscreenElement) void document.exitFullscreen();
       return;
     }
     const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
-    if (fullscreenStrategy(navigator.userAgent, coarse) === "video") {
+    const strategy = fullscreenStrategy(navigator.userAgent, coarse);
+    if (strategy === "video") {
       const request = videoEl?.requestFullscreen?.();
       if (request && typeof request.catch === "function") request.catch(() => undefined);
       return;
     }
     setFullWindow(true);
+    if (strategy === "window") {
+      fullWindowUrl = location.pathname + location.search;
+      history.pushState(null, "", fullWindowUrl);
+      fullWindowEntry = true;
+      return;
+    }
     const request = document.documentElement.requestFullscreen?.();
     if (request && typeof request.catch === "function") request.catch(() => undefined);
   }
@@ -264,7 +296,9 @@
     document.addEventListener("visibilitychange", onVisibility);
     document.addEventListener("fullscreenchange", onFullscreenChange);
     window.addEventListener("resize", refreshVideoLayer);
+    const releaseBack = guardPopState(onBack);
     return () => {
+      releaseBack();
       window.clearTimeout(refreshTimer);
       window.removeEventListener("resize", refreshVideoLayer);
       window.clearInterval(timer);
@@ -320,7 +354,7 @@
         innerHeight
       } · box ${video.clientWidth}×${video.clientHeight} · fs ${
         document.fullscreenElement?.tagName.toLowerCase() ?? "off"
-      }${fullWindow ? " +page" : ""}${document.documentElement.classList.contains("tv") ? " · tv" : ""}`;
+      }${fullWindow ? (fullWindowEntry ? " +window" : " +page") : ""}${document.documentElement.classList.contains("tv") ? " · tv" : ""}`;
     }, 1000);
     return () => window.clearInterval(timer);
   });

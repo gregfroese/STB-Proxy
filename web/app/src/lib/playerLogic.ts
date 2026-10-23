@@ -149,15 +149,21 @@ export function zapTarget(
   return next < 0 ? null : list[next];
 }
 
-export type FullscreenStrategy = "video" | "page";
+export type FullscreenStrategy = "video" | "page" | "window";
 
 /**
- * How full screen is done. Phones fullscreen the video element itself, because
- * fullscreening a container with an MSE video stalls on some Android Chrome
- * versions. Everything else (TV, desktop) grows the player to fill the page and
- * fullscreens the page: TV browsers (Fire TV's Silk, Downloader's WebView) hide
- * the page around a fullscreened video but leave the picture at its old size.
+ * How full screen is done.
+ * - "video": phones fullscreen the video element itself, because fullscreening a
+ *   container with an MSE video stalls on some Android Chrome versions.
+ * - "window": TV apps' built-in browsers (a WebView, e.g. Downloader on Fire TV)
+ *   only grow the player to fill the browser. A WebView hands a fullscreened page
+ *   to a separate view, but Fire TV keeps placing the hardware video layer by the
+ *   original browser view, so the picture stays at its old size.
+ * - "page": other TV browsers (Silk) and desktop grow the player to fill the page
+ *   and fullscreen the page; a fullscreened <video> keeps its old size on TV.
  */
 export function fullscreenStrategy(userAgent: string, coarsePointer: boolean): FullscreenStrategy {
-  return coarsePointer && !isTvBrowser(userAgent) ? "video" : "page";
+  const tv = isTvBrowser(userAgent);
+  if (coarsePointer && !tv) return "video";
+  return tv && /\bwv\b/.test(userAgent) ? "window" : "page";
 }

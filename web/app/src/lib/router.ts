@@ -4,13 +4,7 @@
 import { writable } from "svelte/store";
 
 export type RouteName =
-  | "login"
-  | "picker"
-  | "player"
-  | "multiview"
-  | "guide"
-  | "settings"
-  | "notfound";
+  "login" | "picker" | "player" | "multiview" | "guide" | "settings" | "notfound";
 
 export interface Route {
   name: RouteName;
@@ -33,8 +27,21 @@ export function parseRoute(input: string): Route {
 
 export const route = writable<Route>(parseRoute(window.location.pathname + window.location.search));
 
+type PopGuard = () => boolean;
+const popGuards = new Set<PopGuard>();
+
+/**
+ * Lets a screen claim a Back press before the router follows it: a guard that
+ * returns true has handled it, and the route is left alone. Returns the remover.
+ */
+export function guardPopState(guard: PopGuard): () => void {
+  popGuards.add(guard);
+  return () => popGuards.delete(guard);
+}
+
 if (typeof window !== "undefined") {
   window.addEventListener("popstate", () => {
+    for (const guard of popGuards) if (guard()) return;
     route.set(parseRoute(window.location.pathname + window.location.search));
   });
 }

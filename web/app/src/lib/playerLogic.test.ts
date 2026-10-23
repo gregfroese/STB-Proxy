@@ -202,8 +202,9 @@ describe("channel up/down within the launch Block", () => {
 
 describe("zap scope (ticket 07)", () => {
   it("a group scope re-derives like today", () => {
-    expect(scopeZapList(channels, { kind: "group", block: "News", label: "News" }, "blocks", null))
-      .toEqual([news1, news2, news3]);
+    expect(
+      scopeZapList(channels, { kind: "group", block: "News", label: "News" }, "blocks", null),
+    ).toEqual([news1, news2, news3]);
   });
 
   it("a list scope walks the given order, filtering to the lineup", () => {
@@ -235,6 +236,8 @@ describe("fullscreenStrategy", () => {
     "Mozilla/5.0 (Linux; Android 9; AFTKA Build/PS7633) AppleWebKit/537.36 (KHTML, like Gecko) Silk/112.5.1 like Chrome/112.0 Safari/537.36";
   const fireTvWebView =
     "Mozilla/5.0 (Linux; Android 9; AFTMM Build/PS7633; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0 Mobile Safari/537.36";
+  const downloader =
+    "Mozilla/5.0 (Linux; Android 11; AFTKM Build/RS8185.3891N; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/150.0.7871.181 Mobile Safari/537.36";
   const desktop =
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36";
 
@@ -242,10 +245,15 @@ describe("fullscreenStrategy", () => {
     expect(fullscreenStrategy(phone, true)).toBe("video");
   });
 
-  it("fills the page on Fire TV, even when it reports a coarse pointer", () => {
+  it("fills the page in Fire TV's Silk, even when it reports a coarse pointer", () => {
     expect(fullscreenStrategy(fireTvSilk, true)).toBe("page");
-    expect(fullscreenStrategy(fireTvWebView, true)).toBe("page");
-    expect(fullscreenStrategy(fireTvWebView, false)).toBe("page");
+    expect(fullscreenStrategy(fireTvSilk, false)).toBe("page");
+  });
+
+  it("only fills the browser in a Fire TV app's WebView (Downloader)", () => {
+    expect(fullscreenStrategy(fireTvWebView, true)).toBe("window");
+    expect(fullscreenStrategy(fireTvWebView, false)).toBe("window");
+    expect(fullscreenStrategy(downloader, false)).toBe("window");
   });
 
   it("fills the page on desktop", () => {
