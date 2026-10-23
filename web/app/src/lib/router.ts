@@ -1,10 +1,18 @@
 // A minimal history-based router (spec 2.1). Routes: login, picker, player,
-// multiview, settings.
+// multiview, guide, settings, ondemand (browse) and ondemandTitle (a title's page).
 
 import { writable } from "svelte/store";
 
 export type RouteName =
-  "login" | "picker" | "player" | "multiview" | "guide" | "settings" | "notfound";
+  | "login"
+  | "picker"
+  | "player"
+  | "multiview"
+  | "guide"
+  | "settings"
+  | "ondemand"
+  | "ondemandTitle"
+  | "notfound";
 
 export interface Route {
   name: RouteName;
@@ -22,6 +30,8 @@ export function parseRoute(input: string): Route {
   else if (path === "/multiview") name = "multiview";
   else if (path === "/guide") name = "guide";
   else if (path === "/settings") name = "settings";
+  else if (path === "/ondemand") name = "ondemand";
+  else if (path === "/ondemand/title") name = "ondemandTitle";
   return { name, path, query: url.searchParams };
 }
 
