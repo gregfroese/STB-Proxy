@@ -33,3 +33,7 @@ The rule is applied by one helper, `viewerHidden()`: it returns no hidden Blocks
 
 - *Keep hidden Blocks unassignable* — rejected: it forces a second "hidden but assignable" concept for the same need (show a Block only to specific viewers).
 - *Let the operator also see hidden Blocks on the feeds* — rejected: the operator credentials are what Plex and Jellyfin use, so it would leak hidden Blocks to those players and defeat the feature.
+
+## See also
+
+- [ADR 0004](0004-on-demand-visibility.md): **On Demand** is a second, non-Block visibility axis on Accounts.

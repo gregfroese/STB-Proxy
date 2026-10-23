@@ -25,7 +25,7 @@ The web interface STB-Proxy serves to the **Operator**, rendered by Flask from `
 _Avoid_: web UI, admin panel, frontend; **Dashboard** is one page within it, not a synonym
 
 **Account**:
-A viewer login (username/password) usable as HTTP Basic on the feed endpoints, mapped to a set of **Blocks** (including STB-Proxy-only ones). The Lineup served to an account is its public channels plus the channels of its assigned, switched-on blocks.
+A viewer login (username/password) usable as HTTP Basic on the feed endpoints, mapped to a set of **Blocks** (including STB-Proxy-only ones). The Lineup served to an account is its public channels plus the channels of its assigned, switched-on blocks. Separately from its blocks, the **Operator** switches **On Demand** on or off per account (off by default), and whether it sees **Adult On Demand**.
 _Avoid_: user, login, profile, tenant
 
 **Block**:
@@ -58,3 +58,50 @@ _Avoid_: mosaic, multi-screen, grid
 
 **Tile**:
 One cell of a Multiview grid, playing a single channel.
+
+**On Demand**:
+A portal's catalogue of **Movies** and **Series** a viewer can play at any time, as opposed to the live **Lineup**. STB-Proxy merges every enabled portal's catalogue into one, and each item names its portal.
+_Avoid_: VOD, Video Club, library, catch-up (catch-up is past **Programmes** on a live **Channel**, not On Demand)
+
+**On Demand category**:
+The grouping a portal assigns to On Demand items (e.g. "Action", "Kids"). One item can sit in several categories. Categories with the same name on different portals appear to viewers as one, and are hidden or shown as one. The **Operator** can hide a category from every viewer; an item in any hidden category is hidden everywhere, even if it also sits in a visible one.
+_Avoid_: genre (that's a **Channel**'s category), block
+
+**Adult On Demand**:
+On Demand categories and items the portal flags as adult. Hidden from an **Account** unless the Operator allows it for that account.
+_Avoid_: censored, locked, XXX
+
+**Movie**:
+One playable On Demand item with no episodes.
+_Avoid_: film, title, asset
+
+**Series**:
+An On Demand item made of **Seasons**, each holding **Episodes**; only Episodes are playable.
+_Avoid_: show, programme
+
+**Season**:
+A numbered set of **Episodes** within a **Series**.
+
+**Episode**:
+One playable part of a **Season**.
+_Avoid_: programme (that's a **Guide** entry)
+
+**On Demand session**:
+One viewer playing one **Movie** or **Episode**. It is never shared. While it plays it takes one of its portal's playback slots, so it competes with live viewing on that portal, but it is not a **Tuner**. It ends when the viewer stops, when it sits idle, when the operator stops it, or when the portal hands the slot to someone else.
+_Avoid_: stream, VOD session
+
+**Resume point**:
+Where an **Account** left off in a **Movie** or **Episode** it has not finished. It is kept by STB-Proxy, so it follows the viewer across devices.
+_Avoid_: progress, bookmark, position
+
+**Watched**:
+A **Movie** or **Episode** an **Account** has played to 90% or to the end, or marked watched by hand. It stays watched when played again.
+_Avoid_: seen, finished, completed
+
+**Up next**:
+The **Episode** a **Series** resumes at for an **Account**: the one it last played, if unfinished, or else the one after it.
+_Avoid_: next episode, autoplay
+
+**Continue watching**:
+An **Account**'s unfinished **Movies** and **Series**, most recently played first.
+_Avoid_: history, recently watched, in progress
