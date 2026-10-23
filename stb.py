@@ -523,6 +523,19 @@ def getOnDemandPage(url, mac, token, page, proxy=None, source="vod"):
     return getOnDemandList(url, mac, token, {"category": "*", "sortby": "added"}, page, proxy, source)
 
 
+def getOnDemandLink(url, mac, token, cmd, series=0, proxy=None):
+    """The `js` of a type=vod create_link for `cmd` (Episode `series`, or 0), or None if
+    the portal didn't answer. ondemandsession.linkFrom reads the link out of it. The link
+    is short-lived and bound to this MAC's session: mint it at play time, server-side."""
+    try:
+        return onDemandRequest(url, mac, token, {
+            "action": "create_link", "cmd": cmd, "series": series,
+            "forced_storage": "", "disable_ad": "0", "download": "0",
+        }, proxy)
+    except Exception:
+        return None
+
+
 def getOnDemandList(url, mac, token, params, page, proxy=None, source="vod"):
     """One page (1-based) of a type=`source` get_ordered_list with these extra `params`,
     such as a Series' Seasons (movie_id) or a Season's Episodes (movie_id, season_id), or
