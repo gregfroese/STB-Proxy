@@ -34,14 +34,23 @@ class NormaliseTest(unittest.TestCase):
         records = accounts.normaliseAccounts([
             {"username": "katie", "hash": "h", "blocks": ["Kids"], "enabled": True},
         ])
-        self.assertEqual(records, [{"username": "katie", "hash": "h", "blocks": ["Kids"], "enabled": True}])
+        self.assertEqual(records, [{"username": "katie", "hash": "h", "blocks": ["Kids"], "enabled": True,
+                                    "on demand": False, "adult on demand": False}])
 
     def test_drops_junk_and_fills_defaults(self):
         records = accounts.normaliseAccounts([
             "nope", {"hash": "h"}, {"username": "", "hash": "h"},
             {"username": "katie", "hash": "h", "blocks": "Kids"},
         ])
-        self.assertEqual(records, [{"username": "katie", "hash": "h", "blocks": [], "enabled": True}])
+        self.assertEqual(records, [{"username": "katie", "hash": "h", "blocks": [], "enabled": True,
+                                    "on demand": False, "adult on demand": False}])
+
+    def test_keeps_the_on_demand_switches(self):
+        records = accounts.normaliseAccounts([
+            {"username": "katie", "hash": "h", "on demand": True, "adult on demand": True},
+            {"username": "sam", "hash": "h", "on demand": "yes", "adult on demand": 0},
+        ])
+        self.assertEqual([(r["on demand"], r["adult on demand"]) for r in records], [(True, True), (False, False)])
 
     def test_a_non_list_is_empty(self):
         self.assertEqual(accounts.normaliseAccounts(None), [])

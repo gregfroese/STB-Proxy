@@ -414,6 +414,19 @@ def viewerBlocks():
     return None
 
 
+def viewerOnDemand():
+    """The Account this request may use On Demand as, else None (ADR 0004).
+
+    Only an enabled Account with its "on demand" switch on. Anonymous requests and the
+    operator login (which Plex and Jellyfin use) never get On Demand. Requires
+    resolveViewer() to have run.
+    """
+    account = getattr(g, "account", None) if flask.has_request_context() else None
+    if account is not None and account["enabled"] and account.get("on demand") is True:
+        return account
+    return None
+
+
 def authorise(f):
     """The operator/admin gate: security off, or the operator login. Accounts are viewers
     only, so presenting account credentials here is rejected with the usual challenge."""
@@ -1452,6 +1465,8 @@ def accountsCreate():
         "hash": accounts.hashPassword(password),
         "blocks": accountBlocksFromForm(),
         "enabled": request.form.get("enabled") == "true",
+        "on demand": False,
+        "adult on demand": False,
     })
     saveAccounts(records)
     logger.info("Account({}) created".format(username))
@@ -1509,6 +1524,29 @@ def accountsToggle():
     saveAccounts(getAccounts())
     logger.info("Account({}) {}".format(username, "enabled" if enabled else "disabled"))
     flash("{} {}".format(username, "enabled" if enabled else "disabled"), "success")
+    return redirect("/accounts", code=302)
+
+
+@app.route("/accounts/ondemand", methods=["POST"])
+@authorise
+def accountsOnDemand():
+    """Switch On Demand, or Adult On Demand, on or off for one Account (ADR 0004)."""
+    username = request.form.get("username", "").strip()
+    switch = request.form.get("switch")
+    on = request.form.get("value") == "true"
+    account = accounts.findAccount(getAccounts(), username)
+    if not account:
+        flash("No account called {}".format(username), "danger")
+        return redirect("/accounts", code=302)
+    if switch not in ("on demand", "adult on demand"):
+        flash("Unknown switch", "danger")
+        return redirect("/accounts", code=302)
+
+    account[switch] = on
+    saveAccounts(getAccounts())
+    label = "On Demand" if switch == "on demand" else "Adult On Demand"
+    logger.info("Account({}) {} {}".format(username, label, "on" if on else "off"))
+    flash("{} for {} {}".format(label, username, "on" if on else "off"), "success")
     return redirect("/accounts", code=302)
 
 
@@ -3670,7 +3708,35 @@ def apiLineup():
         "blocks": blocksOut,
         "channels": channels,
         "failedPortals": failedPortals,
+        "onDemand": viewerOnDemand() is not None,
     })
+
+
+def onDemandError(status, code, text):
+    """The /api/ondemand/* error shape: {"error": <human text>, "code": <machine>}."""
+    return flask.jsonify({"error": text, "code": code}), status
+
+
+def onDemandAuthorise(f):
+    """The On Demand gate, inside @feedAuthorise: 404 on_demand_off unless viewerOnDemand()
+    finds an Account allowed On Demand. 404 rather than 403, so the feature isn't advertised
+    to Plex, Jellyfin or anyone else (ADR 0004)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if viewerOnDemand() is None:
+            return onDemandError(404, "on_demand_off", "On Demand isn't available on this login")
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+# The viewer On Demand door (ADR 0005): Basic auth like /api/lineup, then the On Demand gate.
+@app.route("/api/ondemand/categories", methods=["GET"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandCategories():
+    """The merged On Demand categories and per-portal index status (filled in by the index)."""
+    return flask.jsonify({"categories": [], "portals": []})
 
 
 lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}

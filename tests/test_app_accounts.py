@@ -84,6 +84,43 @@ class AccountsPageTest(unittest.TestCase):
         self.assertEqual(self.app.getAccounts(), [])
 
 
+class OnDemandSwitchTest(unittest.TestCase):
+    def setUp(self):
+        self.app = loadApp(self, accountConfig())
+        self.client = self.app.app.test_client()
+        self.client.post("/accounts/create", data={"username": "katie", "password": "x", "enabled": "true"})
+
+    def switches(self):
+        """The account's switches as a fresh load of config.json sees them."""
+        account = self.app.loadConfig()["accounts"][0]
+        return account["on demand"], account["adult on demand"]
+
+    def test_a_new_account_has_on_demand_off(self):
+        self.assertEqual(self.switches(), (False, False))
+
+    def test_switches_are_set_and_saved(self):
+        self.client.post("/accounts/ondemand", data={"username": "katie", "switch": "on demand", "value": "true"})
+        self.assertEqual(self.switches(), (True, False))
+        self.client.post("/accounts/ondemand", data={"username": "katie", "switch": "adult on demand", "value": "true"})
+        self.assertEqual(self.switches(), (True, True))
+        self.client.post("/accounts/ondemand", data={"username": "katie", "switch": "on demand", "value": "false"})
+        self.assertEqual(self.switches(), (False, True))
+
+    def test_unknown_switches_and_accounts_change_nothing(self):
+        self.client.post("/accounts/ondemand", data={"username": "katie", "switch": "enabled", "value": "false"})
+        self.client.post("/accounts/ondemand", data={"username": "nope", "switch": "on demand", "value": "true"})
+        self.assertTrue(self.app.getAccounts()[0]["enabled"])
+        self.assertEqual(self.switches(), (False, False))
+
+    def test_page_shows_both_switches_with_adult_greyed_while_off(self):
+        body = self.client.get("/accounts").get_data(as_text=True)
+        self.assertIn('value="on demand"', body)
+        self.assertRegex(body, r'<input[^>]*data-switch="adult on demand"[^>]*disabled')
+        self.client.post("/accounts/ondemand", data={"username": "katie", "switch": "on demand", "value": "true"})
+        body = self.client.get("/accounts").get_data(as_text=True)
+        self.assertNotRegex(body, r'<input[^>]*data-switch="adult on demand"[^>]*disabled')
+
+
 class HiddenBlockTest(unittest.TestCase):
     def setUp(self):
         self.app = loadApp(self, accountConfig(**{"hidden blocks": ["Kids"]}))

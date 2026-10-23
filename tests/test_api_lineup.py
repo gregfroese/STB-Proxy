@@ -75,13 +75,15 @@ class ApiLineupTestCase(unittest.TestCase):
         self.client = self.app.app.test_client()
         self.addAccount("katie", "secret", ["Kids", "Sports"])
 
-    def addAccount(self, username, password, blocks, enabled=True):
+    def addAccount(self, username, password, blocks, enabled=True, onDemand=False):
         self.app.getAccounts().append(
             {
                 "username": username,
                 "hash": self.app.accounts.hashPassword(password),
                 "blocks": blocks,
                 "enabled": enabled,
+                "on demand": onDemand,
+                "adult on demand": False,
             }
         )
 
@@ -99,7 +101,7 @@ class ApiLineupTestCase(unittest.TestCase):
 class EnvelopeTest(ApiLineupTestCase):
     def test_envelope_fields(self):
         data = self.data("katie")
-        self.assertEqual(set(data.keys()), {"account", "blocks", "channels", "failedPortals"})
+        self.assertEqual(set(data.keys()), {"account", "blocks", "channels", "failedPortals", "onDemand"})
         self.assertEqual(data["account"], "katie")
         self.assertIsInstance(data["blocks"], list)
         self.assertIsInstance(data["channels"], list)
@@ -200,6 +202,20 @@ class VisibilityTest(ApiLineupTestCase):
         data = self.data("katie")
         self.assertEqual(data["account"], "katie")
         self.assertEqual(set(self.byId(data)), {"1", "2", "3", "4"})
+
+
+class OnDemandFlagTest(ApiLineupTestCase):
+    """Clients show their On Demand entry from this flag (ADR 0004)."""
+
+    def test_true_only_for_an_account_with_on_demand_on(self):
+        self.addAccount("sam", "secret", ["Kids"], onDemand=True)
+        self.assertIs(self.data("sam")["onDemand"], True)
+        self.assertIs(self.data("katie")["onDemand"], False)
+
+    def test_false_for_the_operator_and_anonymous(self):
+        self.assertIs(self.data("admin", "12345")["onDemand"], False)
+        self.app.getSettings()["enable security"] = "false"
+        self.assertIs(self.data()["onDemand"], False)
 
 
 class OrderingTest(ApiLineupTestCase):
