@@ -7,16 +7,16 @@
   import { attachStream, type StreamHandle } from "../lib/stream";
   import { channelKey, effectiveGroupMode, launchGroupFor } from "../lib/pickerLogic";
   import { groupMode } from "../lib/prefs";
+  import { createFullscreen, type FullscreenController } from "../lib/fullscreen";
   import {
     epgRefreshAction,
-    fullscreenStrategy,
     programmeProgress,
     resolveNowNext,
     scopeZapList,
     zapIndex,
     type PlaybackError,
   } from "../lib/playerLogic";
-  import { guardPopState, navigate, route } from "../lib/router";
+  import { navigate, route } from "../lib/router";
   import { parseScope, watchUrl } from "../lib/zapScope";
   import type { Channel } from "../lib/types";
 
@@ -149,8 +149,9 @@
     // In "window" full screen the current history entry is the full-screen one
     // (Back leaves full screen), so a zap replaces it rather than stacking.
     const url = watchUrl(target, scope);
-    if (fullWindowEntry) fullWindowUrl = url;
-    navigate(url, fullWindowEntry);
+    const windowEntry = fullscreen?.inWindowEntry() ?? false;
+    if (windowEntry) fullscreen?.setWindowUrl(url);
+    navigate(url, windowEntry);
   }
 
   function zap(delta: number) {
@@ -171,88 +172,12 @@
     retry();
   }
 
-  // TV browsers (Fire TV) draw the picture on a hardware layer that doesn't follow
-  // CSS size changes: the stage grows but the picture keeps its old size and place.
-  // Hiding the video for a couple of frames makes the browser rebuild that layer at
-  // the video's current size. Playback carries on underneath.
-  let refreshTimer = 0;
-  function refreshVideoLayer() {
-    window.clearTimeout(refreshTimer);
-    refreshTimer = window.setTimeout(() => {
-      const video = videoEl;
-      if (!video) return;
-      video.style.visibility = "hidden";
-      video.style.display = "none";
-      void video.offsetHeight;
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          video.style.display = "";
-          video.style.visibility = "";
-        }),
-      );
-    }, 50);
-  }
-
-  // "window" full screen pushes a history entry, so the remote's Back (which a TV
-  // app's WebView turns into history.back()) leaves full screen, not the page.
-  let fullWindowEntry = false;
-  // The playing channel's URL while in "window" full screen, restored on Back.
-  let fullWindowUrl = "";
-
-  // Claims Back before the router follows it: after zaps the entry below is an
-  // older channel, and switching to it would restart the stream. Put the playing
-  // channel's URL there instead.
-  function onBack(): boolean {
-    if (!fullWindowEntry) return false;
-    fullWindowEntry = false;
-    navigate(fullWindowUrl, true);
-    setFullWindow(false);
-    return true;
-  }
-
-  function setFullWindow(on: boolean) {
-    fullWindow = on;
-    isFullscreen = on || document.fullscreenElement != null;
-    refreshVideoLayer();
-  }
+  // Full screen and Fire TV's video-layer redraw, shared with the On Demand player.
+  // Created on mount (it listens to the document); every call below runs after that.
+  let fullscreen: FullscreenController | null = null;
 
   function toggleFullscreen() {
-    if (isFullscreen) {
-      if (fullWindowEntry) {
-        history.back();
-        return;
-      }
-      setFullWindow(false);
-      if (document.fullscreenElement) void document.exitFullscreen();
-      return;
-    }
-    const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
-    const strategy = fullscreenStrategy(navigator.userAgent, coarse);
-    if (strategy === "video") {
-      const request = videoEl?.requestFullscreen?.();
-      if (request && typeof request.catch === "function") request.catch(() => undefined);
-      return;
-    }
-    setFullWindow(true);
-    if (strategy === "window") {
-      fullWindowUrl = location.pathname + location.search;
-      history.pushState(null, "", fullWindowUrl);
-      fullWindowEntry = true;
-      return;
-    }
-    const request = document.documentElement.requestFullscreen?.();
-    if (request && typeof request.catch === "function") request.catch(() => undefined);
-  }
-
-  function onFullscreenChange() {
-    // Leaving the browser's full screen (Back, Esc) also leaves the full-window player.
-    if (document.fullscreenElement == null && fullWindow) setFullWindow(false);
-    else refreshVideoLayer();
-    isFullscreen = fullWindow || document.fullscreenElement != null;
-    if (videoEl && videoEl.paused) {
-      const play = videoEl.play();
-      if (play && typeof play.catch === "function") play.catch(() => undefined);
-    }
+    fullscreen?.toggle();
   }
 
   function onKey(event: KeyboardEvent) {
@@ -294,17 +219,21 @@
     }, 30000);
     window.addEventListener("keydown", onKey);
     document.addEventListener("visibilitychange", onVisibility);
-    document.addEventListener("fullscreenchange", onFullscreenChange);
-    window.addEventListener("resize", refreshVideoLayer);
-    const releaseBack = guardPopState(onBack);
+    const controller = createFullscreen({
+      video: () => videoEl,
+      onChange: (state) => {
+        isFullscreen = state.isFullscreen;
+        fullWindow = state.fullWindow;
+      },
+      resumeAfterChange: () => true,
+    });
+    fullscreen = controller;
     return () => {
-      releaseBack();
-      window.clearTimeout(refreshTimer);
-      window.removeEventListener("resize", refreshVideoLayer);
+      controller.destroy();
+      fullscreen = null;
       window.clearInterval(timer);
       window.removeEventListener("keydown", onKey);
       document.removeEventListener("visibilitychange", onVisibility);
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
     };
   });
 
@@ -354,7 +283,7 @@
         innerHeight
       } · box ${video.clientWidth}×${video.clientHeight} · fs ${
         document.fullscreenElement?.tagName.toLowerCase() ?? "off"
-      }${fullWindow ? (fullWindowEntry ? " +window" : " +page") : ""}${document.documentElement.classList.contains("tv") ? " · tv" : ""}`;
+      }${fullWindow ? (fullscreen?.inWindowEntry() ? " +window" : " +page") : ""}${document.documentElement.classList.contains("tv") ? " · tv" : ""}`;
     }, 1000);
     return () => window.clearInterval(timer);
   });
