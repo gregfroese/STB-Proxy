@@ -1,7 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import ChannelTile from "../components/ChannelTile.svelte";
-  import { lineup, lineupError, lineupLoading, loadLineup } from "../lib/lineup";
+  import Rail from "../components/Rail.svelte";
+  import { lineup, lineupError, lineupLoading, loadLineup, onDemandRevoked } from "../lib/lineup";
+  import { channelsNotice } from "../lib/onDemand";
+  import { onDemandShown } from "../lib/onDemandLogic";
   import {
     CHANNEL_FILTERS,
     applyChannelFilter,
@@ -71,7 +74,16 @@
     );
   }
 
+  const railEntries = $derived(
+    rail.map((entry) => ({
+      key: entry.name,
+      label: entry.name,
+      count: counts.get(entry.name) ?? 0,
+    })),
+  );
+
   const label = $derived(accountLabel($session));
+  const showOnDemand = $derived(onDemandShown($lineup, $onDemandRevoked));
 </script>
 
 <div class="picker">
@@ -82,6 +94,9 @@
     </div>
     <div class="spacer"></div>
     <button class="btn" onclick={() => navigate("/guide")}>Guide</button>
+    {#if showOnDemand}
+      <button class="btn" onclick={() => navigate("/ondemand")}>On Demand</button>
+    {/if}
     <button class="btn" onclick={() => navigate("/multiview")}>Multiview</button>
     <button class="btn" onclick={() => navigate("/settings")}>Settings</button>
   </div>
@@ -105,6 +120,15 @@
     {/each}
   </div>
 
+  {#if $channelsNotice}
+    <div style="padding: 0 14px 10px">
+      <div class="notice noticerow">
+        <span>{$channelsNotice}</span>
+        <button class="btn" onclick={() => channelsNotice.set(null)}>OK</button>
+      </div>
+    </div>
+  {/if}
+
   {#if $lineupError}
     <div style="padding: 0 14px 10px">
       <div class="error-banner">{$lineupError}</div>
@@ -112,20 +136,14 @@
   {/if}
 
   <div class="bwrap">
-    <div class="rail">
-      {#each rail as entry (entry.name)}
-        <button
-          class="railbtn {activeBlock === entry.name && !searching ? 'on' : ''}"
-          onclick={() => {
-            activeBlock = entry.name;
-            query = "";
-          }}
-        >
-          {entry.name}
-          <span class="rc">{counts.get(entry.name) ?? 0}</span>
-        </button>
-      {/each}
-    </div>
+    <Rail
+      entries={railEntries}
+      active={searching ? null : activeBlock}
+      onselect={(key) => {
+        activeBlock = key;
+        query = "";
+      }}
+    />
     <div class="grid">
       {#if $lineupLoading && !$lineup}
         <div class="empty">Loading channels…</div>
