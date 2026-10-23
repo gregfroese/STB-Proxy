@@ -2,6 +2,7 @@ package cc.selfhosters.stbproxy.ui.ondemand
 
 import cc.selfhosters.stbproxy.data.model.OnDemandItem
 import cc.selfhosters.stbproxy.data.model.OnDemandPage
+import cc.selfhosters.stbproxy.data.model.OnDemandProgress
 import cc.selfhosters.stbproxy.data.network.ApiException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -149,5 +150,21 @@ class TitlePagerTest {
         assertNull(pager.state.value.error)
         assertEquals(listOf(0, 60, 60), catalogue.offsets)
         assertEquals(120, pager.state.value.items.size)
+    }
+
+    @Test
+    fun `a refreshed title replaces its row in place, and an unlisted one is ignored`() = runBlocking {
+        val catalogue = Catalogue(200)
+        val pager = TitlePager(catalogue::fetch)
+        pager.loadMore()
+        val watched = item(5).copy(progress = OnDemandProgress(watched = true))
+
+        pager.replace(watched)
+        assertEquals(watched, pager.state.value.items[5])
+        assertEquals(60, pager.state.value.items.size)
+
+        pager.replace(item(999))
+        assertEquals(60, pager.state.value.items.size)
+        assertEquals(listOf(0), catalogue.offsets)
     }
 }

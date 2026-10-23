@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusGroup
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +21,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -35,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -74,21 +74,26 @@ import kotlinx.coroutines.flow.distinctUntilChanged
  * The On Demand destination (ticket 13, variant C). TV: three panes (categories with
  * Continue watching, a title list, a preview pane that follows focus). Phone: the top
  * screen of a drill-down (search, pills, Continue watching strip, category list);
- * [onOpenCategory] and [onOpenItem] push the category and detail screens.
+ * [onOpenCategory] and [onOpenItem] push the category and detail screens. [onPlay]
+ * opens the player with a session the TV pane's Play started (ticket 14 → 15).
  */
 @Composable
 fun OnDemandScreen(
     onOpenCategory: (id: String, name: String) -> Unit,
     onOpenItem: (item: OnDemandItem, backLabel: String) -> Unit,
+    onPlay: (OnDemandPlayStart) -> Unit,
     viewModel: OnDemandViewModel = viewModel(
         factory = OnDemandViewModel.factory(
             LocalAppContainer.current.apiClient,
             LocalAppContainer.current.sessionController,
+            LocalAppContainer.current.onDemandChanges,
             overview = true,
         ),
     ),
 ) {
     if (isTvDevice()) {
+        val play by rememberUpdatedState(onPlay)
+        LaunchedEffect(viewModel) { viewModel.detail.playStarts.collect { play(it) } }
         TvOnDemand(viewModel)
     } else {
         PhoneOnDemand(viewModel, onOpenCategory, onOpenItem)
@@ -230,7 +235,7 @@ private fun TvOnDemand(viewModel: OnDemandViewModel) {
                                 palette = palette,
                                 continueRow = state.inContinue,
                                 selected = shown?.let(::itemKey) == key,
-                                // OK (or Right) moves into the pane; 14 lands it on Play.
+                                // OK (or Right) moves into the pane, onto Play.
                                 onClick = { runCatching { paneFocus.requestFocus() } },
                                 focusRequester = if (key == focusTarget) rowFocus else null,
                                 onFocused = {
@@ -274,6 +279,14 @@ private fun TvOnDemand(viewModel: OnDemandViewModel) {
                     preview = preview,
                     palette = palette,
                     entry = paneFocus,
+                    actions = remember(viewModel) {
+                        TitleDetailActions(
+                            onPlay = viewModel.detail::play,
+                            onToggleWatched = viewModel.detail::toggleWatched,
+                            onRetry = viewModel.detail::retry,
+                            onSeason = viewModel.detail::selectSeason,
+                        )
+                    },
                 )
             }
         }
@@ -281,36 +294,31 @@ private fun TvOnDemand(viewModel: OnDemandViewModel) {
 }
 
 /**
- * The TV preview pane's body. Ticket 14 adds Play (the [entry] focus target), Season
- * chips and Episodes; until then the summary itself takes focus so OK/→ and Back work.
+ * The TV preview pane's body: the title's detail with Play (the [entry] focus target:
+ * OK/→ on a row lands there), Season chips and Episodes. Up/Down stay in the pane.
  */
 @Composable
 private fun PreviewPane(
     item: OnDemandItem,
-    preview: PreviewState,
+    preview: TitleDetailState,
     palette: PickerPalette,
     entry: FocusRequester,
+    actions: TitleDetailActions,
 ) {
-    var focused by remember { mutableStateOf(false) }
-    val detail = preview.detail?.takeIf { preview.item?.let(::itemKey) == itemKey(item) }
-    Column(
+    // A new title starts at the top.
+    val scroll = remember(itemKey(item)) { ScrollState(0) }
+    TitleDetailBody(
+        item = item,
+        state = preview,
+        palette = palette,
+        actions = actions,
+        tv = true,
+        entry = entry,
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .padding(horizontal = 22.dp, vertical = 16.dp),
-    ) {
-        TitleSummary(
-            item = item,
-            detail = detail,
-            palette = palette,
-            modifier = Modifier
-                .focusRequester(entry)
-                .onFocusChanged { focused = it.isFocused }
-                .border(2.dp, if (focused) palette.focus else Color.Transparent, RoundedCornerShape(8.dp))
-                .focusable()
-                .padding(6.dp),
-        )
-    }
+    )
 }
 
 @Composable

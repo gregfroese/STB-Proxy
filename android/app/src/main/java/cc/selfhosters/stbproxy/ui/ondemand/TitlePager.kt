@@ -76,6 +76,15 @@ class TitlePager(
         loadMore()
     }
 
+    /** Swaps in a refreshed copy of a listed title (its progress after playback, say). */
+    fun replace(item: OnDemandItem) {
+        val key = itemKey(item)
+        _state.update { state ->
+            if (state.items.none { itemKey(it) == key }) state
+            else state.copy(items = state.items.map { if (itemKey(it) == key) item else it })
+        }
+    }
+
     /** The row a focus key names, else the first. */
     fun indexOf(key: String?): Int =
         _state.value.items.indexOfFirst { itemKey(it) == key }.coerceAtLeast(0)

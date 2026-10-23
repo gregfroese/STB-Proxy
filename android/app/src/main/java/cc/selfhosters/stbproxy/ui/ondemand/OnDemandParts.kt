@@ -44,7 +44,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import cc.selfhosters.stbproxy.data.model.OnDemandDetail
 import cc.selfhosters.stbproxy.data.model.OnDemandItem
 import cc.selfhosters.stbproxy.data.model.OnDemandPortalStatus
 import cc.selfhosters.stbproxy.di.LocalAppContainer
@@ -285,49 +284,6 @@ internal fun Centered(modifier: Modifier = Modifier, content: @Composable () -> 
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             content()
-        }
-    }
-}
-
-/**
- * What the TV preview pane and the phone detail page show of a title until ticket 14
- * adds Play, Seasons and Episodes: the poster, title, `originalName`, facts, the
- * description, credits and "From <portal>". [detail] fills in once it has loaded.
- */
-@Composable
-internal fun TitleSummary(
-    item: OnDemandItem,
-    detail: OnDemandDetail?,
-    palette: PickerPalette,
-    modifier: Modifier = Modifier,
-    posterWidth: Dp = 120.dp,
-) {
-    Column(modifier = modifier) {
-        Row {
-            Poster(item.poster, item.name, posterWidth, palette)
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Label(item.name, palette.onSurface, 22.sp, fontWeight = FontWeight.Medium)
-                detail?.originalName?.let { Label(it, palette.muted, 12.sp) }
-                Label(
-                    detailFacts(item, detail),
-                    palette.muted,
-                    13.sp,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-        }
-        detail?.description?.let {
-            Label(it, palette.onSurface, 13.sp, modifier = Modifier.padding(top = 14.dp))
-        }
-        detail?.let { credits(it) }?.forEach { (label, value) ->
-            Row(modifier = Modifier.padding(top = 6.dp)) {
-                Label(label, palette.muted, 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.width(70.dp))
-                Label(value, palette.onSurface, 12.sp)
-            }
-        }
-        if (item.portalName.isNotBlank()) {
-            Label("From ${item.portalName}", palette.muted, 11.sp, modifier = Modifier.padding(top = 12.dp))
         }
     }
 }
