@@ -70,7 +70,7 @@
         On Android TV or phone, sideload the STB-Proxy companion app — the same channels, player and
         Multiview as this page.
       </p>
-      <a class="btn" href="/companion.apk" download>Download the Android app (APK)</a>
+      <a class="btn" href="/companion.apk">Download the Android app (APK)</a>
     </div>
     <div class="card">
       <h2>About</h2>

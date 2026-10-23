@@ -2,6 +2,14 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.18.1] - 2026-10-22
+
+### Web viewer
+
+- **Full screen fills the TV**: on Fire TV (Silk, or the Downloader app's browser) and on desktop, full screen now grows the player to cover the whole screen and fullscreens the page. Before, TV browsers hid everything around the video but left the picture at its old size. Phones still fullscreen the video itself. Back or Esc leaves full screen, and the ⤢ button stays on screen.
+- **Download the app from Downloader**: the **Download the Android app (APK)** link no longer uses the `download` attribute, which Downloader's built-in browser silently ignores. It's now a plain link; the server already sends the APK as an attachment, so every browser still downloads it.
+- **Channel list scrolls on TV**: on TV browsers the channel grid now scrolls the page itself (the group list stays pinned on the left), because Silk's cursor and a WebView's D-pad don't scroll a box inside the page.
+
 ## [1.18.0] - 2026-10-22
 
 ### Android app

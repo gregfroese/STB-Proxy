@@ -3,6 +3,7 @@ import type { Channel, NowNext, Programme } from "./types";
 import {
   classifySourceError,
   epgRefreshAction,
+  fullscreenStrategy,
   minuteBoundaryPassed,
   programmeBoundaryPassed,
   programmeProgress,
@@ -224,5 +225,30 @@ describe("zap scope (ticket 07)", () => {
     expect(zapWithin(channels, kids, 1)).toEqual(news1);
     expect(zapWithin(channels, news1, -1)).toEqual(kids);
     expect(zapWithin([], news1, 1)).toBeNull();
+  });
+});
+
+describe("fullscreenStrategy", () => {
+  const phone =
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Mobile Safari/537.36";
+  const fireTvSilk =
+    "Mozilla/5.0 (Linux; Android 9; AFTKA Build/PS7633) AppleWebKit/537.36 (KHTML, like Gecko) Silk/112.5.1 like Chrome/112.0 Safari/537.36";
+  const fireTvWebView =
+    "Mozilla/5.0 (Linux; Android 9; AFTMM Build/PS7633; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0 Mobile Safari/537.36";
+  const desktop =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36";
+
+  it("fullscreens the video element on a touch phone", () => {
+    expect(fullscreenStrategy(phone, true)).toBe("video");
+  });
+
+  it("fills the page on Fire TV, even when it reports a coarse pointer", () => {
+    expect(fullscreenStrategy(fireTvSilk, true)).toBe("page");
+    expect(fullscreenStrategy(fireTvWebView, true)).toBe("page");
+    expect(fullscreenStrategy(fireTvWebView, false)).toBe("page");
+  });
+
+  it("fills the page on desktop", () => {
+    expect(fullscreenStrategy(desktop, false)).toBe("page");
   });
 });
