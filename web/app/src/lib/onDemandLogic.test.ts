@@ -11,6 +11,8 @@ import {
   browseFromQuery,
   browsePath,
   titlePath,
+  titleBack,
+  backLabel,
   appendPage,
   browseView,
   clock,
@@ -370,6 +372,23 @@ describe("browse URL", () => {
 
   it("links a title's page by its portal and id", () => {
     expect(titlePath(item("12 b", { portal: "p/1" }))).toBe("/ondemand/title?portal=p%2F1&id=12+b");
+  });
+
+  it("carries where the title was opened from, for its Back button", () => {
+    const path = titlePath(item("12"), "Action & Adventure");
+    expect(path).toBe("/ondemand/title?portal=p1&id=12&from=Action+%26+Adventure");
+    expect(titleBack(new URL(path, "http://x").searchParams)).toBe("‹ Back to Action & Adventure");
+    expect(titleBack(new URLSearchParams("portal=p1&id=12"))).toBe("‹ Back");
+  });
+});
+
+describe("backLabel", () => {
+  it("names the category, results while searching, or On Demand on All", () => {
+    const browse = { category: "action", q: "", sort: null, allGrid: false };
+    expect(backLabel(browse, "Action")).toBe("Action");
+    expect(backLabel({ ...browse, q: "ma" }, "Action")).toBe("results");
+    expect(backLabel({ ...browse, category: "" }, null)).toBe("On Demand");
+    expect(backLabel({ ...browse, category: "", allGrid: true }, null)).toBe("On Demand");
   });
 });
 

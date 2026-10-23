@@ -1647,6 +1647,222 @@ a.btn {
   padding: 7px 9px 9px;
 }
 
+/* ---------- On Demand title page (ticket 11) ---------- */
+
+.odtitle-msg {
+  padding: 18px;
+  max-width: 760px;
+}
+
+.oddetail {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 22px;
+  padding: 18px;
+  max-width: 1100px;
+}
+
+.odposter .poster {
+  font-size: 15px;
+}
+
+.odinfo {
+  min-width: 0;
+}
+
+.odinfo h1 {
+  margin: 0 0 4px;
+  font-size: 24px;
+}
+
+.odinfo .orig {
+  color: var(--dim);
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--dim);
+  font-size: 13px;
+  align-items: center;
+}
+
+.facts .age {
+  border: 1px solid var(--dim);
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 11px;
+}
+
+.facts .star {
+  color: var(--star);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+  align-items: center;
+}
+
+.actions .btn.primary {
+  font-size: 15px;
+  padding: 10px 20px;
+}
+
+.actions .btn.watched {
+  color: var(--ok);
+  border-color: #3fb95066;
+}
+
+.rsub {
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.playerr {
+  margin: 0 0 12px;
+  max-width: 70ch;
+}
+
+.odinfo .noticerow .btn {
+  flex: none;
+  white-space: nowrap;
+}
+
+.inlineerr {
+  color: var(--bad);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.odinfo .desc {
+  line-height: 1.5;
+  font-size: 14px;
+  max-width: 70ch;
+  margin: 0;
+}
+
+.genretags {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.genretags .tag {
+  font-size: 11px;
+}
+
+.credits {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  font-size: 13px;
+  margin: 12px 0 0;
+}
+
+.credits dt {
+  color: var(--dim);
+}
+
+.credits dd {
+  margin: 0;
+}
+
+.credits .more {
+  color: var(--dim);
+}
+
+.chips.seasons {
+  padding: 0;
+  margin: 16px 0 10px;
+}
+
+.eplist {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 760px;
+}
+
+.ep {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--ink);
+  text-align: left;
+  position: relative;
+  overflow: hidden;
+}
+
+.ep:hover {
+  border-color: #3ba6ff66;
+}
+
+.ep:focus-visible {
+  outline: none;
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--focus);
+}
+
+.ep.upnext {
+  border-color: var(--accent);
+  background: #3ba6ff12;
+}
+
+.ep .n {
+  color: var(--dim);
+  width: 30px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ep .nm {
+  flex: 1;
+  min-width: 0;
+}
+
+.ep .st {
+  font-size: 11px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.ep .st.w {
+  color: var(--ok);
+}
+
+.ep .prog {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--accent);
+}
+
+.ep .badge {
+  font-size: 10px;
+  color: var(--accent);
+  border: 1px solid #3ba6ff55;
+  padding: 1px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+
+.src-line {
+  color: var(--dim);
+  font-size: 12px;
+  margin-top: 14px;
+}
+
 /* ---------- responsive: phone ---------- */
 
 @media (max-width: 720px) {
@@ -1686,6 +1902,15 @@ a.btn {
 
   .shelf.cw {
     grid-auto-columns: 210px;
+  }
+
+  .oddetail {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+
+  .odposter .poster {
+    max-width: 160px;
   }
 
   .split {

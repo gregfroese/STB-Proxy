@@ -171,3 +171,51 @@ export interface OnDemandPage {
   offset: number;
   limit: number;
 }
+
+/** A Season of a Series' detail (ascending). */
+export interface OnDemandSeason {
+  id: string;
+  number: number | null;
+  name: string | null;
+  episodeCount: number | null;
+}
+
+/** GET /api/ondemand/item/<portal>/<id>: the list item plus the portal's facts. */
+export interface OnDemandDetail extends OnDemandItem {
+  /** Only when it differs from `name`. */
+  originalName?: string | null;
+  description: string | null;
+  /** Comma-separated, as the portal writes it. */
+  genres: string | null;
+  director: string | null;
+  /** Comma-separated, as the portal writes it. */
+  actors: string | null;
+  country: string | null;
+  durationMin: number | null;
+  ageRating: string | null;
+  categories: string[];
+  /** Series only. */
+  seasons?: OnDemandSeason[];
+}
+
+/** One Episode of GET /api/ondemand/series/<portal>/<seriesId>/season/<seasonId>. */
+export interface OnDemandEpisode {
+  id: string;
+  seasonId: string;
+  number: number | null;
+  name: string | null;
+  progress: OnDemandProgress | null;
+}
+
+/** What POST /play and PUT progress name: a Movie, or one Episode of a Series. */
+export type OnDemandKey =
+  | { portal: string; id: string }
+  | { portal: string; seriesId: string; seasonId: string; episodeId: string };
+
+/** POST /api/ondemand/play's answer: an On Demand session (ADR 0005). */
+export interface OnDemandSession {
+  session: string;
+  type: "hls";
+  url: string;
+  durationSec: number | null;
+}
