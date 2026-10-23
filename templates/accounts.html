@@ -53,6 +53,7 @@
                 <th style="width: 0%;">On</th>
                 <th>Username</th>
                 <th>Blocks</th>
+                <th class="text-nowrap" style="width: 0%;">On Demand</th>
                 <th style="width: 0%;"></th>
             </tr>
         </thead>
@@ -81,6 +82,24 @@
                         <button class="btn btn-sm btn-outline-light" title="Save blocks"
                             aria-label="Save blocks for {{ account.username }}"><i class="bi bi-save"></i></button>
                     </form>
+                </td>
+                <td class="text-nowrap">
+                    {% for switch, label, on, locked in [
+                        ("on demand", "On Demand", account["on demand"], false),
+                        ("adult on demand", "Adult", account["adult on demand"], not account["on demand"]),
+                    ] %}
+                    <form action="/accounts/ondemand" method="post">
+                        <input type="hidden" name="username" value="{{ account.username }}">
+                        <input type="hidden" name="switch" value="{{ switch }}">
+                        <input type="hidden" name="value" value="{{ 'false' if on else 'true' }}">
+                        <div class="form-check form-switch"{% if locked %} title="Switch On Demand on first"{% endif %}>
+                            <input class="form-check-input" type="checkbox" onchange="this.form.submit()"
+                                id="{{ switch|replace(' ', '-') }}-{{ loop.index }}-{{ account.username }}"
+                                data-switch="{{ switch }}" {{ "checked" if on }} {{ "disabled" if locked }}>
+                            <label class="form-check-label small" for="{{ switch|replace(' ', '-') }}-{{ loop.index }}-{{ account.username }}">{{ label }}</label>
+                        </div>
+                    </form>
+                    {% endfor %}
                 </td>
                 <td class="text-nowrap">
                     <form action="/accounts/password" method="post" class="d-inline-flex align-items-center gap-1">

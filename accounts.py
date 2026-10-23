@@ -1,7 +1,8 @@
 """Viewer accounts: a username and hashed password mapped to a set of blocks.
 
 Accounts live in config.json under "accounts", each a record
-{"username": str, "hash": str, "blocks": [str], "enabled": bool}. Passwords are
+{"username": str, "hash": str, "blocks": [str], "enabled": bool, "on demand": bool,
+"adult on demand": bool}. Passwords are
 stored only as a self-describing PBKDF2-HMAC-SHA256 string (see hashPassword),
 never in the clear. Blocks are referenced by name; see ADR 0001 for the model.
 """
@@ -59,6 +60,9 @@ def normaliseAccounts(value):
             "hash": record.get("hash", ""),
             "blocks": [name for name in blocks if isinstance(name, str)] if isinstance(blocks, list) else [],
             "enabled": bool(record.get("enabled", True)),
+            # Permission switches, so only a real true turns them on (ADR 0004).
+            "on demand": record.get("on demand") is True,
+            "adult on demand": record.get("adult on demand") is True,
         })
     return records
 

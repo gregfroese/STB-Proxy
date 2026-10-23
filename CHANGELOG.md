@@ -2,6 +2,14 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.19.0] - 2026-10-23
+
+### Accounts
+
+- **On Demand switches**: each Account on the Accounts page has an **On Demand** switch and an **Adult** switch beside it, both off by default. Adult can only be switched on while On Demand is on. This is the first step towards browsing and playing the portals' Movies and Series in the web viewer and the Android app; the catalogue itself arrives in later versions.
+- **The lineup tells the apps**: `/api/lineup` now carries `"onDemand": true|false`, so the web viewer and the Android app can show an On Demand entry only to Accounts that have it.
+- **A new viewer door, `/api/ondemand/*`**: only an Account with On Demand switched on gets in. Everyone else, including the operator login that Plex and Jellyfin use, gets 404, so On Demand never reaches Plex or Jellyfin. For now it only answers `/api/ondemand/categories`, with an empty list.
+
 ## [1.18.4] - 2026-10-22
 
 ### Web viewer
