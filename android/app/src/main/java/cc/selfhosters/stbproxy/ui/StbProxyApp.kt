@@ -1,6 +1,7 @@
 package cc.selfhosters.stbproxy.ui
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
@@ -9,9 +10,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -31,6 +34,9 @@ import cc.selfhosters.stbproxy.ui.common.isTvDevice
 import cc.selfhosters.stbproxy.ui.guide.GuideScreen
 import cc.selfhosters.stbproxy.ui.login.LoginScreen
 import cc.selfhosters.stbproxy.ui.multiview.MultiviewScreen
+import cc.selfhosters.stbproxy.ui.ondemand.OnDemandCategoryScreen
+import cc.selfhosters.stbproxy.ui.ondemand.OnDemandItemScreen
+import cc.selfhosters.stbproxy.ui.ondemand.OnDemandScreen
 import cc.selfhosters.stbproxy.ui.picker.PickerScreen
 import cc.selfhosters.stbproxy.ui.player.PlayerScreen
 import cc.selfhosters.stbproxy.ui.settings.SettingsScreen
@@ -41,6 +47,7 @@ object Routes {
     const val MULTIVIEW = "multiview"
     const val GUIDE = "guide"
     const val SETTINGS = "settings"
+    const val ON_DEMAND = "ondemand"
 
     const val ARG_PORTAL = "portal"
     const val ARG_CHANNEL_ID = "channelId"
@@ -49,6 +56,25 @@ object Routes {
     const val ARG_LABEL = "label"
     const val ARG_KEYS = "keys"
     const val ARG_TOKEN = "token"
+    const val ARG_CATEGORY = "category"
+    const val ARG_NAME = "name"
+    const val ARG_ID = "id"
+    const val ARG_BACK = "back"
+
+    /** Phone: one On Demand category's titles. */
+    const val ON_DEMAND_CATEGORY_ROUTE = "$ON_DEMAND/category?$ARG_CATEGORY={$ARG_CATEGORY}&$ARG_NAME={$ARG_NAME}"
+
+    /** Phone: one title's detail page. */
+    const val ON_DEMAND_ITEM_ROUTE = "$ON_DEMAND/item?$ARG_PORTAL={$ARG_PORTAL}&$ARG_ID={$ARG_ID}&$ARG_BACK={$ARG_BACK}"
+
+    fun onDemandCategory(category: String, name: String): String =
+        "$ON_DEMAND/category?$ARG_CATEGORY=${Uri.encode(category)}&$ARG_NAME=${Uri.encode(name)}"
+
+    fun onDemandItem(portal: String, id: String, backLabel: String): String =
+        "$ON_DEMAND/item?$ARG_PORTAL=${Uri.encode(portal)}&$ARG_ID=${Uri.encode(id)}&$ARG_BACK=${Uri.encode(backLabel)}"
+
+    /** True for On Demand's screens (its destination and the phone's pushed screens). */
+    fun isOnDemand(route: String): Boolean = route == ON_DEMAND || route.startsWith("$ON_DEMAND/")
 
     private const val SCOPE_GROUP = "group"
     private const val SCOPE_LIST = "list"
@@ -149,6 +175,11 @@ private fun MainNavHost() {
     val current = Destination.of(route)
     // Multiview and the player are full-screen video; every other screen gets the nav.
     val showNav = current != null && current != Destination.MULTIVIEW
+    val availability = container.onDemandAvailability
+    val onDemand by availability.enabled.collectAsStateWithLifecycle()
+    val notice by availability.notice.collectAsStateWithLifecycle()
+    val destinations = visibleDestinations(onDemand)
+    val context = LocalContext.current
 
     // Switching top-level screens keeps one copy of each on the stack, with Channels
     // at the root, so Back from any of them returns to Channels and then exits.
@@ -167,14 +198,33 @@ private fun MainNavHost() {
         }
     }
 
+    // On Demand switched off (a 404 on_demand_off, or a lineup without it): leave its
+    // screens for Channels; a 404 also says why, once.
+    LaunchedEffect(onDemand, route) {
+        if (leavesOnDemand(route, onDemand)) {
+            navController.navigate(Routes.PICKER) {
+                popUpTo(navController.graph.findStartDestination().id)
+                launchSingleTop = true
+            }
+        }
+    }
+    LaunchedEffect(notice) {
+        notice?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            availability.consumeNotice()
+        }
+    }
+
     if (isTv) {
-        TvShell(current = current, showRail = showNav, onSelect = ::navigateTo) {
+        TvShell(current = current, destinations = destinations, showRail = showNav, onSelect = ::navigateTo) {
             AppNavHost(navController, container)
         }
     } else {
         Scaffold(
             contentWindowInsets = WindowInsets(0),
-            bottomBar = { if (showNav) PhoneNavBar(current = current, onSelect = ::navigateTo) },
+            bottomBar = {
+                if (showNav) PhoneNavBar(current = current, destinations = destinations, onSelect = ::navigateTo)
+            },
         ) { padding ->
             Box(
                 modifier = Modifier
@@ -261,6 +311,43 @@ private fun AppNavHost(
                     }
                     navController.navigate(route)
                 },
+            )
+        }
+        composable(Routes.ON_DEMAND) {
+            OnDemandScreen(
+                onOpenCategory = { id, name -> navController.navigate(Routes.onDemandCategory(id, name)) },
+                onOpenItem = { item, back -> navController.navigate(Routes.onDemandItem(item.portal, item.id, back)) },
+            )
+        }
+        composable(
+            route = Routes.ON_DEMAND_CATEGORY_ROUTE,
+            arguments = listOf(
+                navArgument(Routes.ARG_CATEGORY) { type = NavType.StringType; defaultValue = "" },
+                navArgument(Routes.ARG_NAME) { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { entry ->
+            val name = entry.arguments?.getString(Routes.ARG_NAME).orEmpty()
+            OnDemandCategoryScreen(
+                category = entry.arguments?.getString(Routes.ARG_CATEGORY).orEmpty(),
+                name = name,
+                onBack = { navController.popBackStack() },
+                onOpenItem = { item, back -> navController.navigate(Routes.onDemandItem(item.portal, item.id, back)) },
+            )
+        }
+        composable(
+            route = Routes.ON_DEMAND_ITEM_ROUTE,
+            arguments = listOf(
+                navArgument(Routes.ARG_PORTAL) { type = NavType.StringType; defaultValue = "" },
+                navArgument(Routes.ARG_ID) { type = NavType.StringType; defaultValue = "" },
+                navArgument(Routes.ARG_BACK) { type = NavType.StringType; defaultValue = "" },
+            ),
+        ) { entry ->
+            val args = entry.arguments
+            OnDemandItemScreen(
+                portal = args?.getString(Routes.ARG_PORTAL).orEmpty(),
+                id = args?.getString(Routes.ARG_ID).orEmpty(),
+                backLabel = args?.getString(Routes.ARG_BACK).orEmpty(),
+                onBack = { navController.popBackStack() },
             )
         }
         composable(Routes.MULTIVIEW) {

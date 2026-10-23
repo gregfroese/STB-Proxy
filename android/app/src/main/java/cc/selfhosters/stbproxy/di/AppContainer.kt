@@ -8,6 +8,7 @@ import cc.selfhosters.stbproxy.BuildConfig
 import cc.selfhosters.stbproxy.data.AccountStore
 import cc.selfhosters.stbproxy.data.AccountStorage
 import cc.selfhosters.stbproxy.data.AndroidAccountStorage
+import cc.selfhosters.stbproxy.data.OnDemandAvailability
 import cc.selfhosters.stbproxy.data.SessionController
 import cc.selfhosters.stbproxy.data.ViewerPreferences
 import cc.selfhosters.stbproxy.data.ZapScopeStore
@@ -16,6 +17,7 @@ import cc.selfhosters.stbproxy.data.epg.XmltvParser
 import cc.selfhosters.stbproxy.data.network.ApiClient
 import cc.selfhosters.stbproxy.data.network.BasicAuthInterceptor
 import cc.selfhosters.stbproxy.data.network.ConnectionProbe
+import cc.selfhosters.stbproxy.data.network.sameOriginAs
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
@@ -62,11 +64,31 @@ class AppContainer(
 
     val sessionController: SessionController = SessionController(accountStore, connectionProbe)
 
+    /** Whether this login gets On Demand: the lineup's flag, dropped on any `on_demand_off`. */
+    val onDemandAvailability: OnDemandAvailability = OnDemandAvailability()
+
     val apiClient: ApiClient = ApiClient(
         client = okHttpClient,
         json = json,
         baseUrlProvider = { accountStore.state.value.baseUrl },
+        onDemandAvailability = onDemandAvailability,
     )
+
+    /**
+     * The image loader's client (see StbProxyApplication): On Demand posters are served
+     * by STB-Proxy and need the login, but channel logos come straight from portals, so
+     * Basic is attached only to requests for the proxy itself.
+     */
+    val imageHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .addInterceptor(
+            BasicAuthInterceptor(
+                credentialsProvider = { accountStore.activeCredentials() },
+                appliesTo = sameOriginAs { accountStore.state.value.baseUrl },
+            ),
+        )
+        .build()
 
     /** Best-effort now/next source for the picker teaser and the player (spec 2.8). */
     val epgRepository: EpgRepository = EpgRepository(
