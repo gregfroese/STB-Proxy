@@ -498,9 +498,13 @@ async def _revalidate_loop(app: FastAPI) -> None:
             logger.exception("session revalidation pass failed")
 
 
+# index.html names the current build's hashed bundles, so browsers must check it on
+# every load; without this a TV app's browser keeps running an old build after a deploy.
+_INDEX_HEADERS = {"Cache-Control": "no-cache"}
+
+
 def _mount_spa() -> None:
-    dist: Path = config.static_dir
-    assets = dist / "assets"
+    assets = config.static_dir / "assets"
     if assets.is_dir():
         app.mount("/assets", StaticFiles(directory=str(assets)), name="assets")
 
@@ -508,6 +512,7 @@ def _mount_spa() -> None:
     async def spa(path: str):
         if path.startswith(("api/", "stream/", "hls/")):
             raise not_found("Not found.")
+        dist: Path = config.static_dir
         if path:
             candidate = (dist / path).resolve()
             try:
@@ -515,10 +520,11 @@ def _mount_spa() -> None:
             except ValueError:
                 raise not_found("Not found.")
             if candidate.is_file():
-                return FileResponse(candidate)
+                headers = _INDEX_HEADERS if candidate.name == "index.html" else None
+                return FileResponse(candidate, headers=headers)
         index = dist / "index.html"
         if index.is_file():
-            return FileResponse(index)
+            return FileResponse(index, headers=_INDEX_HEADERS)
         raise not_found("The web client is not built yet.")
 
 

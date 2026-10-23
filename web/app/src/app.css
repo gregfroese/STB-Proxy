@@ -1409,3 +1409,26 @@ a.btn {
 .tv .grid {
   overflow: visible;
 }
+
+/* The player's side pane, same reason: on TV the page scrolls and the video stays
+   pinned on the left. */
+.tv .player {
+  height: auto;
+  min-height: 100vh;
+}
+
+.tv .split {
+  flex: none;
+  align-items: flex-start;
+}
+
+.tv .stage {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.tv .side,
+.tv .side .body {
+  overflow: visible;
+}
