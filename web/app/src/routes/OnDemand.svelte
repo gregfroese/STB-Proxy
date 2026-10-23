@@ -28,7 +28,7 @@
     nextOffset,
     searchHint,
     searchTerm,
-    sentinel,
+    gridFooter,
     statusPills,
     titlePath,
     type Browse,
@@ -199,7 +199,7 @@
     };
   });
 
-  const line = $derived(sentinel(paging, emptyText(browse.q, categoryName)));
+  const line = $derived(gridFooter(paging, emptyText(browse.q, categoryName)));
 
   onDestroy(() => {
     applySearch.cancel();

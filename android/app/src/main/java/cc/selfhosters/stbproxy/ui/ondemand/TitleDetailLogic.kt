@@ -58,7 +58,7 @@ fun playButtons(
     return when {
         progress?.watched == true -> PlayButtons(PlayButton("▶ Play again", fromStart), watchedToggle = toggle)
         resumeAt != null -> PlayButtons(
-            primary = PlayButton("▶ Resume from ${clock(resumeAt)}", fromStart.copy(startSec = resumeAt)),
+            primary = PlayButton("▶ Resume from ${formatTime(resumeAt)}", fromStart.copy(startSec = resumeAt)),
             startOver = PlayButton("Start over", fromStart),
             watchedToggle = toggle,
         )
@@ -85,7 +85,7 @@ private fun seriesButton(
         )
         return PlayButtons(
             primary = PlayButton(spaced(if (resumeAt != null) "▶ Resume" else "▶ Play", code), choice),
-            note = if (resumeAt != null) "$name · from ${clock(resumeAt)}" else name,
+            note = if (resumeAt != null) "$name · from ${formatTime(resumeAt)}" else name,
         )
     }
     val first = firstSeasonEpisodes?.firstOrNull()
@@ -145,7 +145,7 @@ fun episodeRows(
         name = name,
         status = when {
             watched -> "✓ Watched"
-            resumeAt != null -> "${clock(resumeAt)} in"
+            resumeAt != null -> "${formatTime(resumeAt)} in"
             else -> null
         },
         progress = progressFraction(progress),

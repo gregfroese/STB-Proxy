@@ -6,7 +6,7 @@
   import { onMount, tick } from "svelte";
   import { get } from "svelte/store";
   import { createFullscreen, type FullscreenController } from "../lib/fullscreen";
-  import { attachVod, type HlsHandle } from "../lib/hls";
+  import { attachOnDemand, type HlsHandle } from "../lib/hls";
   import {
     endSession,
     loadDetail,
@@ -18,7 +18,7 @@
     startSession,
   } from "../lib/onDemand";
   import { episodeRow, playErrorText, watchFromQuery, watchPath } from "../lib/onDemandDetailLogic";
-  import { clock, isOnDemandOff, titlePath } from "../lib/onDemandLogic";
+  import { formatTime, isOnDemandOff, titlePath } from "../lib/onDemandLogic";
   import {
     ASPECT_LABELS,
     autoplaysAfter,
@@ -228,7 +228,7 @@
     opening = true;
     userPaused = false;
     media.muted = muted;
-    handle = attachVod({
+    handle = attachOnDemand({
       url: fresh.url,
       media,
       startSec,
@@ -675,7 +675,7 @@
 
         <div class="odp-bottom">
           <div class="odp-barrow">
-            <span>{clock(shown)}</span>
+            <span>{formatTime(shown)}</span>
             <div
               class="odp-bar"
               bind:this={barEl}
@@ -685,7 +685,7 @@
               aria-valuemin={0}
               aria-valuemax={Math.round(duration)}
               aria-valuenow={Math.round(shown)}
-              aria-valuetext={clock(shown)}
+              aria-valuetext={formatTime(shown)}
               onpointerdown={onBarDown}
               onpointermove={onBarMove}
               onpointerup={onBarUp}
@@ -695,10 +695,10 @@
               <div class="played" style="width:{fraction * 100}%"></div>
               <div class="thumb" style="left:{fraction * 100}%"></div>
               {#if dragPos != null}
-                <div class="bubble" style="left:{fraction * 100}%">{clock(dragPos)}</div>
+                <div class="bubble" style="left:{fraction * 100}%">{formatTime(dragPos)}</div>
               {/if}
             </div>
-            <span>−{clock(Math.max(0, duration - shown))}</span>
+            <span>−{formatTime(Math.max(0, duration - shown))}</span>
           </div>
           <div class="odp-btnrow">
             <button class="odp-btn odp-pp" title={paused ? "Play" : "Pause"} onclick={togglePlay}>

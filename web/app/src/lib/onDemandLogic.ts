@@ -248,7 +248,7 @@ export function appendPage(paging: Paging, page: OnDemandPage): Paging {
 }
 
 /** The line under the grid: loading, "Loading more… (n of total)", or the count at the end. */
-export function sentinel(paging: Paging, emptyText: string): { text: string; end: boolean } {
+export function gridFooter(paging: Paging, emptyText: string): { text: string; end: boolean } {
   if (paging.total === null) return { text: "Loading…", end: false };
   const loaded = paging.items.length;
   if (loaded < paging.total) {
@@ -259,7 +259,7 @@ export function sentinel(paging: Paging, emptyText: string): { text: string; end
 }
 
 /** A playback position as m:ss, or h:mm:ss from an hour. */
-export function clock(seconds: number): string {
+export function formatTime(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
@@ -320,7 +320,9 @@ export function continueLine(item: OnDemandItem): string {
   }
   const progress = item.progress;
   if (!progress || progress.positionSec == null) return "";
-  return left(progress.positionSec, progress.durationSec) ?? `${clock(progress.positionSec)} in`;
+  return (
+    left(progress.positionSec, progress.durationSec) ?? `${formatTime(progress.positionSec)} in`
+  );
 }
 
 /** How long typing must pause before the search runs. */

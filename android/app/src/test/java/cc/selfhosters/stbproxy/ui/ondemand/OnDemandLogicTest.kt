@@ -204,7 +204,7 @@ class OnDemandLogicTest {
     @Test
     fun `a load error reads the server's words, else the status, else unreachable`() {
         assertEquals(
-            "The provider didn't answer. Try again in a moment.",
+            "The portal didn't answer. Try again in a moment.",
             loadErrorText(ApiException(502, ApiException.PORTAL_ERROR, "The portal didn't send this")),
         )
         assertEquals("Couldn't load On Demand (HTTP 500)", loadErrorText(ApiException(500)))

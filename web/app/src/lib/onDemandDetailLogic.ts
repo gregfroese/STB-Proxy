@@ -2,7 +2,7 @@
 // buttons from 07's `progress`/`upNext`, Seasons and Episodes, and Play's error wording.
 
 import { ApiError } from "./api";
-import { clock } from "./onDemandLogic";
+import { formatTime } from "./onDemandLogic";
 import type {
   OnDemandDetail,
   OnDemandEpisode,
@@ -12,17 +12,27 @@ import type {
   OnDemandUpNext,
 } from "./types";
 
+/** A title the server no longer has (or no longer shows this login). */
+export const TITLE_GONE = "This title isn't available any more.";
+
 /** Play's errors that 09 words for the viewer, by the server's `code`. */
 const PLAY_ERRORS: Record<string, string> = {
   busy: "Someone else on this login is already watching — On Demand uses the same stream as live TV. Stop the other stream and try again.",
-  not_found: "This title isn't available any more.",
-  portal_error: "The provider didn't answer. Try again in a moment.",
+  not_found: TITLE_GONE,
+  portal_error: "The portal didn't answer. Try again in a moment.",
 };
 
 /** The line shown under the Play button when POST /play fails. */
 export function playErrorText(error: unknown): string {
   if (error instanceof ApiError) return PLAY_ERRORS[error.code] ?? error.message;
   return "Couldn't start playback. Try again.";
+}
+
+/** The line shown when a Season's Episodes don't load. */
+export function seasonErrorText(error: unknown): string {
+  return error instanceof ApiError && error.code === "portal_error"
+    ? "The portal didn't send this Season's Episodes. Try again in a moment."
+    : "Couldn't load this Season's Episodes.";
 }
 
 /** A Play button: its label and where playback starts. */
@@ -49,7 +59,7 @@ export function movieActions(progress: OnDemandProgress | null | undefined): Mov
   const mark = { label: watched ? "✓ Watched" : "Mark watched", watched };
   if (resumeAt != null && resumeAt > 0) {
     return {
-      primary: { label: `▶ Resume from ${clock(resumeAt)}`, startSec: resumeAt },
+      primary: { label: `▶ Resume from ${formatTime(resumeAt)}`, startSec: resumeAt },
       startOver: true,
       mark,
     };
@@ -234,7 +244,7 @@ export function episodeRow(
   return {
     number: episode.number != null ? String(episode.number) : "",
     name: episodeName(episode.name, episode.number),
-    status: watched ? "✓ Watched" : resumeAt != null ? `${clock(resumeAt)} in` : "",
+    status: watched ? "✓ Watched" : resumeAt != null ? `${formatTime(resumeAt)} in` : "",
     watched,
     progress:
       resumeAt != null && progress?.durationSec
@@ -276,7 +286,7 @@ export function seriesPlay(
     return {
       label:
         `▶ ${resumeAt != null ? "Resume" : "Play"} ${episodeCode(next.seasonNumber, next.episodeNumber)}`.trimEnd(),
-      sub: resumeAt != null ? `${name} · from ${clock(resumeAt)}` : name,
+      sub: resumeAt != null ? `${name} · from ${formatTime(resumeAt)}` : name,
       start: {
         key: {
           portal: series.portal,

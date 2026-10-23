@@ -1,5 +1,6 @@
 package cc.selfhosters.stbproxy.ui.ondemand
 
+import cc.selfhosters.stbproxy.data.ON_DEMAND_OFF_NOTICE
 import cc.selfhosters.stbproxy.data.OnDemandAvailability
 import cc.selfhosters.stbproxy.data.OnDemandChanges
 import cc.selfhosters.stbproxy.data.model.OnDemandKey
@@ -43,6 +44,7 @@ class OnDemandPlayerControllerTest {
     private var now = 0L
     private val port = FakePort()
     private val changes = OnDemandChanges()
+    private val availability = OnDemandAvailability().apply { onLineup(true) }
 
     @Before
     fun setUp() {
@@ -78,7 +80,7 @@ class OnDemandPlayerControllerTest {
         },
         baseUrlProvider = { server.url("/").toString().trimEnd('/') },
         retryDelaysMs = listOf(0L, 0L),
-        onDemandAvailability = OnDemandAvailability(),
+        onDemandAvailability = availability,
     )
 
     private val movie = OnDemandPlayStart(
@@ -335,7 +337,7 @@ class OnDemandPlayerControllerTest {
         val overlay = controller.state.value.overlay
         assertEquals(
             "Playback stopped — someone started watching on another device with this login, " +
-                "and the provider only allows one stream at a time",
+                "and the portal only allows one stream at a time",
             overlay?.message,
         )
         assertEquals("▶ Resume from 39:05", overlay?.action)
@@ -353,6 +355,33 @@ class OnDemandPlayerControllerTest {
     fun `a 410 stopped says it was stopped from the Streams page`() = test(movie) { controller ->
         controller.onPlaybackFailed(410, """{"code": "session_ended", "reason": "stopped"}""".toByteArray())
         assertEquals("The stream was stopped from the server's Streams page.", controller.state.value.overlay?.message)
+    }
+
+    @Test
+    fun `a 410 failed says playback was interrupted and offers Resume`() = test(movie) { controller ->
+        port.positionMs = 2_345_000
+        controller.onPlaybackFailed(410, """{"code": "session_ended", "reason": "failed"}""".toByteArray())
+        val overlay = controller.state.value.overlay
+        assertEquals("Playback was interrupted — the stream stopped coming through.", overlay?.message)
+        assertEquals("▶ Resume from 39:05", overlay?.action)
+        assertNull(controller.state.value.session)
+    }
+
+    @Test
+    fun `a 404 on_demand_off from a segment switches On Demand off instead of an overlay`() = test(movie) { controller ->
+        controller.onPlaybackFailed(404, """{"error": "On Demand is off", "code": "on_demand_off"}""".toByteArray())
+        assertNull(controller.state.value.overlay)
+        assertNull(controller.state.value.session)
+        assertEquals(1, port.stops)
+        assertEquals(false, availability.enabled.value)
+        assertEquals(ON_DEMAND_OFF_NOTICE, availability.notice.value)
+    }
+
+    @Test
+    fun `any other 404 from a segment shows the failed overlay and leaves On Demand on`() = test(movie) { controller ->
+        controller.onPlaybackFailed(404, """{"error": "No such file", "code": "not_found"}""".toByteArray())
+        assertEquals("Playback failed (HTTP 404).", controller.state.value.overlay?.message)
+        assertEquals(true, availability.enabled.value)
     }
 
     @Test

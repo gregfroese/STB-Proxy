@@ -87,7 +87,7 @@ One playable part of a **Season**.
 _Avoid_: programme (that's a **Guide** entry)
 
 **On Demand session**:
-One viewer playing one **Movie** or **Episode**. It is never shared. While it plays it takes one of its portal's playback slots, so it competes with live viewing on that portal, but it is not a **Tuner**. It ends when the viewer stops, when it sits idle, when the operator stops it, or when the portal hands the slot to someone else.
+One viewer playing one **Movie** or **Episode**. It is never shared. While it plays it takes one of its portal's playback slots, so it competes with live viewing on that portal, but it is not a **Tuner**. It ends when the viewer stops, when it sits idle, when the operator stops it, when the portal hands the slot to someone else, or when the portal stops sending it.
 _Avoid_: stream, VOD session
 
 **Resume point**:

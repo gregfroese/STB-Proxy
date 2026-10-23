@@ -195,7 +195,7 @@ class TitleDetailLogicTest {
         )
         assertEquals("This title isn't available any more.", playErrorText(ApiException(404, ApiException.NOT_FOUND)))
         assertEquals(
-            "The provider didn't answer. Try again in a moment.",
+            "The portal didn't answer. Try again in a moment.",
             playErrorText(ApiException(502, ApiException.PORTAL_ERROR, "create_link failed")),
         )
     }

@@ -1,6 +1,6 @@
 // hls.js over the BFF's ffmpeg-remuxed HLS (spec 2.7 fallback). ffmpeg produces
 // fMP4 with correct composition times, which the browser's hardware decoder
-// accepts — unlike mpegts.js for B-frame-heavy streams. `attachVod` plays an On Demand
+// accepts — unlike mpegts.js for B-frame-heavy streams. `attachOnDemand` plays an On Demand
 // session's HLS (ticket 12).
 
 import Hls from "hls.js";
@@ -38,7 +38,7 @@ function loadPolicy(retries: number) {
   };
 }
 
-interface VodOptions {
+interface OnDemandOptions {
   url: string;
   media: HTMLVideoElement;
   /** Where to start once loaded (a Resume point), in seconds. */
@@ -66,7 +66,7 @@ function playWithFallback(media: HTMLVideoElement, onMuted?: () => void) {
  * where MSE exists, else the browser's own HLS (Safari). The session's segments are never
  * shared, so a 4xx (410 when the session ended) is fatal straight away.
  */
-export function attachVod(options: VodOptions): HlsHandle {
+export function attachOnDemand(options: OnDemandOptions): HlsHandle {
   const media = options.media;
   let failed = false;
   const fail = (status: number | null) => {

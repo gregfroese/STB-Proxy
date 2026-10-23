@@ -307,16 +307,24 @@ class ApiClient(
      * The one place a non-2xx becomes an [ApiException]: the `{error, code, reason}` body
      * is read when there is one, and `on_demand_off` switches On Demand off app-wide.
      */
-    private fun failure(response: Response): ApiException {
+    private fun failure(response: Response): ApiException = failure(response.code, response.body?.string())
+
+    /**
+     * A media request Media3 made (an On Demand playlist or segment) that failed with
+     * [status] and [body], through the same handling as the client's own requests.
+     */
+    fun mediaFailure(status: Int, body: ByteArray?): ApiException = failure(status, body?.decodeToString())
+
+    private fun failure(status: Int, text: String?): ApiException {
         val body = runCatching {
-            json.parseToJsonElement(response.body?.string().orEmpty()) as? JsonObject
+            json.parseToJsonElement(text.orEmpty()) as? JsonObject
         }.getOrNull()
 
         fun field(name: String): String? =
             (body?.get(name) as? JsonPrimitive)?.takeIf { it.isString }?.content
 
         val exception = ApiException(
-            code = response.code,
+            code = status,
             errorCode = field("code"),
             serverMessage = field("error"),
             reason = field("reason"),

@@ -23,8 +23,10 @@
     openingSeason,
     playErrorText,
     playTitle,
+    seasonErrorText,
     seasonLabel,
     seriesPlay,
+    TITLE_GONE,
     watchPath,
     type PlayStart,
   } from "../lib/onDemandDetailLogic";
@@ -84,7 +86,7 @@
       if (mine.signal.aborted || isOnDemandOff(error)) return;
       const missing = error instanceof ApiError && error.code === "not_found";
       loadError = missing
-        ? { text: "This title isn't available any more.", retry: false }
+        ? { text: TITLE_GONE, retry: false }
         : {
             text: error instanceof ApiError ? error.message : "Couldn't load this title.",
             retry: true,
@@ -104,10 +106,7 @@
     } catch (error) {
       if (signal?.aborted || isOnDemandOff(error)) return;
       if (seasonId === season) {
-        seasonError =
-          error instanceof ApiError && error.code === "portal_error"
-            ? "The provider didn't send this Season's Episodes. Try again in a moment."
-            : "Couldn't load this Season's Episodes.";
+        seasonError = seasonErrorText(error);
       }
     }
   }

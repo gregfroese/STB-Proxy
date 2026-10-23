@@ -15,7 +15,7 @@ import {
   backLabel,
   appendPage,
   browseView,
-  clock,
+  formatTime,
   continueLine,
   debounce,
   posterBadges,
@@ -25,7 +25,7 @@ import {
   itemsPath,
   nextOffset,
   searchTerm,
-  sentinel,
+  gridFooter,
   statusPills,
 } from "./onDemandLogic";
 
@@ -136,26 +136,26 @@ describe("paging", () => {
   it("starts at offset 0 with a plain loading line", () => {
     const paging = initialPaging();
     expect(nextOffset(paging)).toBe(0);
-    expect(sentinel(paging, "No titles here.")).toEqual({ text: "Loading…", end: false });
+    expect(gridFooter(paging, "No titles here.")).toEqual({ text: "Loading…", end: false });
   });
 
   it("asks for the next 60 until the total is loaded, counting as it goes", () => {
     let paging = appendPage(initialPaging(), page(0, 60, 130));
     expect(nextOffset(paging)).toBe(60);
-    expect(sentinel(paging, "")).toEqual({ text: "Loading more… (60 of 130)", end: false });
+    expect(gridFooter(paging, "")).toEqual({ text: "Loading more… (60 of 130)", end: false });
     paging = appendPage(paging, page(60, 60, 130));
     paging = appendPage(paging, page(120, 10, 130));
     expect(paging.items).toHaveLength(130);
     expect(nextOffset(paging)).toBeNull();
-    expect(sentinel(paging, "")).toEqual({ text: "130 titles", end: true });
+    expect(gridFooter(paging, "")).toEqual({ text: "130 titles", end: true });
   });
 
   it("says 1 title, and shows the empty text when nothing matches", () => {
-    expect(sentinel(appendPage(initialPaging(), page(0, 1, 1)), "")).toEqual({
+    expect(gridFooter(appendPage(initialPaging(), page(0, 1, 1)), "")).toEqual({
       text: "1 title",
       end: true,
     });
-    expect(sentinel(appendPage(initialPaging(), page(0, 0, 0)), "Nothing.")).toEqual({
+    expect(gridFooter(appendPage(initialPaging(), page(0, 0, 0)), "Nothing.")).toEqual({
       text: "Nothing.",
       end: true,
     });
@@ -171,7 +171,7 @@ describe("paging", () => {
     let paging = appendPage(initialPaging(), page(0, 60, 130));
     paging = appendPage(paging, page(60, 0, 130));
     expect(nextOffset(paging)).toBeNull();
-    expect(sentinel(paging, "")).toEqual({ text: "60 titles", end: true });
+    expect(gridFooter(paging, "")).toEqual({ text: "60 titles", end: true });
   });
 });
 
@@ -317,11 +317,11 @@ describe("continueLine", () => {
   });
 });
 
-describe("clock", () => {
+describe("formatTime", () => {
   it("is m:ss under an hour and h:mm:ss from an hour", () => {
-    expect(clock(0)).toBe("0:00");
-    expect(clock(754.9)).toBe("12:34");
-    expect(clock(3723)).toBe("1:02:03");
+    expect(formatTime(0)).toBe("0:00");
+    expect(formatTime(754.9)).toBe("12:34");
+    expect(formatTime(3723)).toBe("1:02:03");
   });
 });
 

@@ -142,12 +142,12 @@ fun continueSubtitle(item: OnDemandItem): String {
     return if (duration != null && duration > 0) {
         "${maxOf(1, ((duration - position) / 60.0).roundToInt())} min left"
     } else {
-        "${clock(position)} in"
+        "${formatTime(position)} in"
     }
 }
 
 /** Seconds as m:ss, or h:mm:ss. */
-fun clock(seconds: Int): String {
+fun formatTime(seconds: Int): String {
     val h = seconds / 3600
     val m = (seconds % 3600) / 60
     val s = seconds % 60
@@ -159,7 +159,7 @@ val ON_DEMAND_ERROR_TEXT: Map<String, String> = mapOf(
     ApiException.BUSY to "Someone else on this login is already watching — On Demand uses the same " +
         "stream as live TV. Stop the other stream and try again.",
     ApiException.NOT_FOUND to "This title isn't available any more.",
-    ApiException.PORTAL_ERROR to "The provider didn't answer. Try again in a moment.",
+    ApiException.PORTAL_ERROR to "The portal didn't answer. Try again in a moment.",
 )
 
 /** What a failed load says: the code's wording, the server's text, the status, or unreachable. */

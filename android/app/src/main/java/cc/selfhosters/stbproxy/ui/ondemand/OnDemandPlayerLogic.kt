@@ -165,6 +165,9 @@ enum class SessionEnd {
     /** A newer session on the same login took the stream. */
     EVICTED,
 
+    /** The stream stopped coming from the portal (a timeout, a dropped connection, a 5xx). */
+    FAILED,
+
     /** Stopped from the operator's Streams page. */
     STOPPED,
 
@@ -187,6 +190,7 @@ fun sessionEndOf(status: Int?, body: ByteArray?): SessionEnd? {
     return when (reason) {
         "idle" -> SessionEnd.IDLE
         "evicted" -> SessionEnd.EVICTED
+        "failed" -> SessionEnd.FAILED
         "stopped" -> SessionEnd.STOPPED
         else -> SessionEnd.UNKNOWN
     }

@@ -228,6 +228,7 @@ class OnDemandPlayerLogicTest {
         fun body(reason: String) = """{"error": "Session ended", "code": "session_ended", "reason": "$reason"}""".toByteArray()
         assertEquals(SessionEnd.IDLE, sessionEndOf(410, body("idle")))
         assertEquals(SessionEnd.EVICTED, sessionEndOf(410, body("evicted")))
+        assertEquals(SessionEnd.FAILED, sessionEndOf(410, body("failed")))
         assertEquals(SessionEnd.STOPPED, sessionEndOf(410, body("stopped")))
     }
 

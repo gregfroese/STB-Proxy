@@ -192,8 +192,9 @@ describe("a session that ends under the player (410)", () => {
     expect(streamFailure(410, ended("idle"))).toEqual({ kind: "restart" });
   });
 
-  it("shows the Resume overlay when evicted or stopped", () => {
+  it("shows the Resume overlay when evicted, failed or stopped", () => {
     expect(streamFailure(410, ended("evicted"))).toEqual({ kind: "overlay", overlay: "evicted" });
+    expect(streamFailure(410, ended("failed"))).toEqual({ kind: "overlay", overlay: "failed" });
     expect(streamFailure(410, ended("stopped"))).toEqual({ kind: "overlay", overlay: "stopped" });
   });
 
@@ -229,7 +230,7 @@ describe("a session that ends under the player (410)", () => {
   it("words the overlays as 09 does, with Resume from the position", () => {
     expect(overlayCopy("evicted", 754, null)).toEqual({
       title: "Playback stopped",
-      body: "Playback stopped — someone started watching on another device with this login, and the provider only allows one stream at a time.",
+      body: "Playback stopped — someone started watching on another device with this login, and the portal only allows one stream at a time.",
       primary: "▶ Resume from 12:34",
     });
     expect(overlayCopy("stopped", 60, null).body).toBe(
@@ -240,9 +241,14 @@ describe("a session that ends under the player (410)", () => {
       body: "Someone else on this login is already watching — On Demand uses the same stream as live TV. Stop the other stream and try again.",
       primary: "Try again",
     });
-    expect(overlayCopy("error", 0, "The provider didn't answer.")).toEqual({
+    expect(overlayCopy("failed", 754, null)).toEqual({
+      title: "Playback interrupted",
+      body: "Playback was interrupted — the stream stopped coming through.",
+      primary: "▶ Resume from 12:34",
+    });
+    expect(overlayCopy("error", 0, "The portal didn't answer.")).toEqual({
       title: "Playback stopped",
-      body: "The provider didn't answer.",
+      body: "The portal didn't answer.",
       primary: "Try again",
     });
   });

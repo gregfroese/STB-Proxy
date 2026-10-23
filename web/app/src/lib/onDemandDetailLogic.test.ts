@@ -16,6 +16,8 @@ import {
   movieActions,
   openingSeason,
   playErrorText,
+  seasonErrorText,
+  TITLE_GONE,
   playTitle,
   seasonLabel,
   seriesPlay,
@@ -57,6 +59,17 @@ describe("movieActions", () => {
   });
 });
 
+describe("seasonErrorText", () => {
+  it("blames the portal for a portal_error, and says so plainly otherwise", () => {
+    expect(seasonErrorText(new ApiError(502, "portal_error", "x"))).toBe(
+      "The portal didn't send this Season's Episodes. Try again in a moment.",
+    );
+    expect(seasonErrorText(new TypeError("Failed to fetch"))).toBe(
+      "Couldn't load this Season's Episodes.",
+    );
+  });
+});
+
 describe("playErrorText", () => {
   it("words busy, not_found and portal_error as decided in 09", () => {
     expect(playErrorText(new ApiError(503, "busy", "All tuners are busy"))).toBe(
@@ -66,8 +79,12 @@ describe("playErrorText", () => {
       "This title isn't available any more.",
     );
     expect(playErrorText(new ApiError(502, "portal_error", "The portal didn't answer"))).toBe(
-      "The provider didn't answer. Try again in a moment.",
+      "The portal didn't answer. Try again in a moment.",
     );
+  });
+
+  it("says a missing title is gone in the title page's own words", () => {
+    expect(TITLE_GONE).toBe("This title isn't available any more.");
   });
 
   it("falls back to the server's own words, or a generic line when there are none", () => {

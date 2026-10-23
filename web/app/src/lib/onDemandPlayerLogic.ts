@@ -4,7 +4,7 @@
 
 import { ApiError } from "./api";
 import { episodeCode, episodeName, facts, playErrorText, seasonLabel } from "./onDemandDetailLogic";
-import { clock } from "./onDemandLogic";
+import { formatTime } from "./onDemandLogic";
 import type { OnDemandDetail, OnDemandEpisode, OnDemandSeason } from "./types";
 
 /** A held D-pad ← → steps 10 s, then 30 s after 1 s, then 60 s after 3 s. */
@@ -201,7 +201,7 @@ export function doneTitle(detail: OnDemandDetail, season: OnDemandSeason | null)
 }
 
 /** What covers the picture when the session can't carry on (09's wording). */
-export type PlayerOverlay = "evicted" | "stopped" | "busy" | "error";
+export type PlayerOverlay = "evicted" | "failed" | "stopped" | "busy" | "error";
 
 export type StreamFailure =
   /** 410 `idle`: open a new session with `replaces` at the same position, silently. */
@@ -220,7 +220,10 @@ export function streamFailure(status: number | null, body: unknown): StreamFailu
   if (status === 404 && fields.code === "on_demand_off") return { kind: "off" };
   if (status === 410) {
     if (fields.reason === "idle") return { kind: "restart" };
-    return { kind: "overlay", overlay: fields.reason === "evicted" ? "evicted" : "stopped" };
+    const reason = fields.reason;
+    // `failed`: a timeout or a dropped stream upstream, not another device (ADR 0005).
+    if (reason === "evicted" || reason === "failed") return { kind: "overlay", overlay: reason };
+    return { kind: "overlay", overlay: "stopped" };
   }
   return { kind: "overlay", overlay: "error" };
 }
@@ -242,10 +245,19 @@ export function playFailure(
   };
 }
 
-const OVERLAY_BODY: Record<"evicted" | "stopped", string> = {
-  evicted:
-    "Playback stopped — someone started watching on another device with this login, and the provider only allows one stream at a time.",
-  stopped: "The stream was stopped from the server's Streams page.",
+const OVERLAY_COPY: Record<"evicted" | "failed" | "stopped", { title: string; body: string }> = {
+  evicted: {
+    title: "Playback stopped",
+    body: "Playback stopped — someone started watching on another device with this login, and the portal only allows one stream at a time.",
+  },
+  failed: {
+    title: "Playback interrupted",
+    body: "Playback was interrupted — the stream stopped coming through.",
+  },
+  stopped: {
+    title: "Playback stopped",
+    body: "The stream was stopped from the server's Streams page.",
+  },
 };
 
 /** The overlay's title, text and main button; `message` is the error overlay's text. */
@@ -269,9 +281,8 @@ export function overlayCopy(
     };
   }
   return {
-    title: "Playback stopped",
-    body: OVERLAY_BODY[overlay],
-    primary: `▶ Resume from ${clock(positionSec)}`,
+    ...OVERLAY_COPY[overlay],
+    primary: `▶ Resume from ${formatTime(positionSec)}`,
   };
 }
 

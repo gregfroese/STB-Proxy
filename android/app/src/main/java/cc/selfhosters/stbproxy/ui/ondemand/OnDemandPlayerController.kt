@@ -80,7 +80,8 @@ data class OnDemandPlayerState(
 /** The overlay wording for each 410 reason (the web's, ticket 09). */
 fun sessionEndText(end: SessionEnd): String = when (end) {
     SessionEnd.EVICTED -> "Playback stopped — someone started watching on another device with this login, " +
-        "and the provider only allows one stream at a time"
+        "and the portal only allows one stream at a time"
+    SessionEnd.FAILED -> "Playback was interrupted — the stream stopped coming through."
     SessionEnd.STOPPED -> "The stream was stopped from the server's Streams page."
     SessionEnd.IDLE, SessionEnd.UNKNOWN -> "Playback stopped — the stream ended on the server."
 }
@@ -91,8 +92,8 @@ const val IDLE_RESTART_FAILED = "Couldn't restart — someone else on this login
  * Runs one On Demand player (ticket 15): the session Play minted ([start]), progress
  * reports (every 30 s of playback, on pause, background, the end, a hand-over and
  * leaving), the end card and its hand-over with `replaces`, and the session states
- * (06): a silent restart after a 410 `idle`, and the overlay after `evicted`/`stopped`
- * or a failed mint.
+ * (06): a silent restart after a 410 `idle`, the overlay after `evicted`/`failed`/`stopped`
+ * or a failed mint, and leaving for Channels on a 404 `on_demand_off`.
  *
  * Calls are expected on the main thread. [background] outlives the screen (the last
  * report, the session `DELETE` and the change announcement on leave).
@@ -198,6 +199,12 @@ class OnDemandPlayerController(
      * HTTP answer's, when there was one.
      */
     fun onPlaybackFailed(status: Int?, body: ByteArray?) {
+        if (status != null && api.mediaFailure(status, body).isOnDemandOff) {
+            // On Demand is off for this login now: the shell leaves for Channels and says why.
+            port.stop()
+            _state.update { it.copy(session = null) }
+            return
+        }
         val position = port.positionMs
         val choice = _state.value.choice.copy(startSec = (position / 1000).toInt())
         val old = _state.value.session
@@ -383,7 +390,7 @@ class OnDemandPlayerController(
     private suspend fun episodesOf(key: OnDemandKey.Episode, season: OnDemandSeason): List<OnDemandEpisode> =
         episodes[season.id] ?: api.fetchOnDemandSeason(key.portal, key.seriesId, season.id).also { episodes[season.id] = it }
 
-    private fun resumeLabel(choice: PlayChoice) = "▶ Resume from ${clock(choice.startSec)}"
+    private fun resumeLabel(choice: PlayChoice) = "▶ Resume from ${formatTime(choice.startSec)}"
 
     private fun failedText(status: Int?) =
         if (status != null) "Playback failed (HTTP $status)." else "Playback failed — the stream couldn't be reached."

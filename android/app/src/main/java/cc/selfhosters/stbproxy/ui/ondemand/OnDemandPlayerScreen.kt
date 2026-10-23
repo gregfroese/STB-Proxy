@@ -603,7 +603,7 @@ private fun ControlsOverlay(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (compact) ControlButton(pauseLabel, onTogglePause)
-                Text(clock((positionMs / 1000).toInt()), color = Color.White, fontSize = 12.sp)
+                Text(formatTime((positionMs / 1000).toInt()), color = Color.White, fontSize = 12.sp)
                 SeekBar(
                     positionMs = positionMs,
                     durationMs = durationMs,
@@ -614,7 +614,7 @@ private fun ControlsOverlay(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    "−" + clock(((durationMs - positionMs).coerceAtLeast(0) / 1000).toInt()),
+                    "−" + formatTime(((durationMs - positionMs).coerceAtLeast(0) / 1000).toInt()),
                     color = Color.White,
                     fontSize = 12.sp,
                 )
@@ -714,7 +714,7 @@ private fun SeekBar(
         )
         dragMs?.let { ms ->
             Text(
-                text = clock((ms / 1000).toInt()),
+                text = formatTime((ms / 1000).toInt()),
                 color = Color.White,
                 fontSize = 12.sp,
                 modifier = Modifier
