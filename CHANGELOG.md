@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.18.3] - 2026-10-22
+
+### Web viewer
+
+- **Full screen in Downloader (and other TV apps' built-in browsers)**: full screen now grows the player to fill the browser instead of asking for real full screen. Fire TV draws video on a hardware layer positioned by the app's browser view, so once the page was handed to a separate full-screen view the picture stayed at its old size. The remote's Back button leaves full screen (and stays on the channel you zapped to), instead of leaving the page. Silk and desktop browsers keep real full screen.
+
 ## [1.18.2] - 2026-10-22
 
 ### Web viewer
