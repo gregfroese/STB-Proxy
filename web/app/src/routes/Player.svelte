@@ -5,11 +5,7 @@
   import { timeRange } from "../lib/format";
   import { lineup, loadLineup } from "../lib/lineup";
   import { attachStream, type StreamHandle } from "../lib/stream";
-  import {
-    channelKey,
-    effectiveGroupMode,
-    launchGroupFor,
-  } from "../lib/pickerLogic";
+  import { channelKey, effectiveGroupMode, launchGroupFor } from "../lib/pickerLogic";
   import { groupMode } from "../lib/prefs";
   import {
     epgRefreshAction,
@@ -171,11 +167,38 @@
     retry();
   }
 
+  // TV browsers (Fire TV) draw the picture on a hardware layer that doesn't follow
+  // CSS size changes: the stage grows but the picture keeps its old size and place.
+  // Hiding the video for a couple of frames makes the browser rebuild that layer at
+  // the video's current size. Playback carries on underneath.
+  let refreshTimer = 0;
+  function refreshVideoLayer() {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = window.setTimeout(() => {
+      const video = videoEl;
+      if (!video) return;
+      video.style.visibility = "hidden";
+      video.style.display = "none";
+      void video.offsetHeight;
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          video.style.display = "";
+          video.style.visibility = "";
+        }),
+      );
+    }, 50);
+  }
+
+  function setFullWindow(on: boolean) {
+    fullWindow = on;
+    isFullscreen = on || document.fullscreenElement != null;
+    refreshVideoLayer();
+  }
+
   function toggleFullscreen() {
     if (isFullscreen) {
-      fullWindow = false;
+      setFullWindow(false);
       if (document.fullscreenElement) void document.exitFullscreen();
-      isFullscreen = false;
       return;
     }
     const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
@@ -184,15 +207,15 @@
       if (request && typeof request.catch === "function") request.catch(() => undefined);
       return;
     }
-    fullWindow = true;
-    isFullscreen = true;
+    setFullWindow(true);
     const request = document.documentElement.requestFullscreen?.();
     if (request && typeof request.catch === "function") request.catch(() => undefined);
   }
 
   function onFullscreenChange() {
     // Leaving the browser's full screen (Back, Esc) also leaves the full-window player.
-    if (document.fullscreenElement == null) fullWindow = false;
+    if (document.fullscreenElement == null && fullWindow) setFullWindow(false);
+    else refreshVideoLayer();
     isFullscreen = fullWindow || document.fullscreenElement != null;
     if (videoEl && videoEl.paused) {
       const play = videoEl.play();
@@ -240,7 +263,10 @@
     window.addEventListener("keydown", onKey);
     document.addEventListener("visibilitychange", onVisibility);
     document.addEventListener("fullscreenchange", onFullscreenChange);
+    window.addEventListener("resize", refreshVideoLayer);
     return () => {
+      window.clearTimeout(refreshTimer);
+      window.removeEventListener("resize", refreshVideoLayer);
       window.clearInterval(timer);
       window.removeEventListener("keydown", onKey);
       document.removeEventListener("visibilitychange", onVisibility);
@@ -290,7 +316,11 @@
         0,
       )} KB/s · buffer ${ahead.toFixed(1)}s · dropped ${quality?.droppedVideoFrames ?? "?"}/${
         quality?.totalVideoFrames ?? "?"
-      } (now ${rate}%) · rate ${video.playbackRate} · rs ${video.readyState}`;
+      } (now ${rate}%) · rate ${video.playbackRate} · rs ${video.readyState} · window ${innerWidth}×${
+        innerHeight
+      } · box ${video.clientWidth}×${video.clientHeight} · fs ${
+        document.fullscreenElement?.tagName.toLowerCase() ?? "off"
+      }${fullWindow ? " +page" : ""}${document.documentElement.classList.contains("tv") ? " · tv" : ""}`;
     }, 1000);
     return () => window.clearInterval(timer);
   });

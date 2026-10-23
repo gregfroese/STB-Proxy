@@ -2,6 +2,13 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.18.2] - 2026-10-22
+
+### Web viewer
+
+- **Full screen on Fire TV, take two**: the player now filled the screen, but Fire TV kept drawing the picture at its old size and place (it snapped to full size only for a moment when leaving full screen). Fire TV draws video on a hardware layer that doesn't follow page layout changes, so the player now briefly hides and re-shows the video whenever its size changes (full screen on/off, window resize), which makes the browser redraw the picture at the new size. Playback continues.
+- `?debug=1` on the player now also shows the window size, the video's on-page size and the full-screen state, to diagnose TV browsers.
+
 ## [1.18.1] - 2026-10-22
 
 ### Web viewer
