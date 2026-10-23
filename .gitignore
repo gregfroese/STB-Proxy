@@ -17,3 +17,5 @@ logo-index.json
 static/*.apk
 # On Demand index and its SQLite side files (live next to config.json).
 ondemand.sqlite*
+# Viewer state: Resume points, Watched, Up next (durable, beside config.json).
+ondemand-progress.sqlite*

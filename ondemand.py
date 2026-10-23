@@ -81,6 +81,17 @@ FULL_HOUR = 4
 SERIES_AGE = 6 * 3600
 # A Season or Episode list is read at most this many portal pages deep.
 MAX_LIST_PAGES = 50
+# Viewer state (ADR 0006). A Resume point needs at least RESUME_MIN seconds; Watched comes
+# at WATCHED_SHARE of the duration the player reports. Resume points (and Up next) untouched
+# for RESUME_AGE are dropped, and an Account keeps at most WATCHED_MAX Watched markers. The
+# pruning runs at most every PRUNE_EVERY, on a write.
+RESUME_MIN = 60
+WATCHED_SHARE = 0.9
+RESUME_AGE = 180 * 24 * 3600
+WATCHED_MAX = 10000
+PRUNE_EVERY = 24 * 3600
+# Continue watching lists at most this many items.
+CONTINUE_MAX = 20
 
 SCHEMA = """
 CREATE TABLE items (
@@ -173,6 +184,40 @@ CREATE TABLE fetched (               -- when each Season list ("" season) or Epi
     at INTEGER NOT NULL,
     PRIMARY KEY (portal, series, season)
 );
+"""
+
+# The durable viewer-state file (ADR 0006), ATTACHed to the index connection as `progress`.
+# It is never rebuilt, so its tables only ever grow by IF NOT EXISTS.
+PROGRESS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS progress.viewed (
+    account TEXT NOT NULL,           -- the Account's username
+    portal TEXT NOT NULL,
+    item TEXT NOT NULL,              -- the Movie's id, or the Episode's Series id
+    season TEXT NOT NULL,            -- the Episode's Season id, '' for a Movie
+    episode TEXT NOT NULL,           -- the Episode's id, '' for a Movie
+    position INTEGER,                -- the Resume point in seconds, NULL when there is none
+    duration INTEGER,                -- as the player last reported it, NULL when unknown
+    watched INTEGER NOT NULL,
+    updated INTEGER NOT NULL,        -- epoch seconds of the last report or mark
+    season_number INTEGER,           -- an Episode's label as it was when reported
+    episode_number INTEGER,          -- (Episodes aren't in the index)
+    episode_name TEXT,
+    PRIMARY KEY (account, portal, item, season, episode)
+);
+CREATE INDEX IF NOT EXISTS progress.viewed_updated ON viewed (account, updated);
+CREATE TABLE IF NOT EXISTS progress.up_next (   -- one per (Account, Series); none = null
+    account TEXT NOT NULL,
+    portal TEXT NOT NULL,
+    series TEXT NOT NULL,
+    season TEXT NOT NULL,
+    episode TEXT NOT NULL,
+    season_number INTEGER,
+    episode_number INTEGER,
+    episode_name TEXT,
+    updated INTEGER NOT NULL,
+    PRIMARY KEY (account, portal, series)
+);
+CREATE INDEX IF NOT EXISTS progress.up_next_updated ON up_next (account, updated);
 """
 
 
@@ -322,10 +367,15 @@ def listItem(portal, id, kind, name, year, rating, added, raw):
 
 
 class Index:
-    """The SQLite index file. Safe to share across threads: one connection, one lock."""
+    """The SQLite index file. Safe to share across threads: one connection, one lock.
 
-    def __init__(self, path):
+    With `progressPath`, the durable viewer-state file (ADR 0006) is ATTACHed to the same
+    connection as `progress` (see Progress). Recreating the index never touches it.
+    """
+
+    def __init__(self, path, progressPath=None):
         self.path = path
+        self.progressPath = progressPath
         self.lock = threading.RLock()
         self.db = None
         try:
@@ -348,6 +398,33 @@ class Index:
                 SCHEMA_VERSION))
         # A file that is not a database, or a damaged one, fails here (DatabaseError).
         self.db.execute("SELECT count(*) FROM portals").fetchone()
+        if self.progressPath is not None:
+            self.attachProgress()
+
+    def attachProgress(self):
+        """ATTACH the viewer-state file as `progress`. It is never rebuilt: one that can't be
+        read is moved aside to `<file>.bad`, for a person to look at, and a new one started."""
+        try:
+            self.openProgress()
+        except sqlite3.DatabaseError as e:
+            logger.error("On Demand progress file {} unreadable ({}), moved aside to .bad".format(
+                self.progressPath, e))
+            try:
+                self.db.execute("DETACH DATABASE progress")
+            except sqlite3.Error:
+                pass
+            os.replace(self.progressPath, self.progressPath + ".bad")
+            for suffix in ("-wal", "-shm", "-journal"):
+                try:
+                    os.remove(self.progressPath + suffix)
+                except FileNotFoundError:
+                    pass
+            self.openProgress()
+
+    def openProgress(self):
+        self.db.execute("ATTACH DATABASE ? AS progress", (self.progressPath,))
+        self.db.execute("PRAGMA progress.journal_mode = WAL")
+        self.db.executescript(PROGRESS_SCHEMA)
 
     def recreate(self):
         with self.lock:
@@ -1108,3 +1185,254 @@ class SeriesCache:
                  "name": present(row.get("series_name")),
                  "play": {"movie_id": str(raw["id"]), "season_id": seasonId, "episode_id": str(row["id"])}}
                 for row in rows if row.get("id") not in (None, "")]
+
+
+def progressOf(position, duration, watched, updated):
+    """The `progress` field of a Movie or an Episode."""
+    return {"positionSec": position, "durationSec": duration, "watched": bool(watched), "updatedAt": updated}
+
+
+def upNextOf(season, seasonNumber, episode, episodeNumber, name, position, duration):
+    """The `upNext` field of a Series."""
+    return {"seasonId": season, "seasonNumber": seasonNumber, "episodeId": episode,
+            "episodeNumber": episodeNumber, "name": name, "positionSec": position, "durationSec": duration}
+
+
+# Up next with its Episode's Resume point: format with the leading columns and any join.
+UP_NEXT = ("SELECT {} u.season, u.season_number, u.episode, u.episode_number, u.episode_name, v.position, "
+           "v.duration, u.updated FROM progress.up_next u {} LEFT JOIN progress.viewed v ON "
+           "v.account = u.account AND v.portal = u.portal AND v.item = u.series AND v.season = u.season "
+           "AND v.episode = u.episode WHERE u.account = ? AND ")
+
+
+class Progress:
+    """Each Account's Resume points, Watched markers and Up next (ADR 0006), kept in the
+    durable progress file the Index attaches. Accounts are keyed by username; an item key is
+    (portal, id) for a Movie or (portal, series id, Season id, Episode id) for an Episode.
+
+    Writes take a player's report or a hand mark, and return False for an unknown Episode:
+
+        report(account, key, positionSec, durationSec=None)
+        mark(account, key, watched)
+
+    - A Resume point needs RESUME_MIN seconds. Reaching WATCHED_SHARE of the reported
+      duration marks the item Watched and clears it; with no duration, never.
+    - Watched sticks: rewatching keeps it and records a new Resume point. Marking unwatched
+      clears the Resume point too.
+    - Up next, one per (Account, Series): the Episode touched last, or the one after it once
+      it becomes Watched (the next in its Season, else the first of the next Season), worked
+      out now from the Seasons and Episodes the SeriesCache keeps, fetching the next Season
+      once if it isn't there. None after the last Episode.
+
+    Reads never ask the portal. Rows of hidden, vanished or switched-off items are kept and
+    only skipped where they don't join, so they come back with the item. Callers check the
+    viewer may see the item, and that a Movie key is a Movie and an Episode's a Series.
+    """
+
+    def __init__(self, index, series, clock=time.time):
+        self.index = index
+        self.series = series
+        self.clock = clock
+        self.pruned = None
+
+    # Writes.
+
+    def report(self, account, key, positionSec, durationSec=None):
+        if durationSec and positionSec >= WATCHED_SHARE * durationSec:
+            watched, position = True, None
+        else:
+            watched, position = None, int(positionSec) if positionSec >= RESUME_MIN else None
+        duration = int(durationSec) if durationSec else None
+        return self.write(account, key, position, watched, lambda old: duration)
+
+    def mark(self, account, key, watched):
+        return self.write(account, key, None, bool(watched), lambda old: old)
+
+    def write(self, account, key, position, watched, duration):
+        """Store one item's new state. `watched` None keeps the flag; `duration(old)` gives
+        the duration to store from the stored one."""
+        episode = len(key) == 4
+        label = self.episode(*key) if episode else (None, None)
+        if label is None:
+            return False
+        season, found = label
+        portal, item, seasonId, episodeId = key if episode else (key[0], key[1], "", "")
+        now = int(self.clock())
+        self.maybePrune(now)
+        where = (account, portal, item, seasonId, episodeId)
+        with self.index.transaction() as db:
+            old = db.execute("SELECT duration, watched FROM progress.viewed WHERE account = ? AND portal = ? "
+                             "AND item = ? AND season = ? AND episode = ?", where).fetchone()
+            if watched is None:
+                watched = bool(old and old[1])
+            if position is None and not watched:
+                db.execute("DELETE FROM progress.viewed WHERE account = ? AND portal = ? AND item = ? "
+                           "AND season = ? AND episode = ?", where)
+            else:
+                db.execute("INSERT OR REPLACE INTO progress.viewed VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", (
+                    *where, position, duration(old[0] if old else None), int(watched), now,
+                    season and season["number"], found and found["number"], found and found["name"]))
+        if episode:
+            upNext = (season, found)
+            if watched and position is None:
+                try:
+                    upNext = self.following(portal, item, seasonId, episodeId)
+                except PortalError:
+                    logger.info("On Demand Up next of {} {}: the portal didn't send the next Season, "
+                                "keeping this Episode".format(portal, item))
+            self.setUpNext(account, portal, item, upNext, now)
+        return True
+
+    def episode(self, portal, series, seasonId, episodeId):
+        """(season, episode) of a Series' Episode, or None if it has no such Episode. The
+        stored lists answer when they know it (any age: they minted the link); otherwise the
+        SeriesCache, which may ask the portal (PortalError)."""
+        def find(rows, id):
+            return next((row for row in rows if row["id"] == id), None)
+
+        season = find(self.index.seasonList(portal, series), seasonId) or find(
+            self.series.seasons(portal, series) or [], seasonId)
+        if season is None:
+            return None
+        found = find(self.index.episodeList(portal, series, seasonId), episodeId) or find(
+            self.series.episodes(portal, series, seasonId) or [], episodeId)
+        return None if found is None else (season, found)
+
+    def following(self, portal, series, seasonId, episodeId):
+        """(season, episode) after this Episode, or None after the last one."""
+        seasons = self.index.seasonList(portal, series)
+        ids = [s["id"] for s in seasons]
+        episodes = self.index.episodeList(portal, series, seasonId)
+        at = [e["id"] for e in episodes].index(episodeId)
+        if at + 1 < len(episodes):
+            return seasons[ids.index(seasonId)], episodes[at + 1]
+        for season in seasons[ids.index(seasonId) + 1:]:
+            if self.index.fetchedAt(portal, series, season["id"]) is not None:
+                episodes = self.index.episodeList(portal, series, season["id"])
+            else:
+                episodes = self.series.episodes(portal, series, season["id"]) or []
+            if episodes:
+                return season, episodes[0]
+        return None
+
+    def setUpNext(self, account, portal, series, upNext, now):
+        with self.index.transaction() as db:
+            db.execute("DELETE FROM progress.up_next WHERE account = ? AND portal = ? AND series = ?",
+                       (account, portal, series))
+            if upNext is not None:
+                season, episode = upNext
+                db.execute("INSERT INTO progress.up_next VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (
+                    account, portal, series, season["id"], episode["id"], season["number"], episode["number"],
+                    episode["name"], now))
+
+    # Lifecycle.
+
+    def maybePrune(self, now):
+        if self.pruned is None or now - self.pruned >= PRUNE_EVERY:
+            self.prune()
+
+    def prune(self):
+        """Drop Resume points (and Up next) untouched for RESUME_AGE, and each Account's
+        oldest Watched markers past WATCHED_MAX."""
+        now = int(self.clock())
+        self.pruned = now
+        old = now - RESUME_AGE
+        with self.index.transaction() as db:
+            db.execute("DELETE FROM progress.viewed WHERE updated < ? AND watched = 0", (old,))
+            db.execute("UPDATE progress.viewed SET position = NULL WHERE updated < ? AND position IS NOT NULL",
+                       (old,))
+            db.execute("DELETE FROM progress.up_next WHERE updated < ?", (old,))
+            db.execute(
+                "DELETE FROM progress.viewed WHERE rowid IN (SELECT rowid FROM (SELECT rowid, row_number() "
+                "OVER (PARTITION BY account ORDER BY updated DESC, rowid DESC) AS n FROM progress.viewed "
+                "WHERE watched = 1) WHERE n > ?)", (WATCHED_MAX,))
+
+    def forgetAccount(self, account):
+        """Delete an Account's rows, so re-creating the username starts clean."""
+        self.forget("account", account)
+
+    def forgetPortal(self, portal):
+        self.forget("portal", portal)
+
+    def forget(self, column, value):
+        with self.index.transaction() as db:
+            for table in ("viewed", "up_next"):
+                db.execute("DELETE FROM progress.{} WHERE {} = ?".format(table, column), (value,))
+
+    # Reads.
+
+    def movies(self, account, keys):
+        """{(portal, id): progress} of those of these Movies with any."""
+        found = {}
+        for portal, ids in byPortal(keys).items():
+            with self.index.lock:
+                rows = self.index.db.execute(
+                    "SELECT item, position, duration, watched, updated FROM progress.viewed WHERE account = ? "
+                    "AND portal = ? AND season = '' AND item IN ({})".format(",".join("?" * len(ids))),
+                    [account, portal, *ids]).fetchall()
+            for item, *state in rows:
+                found[(portal, item)] = progressOf(*state)
+        return found
+
+    def episodes(self, account, portal, series, seasonId):
+        """{Episode id: progress} of a Season's Episodes with any."""
+        with self.index.lock:
+            rows = self.index.db.execute(
+                "SELECT episode, position, duration, watched, updated FROM progress.viewed WHERE account = ? "
+                "AND portal = ? AND item = ? AND season = ? AND episode != ''",
+                (account, portal, series, seasonId)).fetchall()
+        return {episode: progressOf(*state) for episode, *state in rows}
+
+    def upNext(self, account, keys):
+        """{(portal, series id): upNext} of those of these Series with one."""
+        found = {}
+        for portal, ids in byPortal(keys).items():
+            with self.index.lock:
+                rows = self.index.db.execute(
+                    UP_NEXT.format("u.series,", "") + "u.portal = ? AND u.series IN ({})".format(
+                        ",".join("?" * len(ids))), [account, portal, *ids]).fetchall()
+            for series, *state, updated in rows:
+                found[(portal, series)] = upNextOf(*state)
+        return found
+
+    def continueWatching(self, account, portals, visible=Filter(), limit=CONTINUE_MAX):
+        """What `account` is in the middle of, most recently played first, at most `limit`:
+        list items of the Movies with a Resume point (plus `progress`) and of the Series with
+        an Up next (plus `upNext`). Items not in these portals' index, or that `visible` (a
+        Filter) removes, are skipped."""
+        portals = list(portals)
+        if not portals:
+            return []
+        columns = "i.portal, i.id, i.kind, i.name, i.year, i.rating, i.added, i.json,"
+        inPortals = "i.portal IN ({})".format(",".join("?" * len(portals)))
+        moviesWhere, moviesArgs = visibleWhere(
+            ["v.account = ?", "v.season = ''", "v.position IS NOT NULL", "i.kind = 'movie'", inPortals],
+            [account, *portals], visible)
+        seriesWhere, seriesArgs = visibleWhere([inPortals], portals, visible)
+        with self.index.lock:
+            movies = self.index.db.execute(
+                "SELECT {} v.position, v.duration, v.watched, v.updated FROM progress.viewed v JOIN items i "
+                "ON i.portal = v.portal AND i.id = v.item WHERE {} ORDER BY v.updated DESC LIMIT ?".format(
+                    columns, moviesWhere), moviesArgs + [limit]).fetchall()
+            series = self.index.db.execute(
+                UP_NEXT.format(columns, "JOIN items i ON i.portal = u.portal AND i.id = u.series")
+                + seriesWhere + " ORDER BY u.updated DESC LIMIT ?", [account] + seriesArgs + [limit]).fetchall()
+        entries = []
+        for row in movies:
+            item = listItem(*row[:7], json.loads(row[7]))
+            item["progress"] = progressOf(*row[8:])
+            entries.append((row[-1], item))
+        for row in series:
+            item = listItem(*row[:7], json.loads(row[7]))
+            item["upNext"] = upNextOf(*row[8:-1])
+            entries.append((row[-1], item))
+        entries.sort(key=lambda entry: entry[0], reverse=True)
+        return [item for _, item in entries[:limit]]
+
+
+def byPortal(keys):
+    """[(portal, id)] as {portal: [id]}."""
+    grouped = {}
+    for portal, id in keys:
+        grouped.setdefault(portal, []).append(str(id))
+    return grouped

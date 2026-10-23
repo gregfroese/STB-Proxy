@@ -1583,6 +1583,7 @@ def accountsDelete():
         return redirect("/accounts", code=302)
 
     saveAccounts(records)
+    forgetOnDemandAccount(username)
     logger.info("Account({}) deleted".format(username))
     flash("Account {} deleted".format(username), "success")
     return redirect("/accounts", code=302)
@@ -3739,7 +3740,7 @@ def apiLineup():
 # background crawler while some Account has On Demand switched on.
 ONDEMAND_BACKGROUND = True
 ONDEMAND_CRAWL_INTERVAL = ondemand.CRAWL_INTERVAL
-onDemand = {"index": None, "crawler": None, "series": None}
+onDemand = {"index": None, "crawler": None, "series": None, "progress": None}
 onDemandLock = threading.Lock()
 
 
@@ -3747,10 +3748,15 @@ def onDemandIndexFile():
     return os.path.join(os.path.dirname(os.path.abspath(configFile)), "ondemand.sqlite")
 
 
+def onDemandProgressFile():
+    """The durable viewer-state file (ADR 0006), attached to the index."""
+    return os.path.join(os.path.dirname(os.path.abspath(configFile)), "ondemand-progress.sqlite")
+
+
 def onDemandIndex():
     with onDemandLock:
         if onDemand["index"] is None:
-            onDemand["index"] = ondemand.Index(onDemandIndexFile())
+            onDemand["index"] = ondemand.Index(onDemandIndexFile(), progressPath=onDemandProgressFile())
         return onDemand["index"]
 
 
@@ -3780,11 +3786,38 @@ def onDemandSeries():
         return onDemand["series"]
 
 
+def onDemandProgress():
+    """Each Account's Resume points, Watched markers and Up next (ADR 0006)."""
+    series = onDemandSeries()
+    with onDemandLock:
+        if onDemand["progress"] is None:
+            onDemand["progress"] = ondemand.Progress(series.index, series)
+        return onDemand["progress"]
+
+
+def existingOnDemandProgress():
+    """The viewer state, or None if nobody ever had any (so no file is made)."""
+    if onDemand["progress"] is None and not os.path.exists(onDemandProgressFile()):
+        return None
+    return onDemandProgress()
+
+
 def purgeOnDemandPortal(portalId):
-    """Drop a deleted portal's On Demand index rows (a disabled one keeps them, hidden)."""
+    """Drop a deleted portal's On Demand index rows and viewer state (a disabled one keeps
+    them, hidden)."""
     index = existingOnDemandIndex()
     if index is not None:
         index.purge(portalId)
+    progress = existingOnDemandProgress()
+    if progress is not None:
+        progress.forgetPortal(portalId)
+
+
+def forgetOnDemandAccount(username):
+    """Drop a deleted Account's viewer state, so re-creating the username starts clean."""
+    progress = existingOnDemandProgress()
+    if progress is not None:
+        progress.forgetAccount(username)
 
 
 def enabledOnDemandPortals():
@@ -3967,9 +4000,24 @@ def apiOnDemandItems():
         list(portals), category=request.args.get("category") or None, q=q, sort=sort, offset=offset, limit=limit,
         visible=viewerOnDemand().filter)
     return flask.jsonify({
-        "items": [onDemandListItem(item, portals) for item in items],
+        "items": [onDemandListItem(item, portals) for item in withOnDemandProgress(items)],
         "total": total, "offset": offset, "limit": limit,
     })
+
+
+def withOnDemandProgress(items):
+    """These list items or details with this viewer's state folded in (ADR 0006): a Movie's
+    `progress` and a Series' `upNext`, each null when there is none."""
+    account = viewerOnDemand().account["username"]
+    progress = onDemandProgress()
+    movies = progress.movies(account, [(i["portal"], i["id"]) for i in items if i["kind"] == "movie"])
+    upNext = progress.upNext(account, [(i["portal"], i["id"]) for i in items if i["kind"] == "series"])
+    for item in items:
+        if item["kind"] == "movie":
+            item["progress"] = movies.get((item["portal"], item["id"]))
+        else:
+            item["upNext"] = upNext.get((item["portal"], item["id"]))
+    return items
 
 
 def onDemandDetail(portal, id):
@@ -3992,7 +4040,7 @@ def apiOnDemandItem(portal, id):
     detail = onDemandDetail(portal, id)
     if detail is None:
         return onDemandError(404, "not_found", "That isn't in On Demand")
-    detail = onDemandListItem(detail, enabledOnDemandPortals())
+    detail = onDemandListItem(withOnDemandProgress([detail])[0], enabledOnDemandPortals())
     if detail["kind"] == "series":
         try:
             detail["seasons"] = onDemandSeries().seasons(portal, id) or []
@@ -4016,7 +4064,85 @@ def apiOnDemandSeason(portal, seriesId, seasonId):
             return onDemandError(502, "portal_error", "The portal didn't send this Season's Episodes, try again")
     if episodes is None:
         return onDemandError(404, "not_found", "That Season isn't in On Demand")
-    return flask.jsonify([{key: e[key] for key in ("id", "seasonId", "number", "name")} for e in episodes])
+    progress = onDemandProgress().episodes(viewerOnDemand().account["username"], portal, detail["id"], seasonId)
+    return flask.jsonify([dict({key: e[key] for key in ("id", "seasonId", "number", "name")},
+                               progress=progress.get(e["id"])) for e in episodes])
+
+
+def onDemandProgressRequest(body):
+    """A PUT /api/ondemand/progress body as (item key, ("report", positionSec, durationSec)
+    or ("mark", watched)), or None when it's malformed. The key is (portal, id) for a Movie
+    or (portal, seriesId, seasonId, episodeId) for an Episode."""
+    def ident(value):
+        if isinstance(value, str) and value:
+            return value
+        if isinstance(value, int) and not isinstance(value, bool):
+            return str(value)
+        return None
+
+    def seconds(value):
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+            return value
+        return None
+
+    if not isinstance(body, dict):
+        return None
+    episode = ("seriesId", "seasonId", "episodeId")
+    if "id" in body and not any(name in body for name in episode):
+        key = (body.get("portal"), body["id"])
+    elif "id" not in body and all(name in body for name in episode):
+        key = (body.get("portal"), *(body[name] for name in episode))
+    else:
+        return None
+    key = tuple(ident(part) for part in key)
+    if None in key or ("positionSec" in body) == ("watched" in body):
+        return None
+    if "watched" in body:
+        return (key, ("mark", body["watched"])) if isinstance(body["watched"], bool) else None
+    position, duration = seconds(body["positionSec"]), body.get("durationSec")
+    if duration is not None:
+        duration = seconds(duration)
+        if duration is None:
+            return None
+    return None if position is None else (key, ("report", position, duration or None))
+
+
+@app.route("/api/ondemand/progress", methods=["PUT"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandProgress():
+    """A player's report ({positionSec, durationSec}) or a hand mark ({watched}) for one
+    Movie or Episode (ADR 0006). Keyed by item, not session: it never counts as session
+    activity, so a paused player still idles out and frees its slot."""
+    parsed = onDemandProgressRequest(request.get_json(silent=True))
+    if parsed is None:
+        return onDemandError(400, "bad_request", "Send the item plus either positionSec and durationSec, or watched")
+    key, (action, *values) = parsed
+    detail = onDemandDetail(key[0], key[1])
+    if detail is None or detail["kind"] != ("movie" if len(key) == 2 else "series"):
+        return onDemandError(404, "not_found", "That isn't in On Demand")
+    progress = onDemandProgress()
+    account = viewerOnDemand().account["username"]
+    key = (key[0], detail["id"], *key[2:])
+    try:
+        known = progress.report(account, key, *values) if action == "report" else progress.mark(account, key, *values)
+    except ondemand.PortalError:
+        return onDemandError(502, "portal_error", "The portal didn't send this Season's Episodes, try again")
+    if not known:
+        return onDemandError(404, "not_found", "That Episode isn't in On Demand")
+    return "", 204
+
+
+@app.route("/api/ondemand/continue", methods=["GET"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandContinue():
+    """Continue watching: the Movies with a Resume point and the Series with an Up next, most
+    recently played first, at most 20. Hidden, vanished and switched-off items are skipped."""
+    viewer = viewerOnDemand()
+    portals = enabledOnDemandPortals()
+    items = onDemandProgress().continueWatching(viewer.account["username"], list(portals), visible=viewer.filter)
+    return flask.jsonify({"items": [onDemandListItem(item, portals) for item in items]})
 
 
 # Proxied posters: at most this many portal fetches at once, each with this timeout, and a

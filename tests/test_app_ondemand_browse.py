@@ -89,10 +89,10 @@ class ListItemTest(BrowseTestCase):
         self.assertEqual(self.items()["items"], [
             {"portal": "p1", "portalName": "First", "id": "5", "kind": "movie", "name": "Heat",
              "year": 1995, "poster": "/api/ondemand/poster/p1/5", "rating": 8.3,
-             "added": "2026-10-01 10:00:00"},
+             "added": "2026-10-01 10:00:00", "progress": None},
             {"portal": "p2", "portalName": "Second", "id": "6", "kind": "series", "name": "Show",
              "year": 2020, "poster": "/api/ondemand/poster/p2/6", "rating": 6.5,
-             "added": "2026-09-01 10:00:00"},
+             "added": "2026-09-01 10:00:00", "upNext": None},
         ])
 
     def test_placeholders_read_null(self):
@@ -217,7 +217,7 @@ class DetailTest(BrowseTestCase):
             "added": "2026-10-01 10:00:00", "originalName": "Heat (Director's Cut)",
             "description": "A crew of thieves.", "genres": "Crime, Drama", "director": "Someone",
             "actors": "A, B", "country": "USA", "durationMin": 170, "ageRating": "R",
-            "categories": ["action", "crime films"],
+            "categories": ["action", "crime films"], "progress": None,
         })
 
     def test_placeholders_read_null_and_an_unchanged_original_name_is_left_out(self):

@@ -50,8 +50,8 @@ class SeriesRoutesTest(BrowseTestCase):
 
     def test_a_season_lists_its_episodes_in_ascending_order(self):
         self.assertEqual(self.fetch("/api/ondemand/series/p1/77/season/31685"), [
-            {"id": "901", "seasonId": "31685", "number": 1, "name": "One"},
-            {"id": "902", "seasonId": "31685", "number": 2, "name": "Two"},
+            {"id": "901", "seasonId": "31685", "number": 1, "name": "One", "progress": None},
+            {"id": "902", "seasonId": "31685", "number": 2, "name": "Two", "progress": None},
         ])
 
     def test_unknown_series_seasons_and_switched_off_portals_are_not_found(self):
