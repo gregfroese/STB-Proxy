@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.HttpDataSource
@@ -51,6 +52,28 @@ fun buildStreamPlayer(
 fun mediaItemFor(url: String): MediaItem = MediaItem.Builder()
     .setUri(url)
     .build()
+
+/**
+ * The media item for an On Demand session's master playlist: always HLS (ADR 0005),
+ * so the MIME type is set and Media3's HLS module takes it whatever the URL says.
+ */
+fun onDemandMediaItem(url: String): MediaItem = MediaItem.Builder()
+    .setUri(url)
+    .setMimeType(MimeTypes.APPLICATION_M3U8)
+    .build()
+
+/**
+ * A playback error's HTTP answer, when it was one: the status and the body Media3
+ * kept (an On Demand 410's `{reason}` is in it). Both are null for anything else.
+ */
+fun httpFailureOf(error: PlaybackException): Pair<Int?, ByteArray?> {
+    var cause: Throwable? = (error as? ExoPlaybackException)?.sourceException ?: error.cause
+    while (cause != null) {
+        if (cause is HttpDataSource.InvalidResponseCodeException) return cause.responseCode to cause.responseBody
+        cause = cause.cause
+    }
+    return null to null
+}
 
 /**
  * Surfaces a 503 immediately instead of letting the default policy retry it
