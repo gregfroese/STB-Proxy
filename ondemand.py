@@ -39,6 +39,15 @@ CACHE_KIB = 8192
 NOT_CATEGORIES = ("*", "coming_soon")
 # Seconds between portal requests while crawling.
 CRAWL_INTERVAL = 1.0
+# The viewer sorts (ADR 0003): Recently added, A-Z, Year and Rating, newest first, with
+# unknown years and ratings last. Ties go to the most recently added.
+NEWEST = "i.added DESC, i.name COLLATE NOCASE, i.portal, i.id"
+SORTS = {
+    "added": NEWEST,
+    "name": "i.name COLLATE NOCASE, " + NEWEST,
+    "year": "i.year IS NULL, i.year DESC, " + NEWEST,
+    "rating": "i.rating IS NULL, i.rating DESC, " + NEWEST,
+}
 
 SCHEMA = """
 CREATE TABLE items (
@@ -144,6 +153,33 @@ def itemRow(portal, row):
         1 if flag(row.get("censored")) or flag(row.get("lock")) else 0,
         json.dumps(row, separators=(",", ":")),
     )
+
+
+# What portals send for "nothing here" (research 01): Xtream's "N/A"/"N/a", a dash.
+PLACEHOLDERS = ("", "n/a", "-")
+
+
+def present(value):
+    """A portal field as text, or None for a placeholder (or a missing or false one)."""
+    if value is None or value is False:
+        return None
+    text = str(value).strip()
+    return None if text.lower() in PLACEHOLDERS else text
+
+
+def searchQuery(text):
+    """A viewer's search as an FTS5 query: every word, as a prefix. "" when it has no words."""
+    return " ".join('"{}"*'.format(word) for word in re.findall(r"\w+", text))
+
+
+def listItem(portal, id, kind, name, year, rating, added, raw):
+    """A list item for the viewer API, placeholders read None. `poster` is the portal's
+    own poster URL here; the caller adds `portalName` and swaps in its proxied poster."""
+    return {
+        "portal": portal, "id": id, "kind": kind, "name": name, "year": year,
+        "rating": rating, "added": present(added),
+        "poster": present(raw.get("screenshot_uri")),
+    }
 
 
 class Index:
@@ -270,6 +306,73 @@ class Index:
             "categories": [c for c in (c0, c1, c2) if c != "0"], "adult": bool(adult),
             "raw": json.loads(raw),
         }
+
+    def detail(self, portal, id):
+        """A Movie's or Series' detail for the viewer API, or None: its list item plus
+        the portal's facts, placeholders None, `categories` as merged ids."""
+        item = self.item(portal, id)
+        if item is None:
+            return None
+        raw = item["raw"]
+        with self.lock:
+            merged = dict(self.db.execute(
+                "SELECT id, merged FROM categories WHERE portal = ? AND id IN ({})".format(
+                    ",".join("?" * len(item["categories"]))), [portal] + item["categories"],
+            ).fetchall())
+        detail = listItem(portal, item["id"], item["kind"], item["name"], item["year"],
+                          item["rating"], item["added"], raw)
+        if item["originalName"] != item["name"]:
+            detail["originalName"] = item["originalName"]
+        detail.update(
+            description=present(raw.get("description")),
+            genres=present(raw.get("genres_str")),
+            director=present(raw.get("director")),
+            actors=present(raw.get("actors")),
+            country=present(raw.get("country")),
+            durationMin=number(raw.get("time"), int),
+            ageRating=present(raw.get("rating_mpaa")),
+            categories=list(dict.fromkeys(merged[c] for c in item["categories"] if c in merged)),
+        )
+        return detail
+
+    def items(self, portals, category=None, q=None, sort=None, offset=0, limit=60):
+        """A page of the items of these portals: (exact total, [list item]).
+
+        - `category` is a merged category id; None is "All", where an item in several
+          categories is still one item.
+        - `q` searches titles (name and original name, not actors): each word is a prefix,
+          accents and case are ignored. Results rank by relevance, then Recently added.
+        - `sort` is one of SORTS. It defaults to Recently added, or relevance for a search.
+        """
+        portals = list(portals)
+        match = searchQuery(q) if q is not None else None
+        if not portals or match == "":
+            return 0, []
+        tables = "items i"
+        where = ["i.portal IN ({})".format(",".join("?" * len(portals)))]
+        args = portals
+        if match is not None:
+            # CROSS JOIN keeps the search the outer loop; else SQLite may re-run it per row.
+            tables = "items_search CROSS JOIN items i ON i.rowid = items_search.rowid"
+            where.insert(0, "items_search MATCH ?")
+            args = [match] + args
+        if category is not None:
+            where.append("EXISTS (SELECT 1 FROM categories c WHERE c.portal = i.portal "
+                         "AND c.merged = ? AND c.id IN (i.category_0, i.category_1, i.category_2))")
+            args = args + [category]
+        where = " AND ".join(where)
+        if sort:
+            order = SORTS[sort]
+        else:
+            order = "bm25(items_search), " + NEWEST if match else NEWEST
+        with self.lock:
+            total = self.db.execute(
+                "SELECT count(*) FROM {} WHERE {}".format(tables, where), args).fetchone()[0]
+            rows = self.db.execute(
+                "SELECT i.portal, i.id, i.kind, i.name, i.year, i.rating, i.added, i.json "
+                "FROM {} WHERE {} ORDER BY {} LIMIT ? OFFSET ?".format(tables, where, order),
+                args + [limit, offset]).fetchall()
+        return total, [listItem(*row[:-1], json.loads(row[-1])) for row in rows]
 
     def categories(self, portals):
         """The On Demand categories of these portals, merged by normalised name.
