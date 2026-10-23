@@ -335,6 +335,7 @@ describe("the next Episode and the titles", () => {
       facts: "44 min · Season 2",
     });
     expect(nextCardText(episode("c", 5), seasons[1]).facts).toBe("Season 2");
+    expect(nextCardText(episode("c", 5, null, 12), seasons[1]).facts).toBe("Season 2");
     expect(doneTitle(movie, null)).toBe("The Long Voyage");
     expect(doneTitle(series, seasons[1])).toBe("Harbour Lights · Season 2 finished");
   });

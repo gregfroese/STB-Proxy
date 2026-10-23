@@ -188,8 +188,8 @@ export function nextCardText(
   const code = episodeCode(season?.number ?? null, episode.number);
   const name = [code, episodeName(episode.name, episode.number)].filter((p) => p).join(" · ");
   const parts: string[] = [];
-  const duration = episode.progress?.durationSec;
-  if (duration) parts.push(`${Math.round(duration / 60)} min`);
+  const minutes = Math.round((episode.progress?.durationSec ?? 0) / 60);
+  if (minutes > 0) parts.push(`${minutes} min`);
   if (season) parts.push(seasonLabel(season));
   return { name, facts: parts.join(" · ") };
 }

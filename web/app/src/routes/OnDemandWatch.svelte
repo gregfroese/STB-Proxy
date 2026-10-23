@@ -89,7 +89,6 @@
   let left = false;
   // Whether playback has reached its start position (progress is reported only after).
   let started = false;
-  let startAt = initial?.startSec ?? 0;
   let userPaused = false;
 
   let opening = $state(true);
@@ -225,7 +224,7 @@
     session = fresh;
     sessionDuration = fresh.durationSec;
     started = false;
-    startAt = startSec;
+    position = startSec;
     opening = true;
     userPaused = false;
     media.muted = muted;
@@ -387,11 +386,14 @@
     opening = false;
     waiting = false;
     paused = false;
-    if (!started && (startAt === 0 || (videoEl?.currentTime ?? 0) >= startAt - 5)) started = true;
+    // hls.js starts at `startPosition` and the native path seeks before play(), so the
+    // first frame is already at the start.
+    started = true;
   }
 
   function onTimeUpdate() {
-    if (videoEl && dragPos == null && !videoEl.seeking) position = videoEl.currentTime;
+    // Until playback reaches its start, the position stays the start (for Resume from).
+    if (videoEl && started && dragPos == null && !videoEl.seeking) position = videoEl.currentTime;
   }
 
   function onDuration() {
@@ -583,6 +585,8 @@
       void loadInfo(initial.key);
       if (handoff) attach(handoff.session, initial.startSec);
       else void open(initial.key, initial.startSec);
+      // TV: the controls start up, with focus on ▶/❚❚ as when they come back.
+      void focusAfter(() => playBtn);
     } else {
       opening = false;
     }
@@ -610,9 +614,9 @@
   });
 </script>
 
-<div class="player odplayer" class:full={fullWindow}>
+<div class="player odp-player" class:full={fullWindow}>
   <div
-    class="stage odstage"
+    class="stage odp-stage"
     class:carded={card != null && card.kind !== "still"}
     class:bare={!controlsUp}
     role="presentation"
@@ -643,37 +647,37 @@
     ></video>
 
     {#if initial}
-      <div class="odtap" role="presentation" onpointerup={onPictureUp}></div>
+      <div class="odp-tap" role="presentation" onpointerup={onPictureUp}></div>
 
-      <div class="odcontrols" class:hidden={!controlsUp}>
-        <div class="odtop">
+      <div class="odp-controls" class:hidden={!controlsUp}>
+        <div class="odp-top">
           {#if !tv}
-            <button class="odbtn" title="Back" onclick={leave}>‹</button>
+            <button class="odp-btn" title="Back" onclick={leave}>‹</button>
           {/if}
-          <div class="odhead">
-            <div class="odtitle">{heading.title}</div>
-            {#if heading.sub}<div class="odsub">{heading.sub}</div>{/if}
+          <div class="odp-head">
+            <div class="odp-title">{heading.title}</div>
+            {#if heading.sub}<div class="odp-sub">{heading.sub}</div>{/if}
           </div>
         </div>
 
-        <div class="odcenter">
-          <button class="odbtn big" title="Back 10 s" onclick={() => seekBy(-10)}>⟲ 10</button>
+        <div class="odp-center">
+          <button class="odp-btn big" title="Back 10 s" onclick={() => seekBy(-10)}>⟲ 10</button>
           <button
-            class="odbtn big"
+            class="odp-btn big"
             bind:this={playBtn}
             title={paused ? "Play" : "Pause"}
             onclick={togglePlay}
           >
             {paused ? "▶" : "❚❚"}
           </button>
-          <button class="odbtn big" title="Forward 10 s" onclick={() => seekBy(10)}>10 ⟳</button>
+          <button class="odp-btn big" title="Forward 10 s" onclick={() => seekBy(10)}>10 ⟳</button>
         </div>
 
-        <div class="odbottom">
-          <div class="odbarrow">
+        <div class="odp-bottom">
+          <div class="odp-barrow">
             <span>{clock(shown)}</span>
             <div
-              class="odbar"
+              class="odp-bar"
               bind:this={barEl}
               role="slider"
               tabindex="0"
@@ -696,26 +700,26 @@
             </div>
             <span>−{clock(Math.max(0, duration - shown))}</span>
           </div>
-          <div class="odbtnrow">
-            <button class="odbtn odpp" title={paused ? "Play" : "Pause"} onclick={togglePlay}>
+          <div class="odp-btnrow">
+            <button class="odp-btn odp-pp" title={paused ? "Play" : "Pause"} onclick={togglePlay}>
               {paused ? "▶" : "❚❚"}
             </button>
             {#if next}
-              <button class="odbtn" onclick={() => handover("manual")}>⏭ Next Episode</button>
+              <button class="odp-btn" onclick={() => handover("manual")}>⏭ Next Episode</button>
             {/if}
             <span class="spacer"></span>
             {#if !tv}
               <button
-                class="odbtn"
+                class="odp-btn"
                 title={muted ? "Unmute" : "Mute"}
                 onclick={() => (muted = !muted)}
               >
                 {muted ? "🔇" : "🔊"}
               </button>
             {/if}
-            <button class="odbtn" onclick={cycleAspect}>Aspect: {ASPECT_LABELS[aspect]}</button>
+            <button class="odp-btn" onclick={cycleAspect}>Aspect: {ASPECT_LABELS[aspect]}</button>
             <button
-              class="odbtn"
+              class="odp-btn"
               title={isFullscreen ? "Exit full screen" : "Full screen"}
               onclick={() => fullscreen?.toggle()}
             >
@@ -726,7 +730,7 @@
       </div>
 
       {#if card && card.kind !== "still"}
-        <div class="odend">
+        <div class="odp-end">
           <div class="txt">
             {#if card.kind === "next" && next && nextText}
               <div class="k">Next Episode · in {left15} s</div>
@@ -754,7 +758,7 @@
       {/if}
 
       {#if card?.kind === "still" && next}
-        <div class="errbox odmodal">
+        <div class="errbox odp-modal">
           <div class="inner">
             <h2>Still watching {detail?.name ?? heading.title}?</h2>
             <p>{STILL_WATCHING_AFTER} Episodes have played in a row with no input.</p>
@@ -771,7 +775,7 @@
       {/if}
 
       {#if copy}
-        <div class="errbox odmodal">
+        <div class="errbox odp-modal">
           <div class="inner">
             <h2>{copy.title}</h2>
             <p>{copy.body}</p>
@@ -786,13 +790,13 @@
       {/if}
 
       {#if (opening || waiting) && !overlay && !card}
-        <div class="odspin" aria-label="Loading"></div>
+        <div class="odp-spin" aria-label="Loading"></div>
       {/if}
       {#if flash}
-        <div class="odflash {flash.side}">{flash.text}</div>
+        <div class="odp-flash {flash.side}">{flash.text}</div>
       {/if}
       {#if toast}
-        <div class="odtoast" role="status">{toast}</div>
+        <div class="odp-toast" role="status">{toast}</div>
       {/if}
     {:else}
       <div class="errbox">
@@ -810,11 +814,11 @@
   </div>
 
   {#if initial}
-    <div class="odinfo">
-      <div class="odtitle">{heading.title}</div>
-      {#if heading.sub}<div class="odsub">{heading.sub}</div>{/if}
+    <div class="odp-info">
+      <div class="odp-title">{heading.title}</div>
+      {#if heading.sub}<div class="odp-sub">{heading.sub}</div>{/if}
       {#if next && nextText}
-        <button class="btn odwide" onclick={() => handover("manual")}>
+        <button class="btn odp-wide" onclick={() => handover("manual")}>
           ⏭ Next Episode · {nextText.name}
         </button>
       {/if}

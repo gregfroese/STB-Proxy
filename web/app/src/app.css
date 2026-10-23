@@ -1996,66 +1996,66 @@ a.btn {
 
 /* ---------- On Demand player (ticket 12) ---------- */
 
-.odstage {
+.odp-stage {
   container-type: size;
   display: grid;
   place-items: center;
   overflow: hidden;
 }
 
-.odstage video {
+.odp-stage video {
   grid-area: 1 / 1;
 }
 
 /* Aspect: 16:9 and 4:3 stretch the picture into that box, Zoom fills and crops. */
-.odstage video.a169 {
+.odp-stage video.a169 {
   width: min(100cqw, calc(100cqh * 16 / 9));
   height: min(100cqh, calc(100cqw * 9 / 16));
   object-fit: fill;
 }
 
-.odstage video.a43 {
+.odp-stage video.a43 {
   width: min(100cqw, calc(100cqh * 4 / 3));
   height: min(100cqh, calc(100cqw * 3 / 4));
   object-fit: fill;
 }
 
-.odstage video.zoom {
+.odp-stage video.zoom {
   object-fit: cover;
 }
 
-.odstage.bare {
+.odp-stage.bare {
   cursor: none;
 }
 
-.odtap {
+.odp-tap {
   position: absolute;
   inset: 0;
 }
 
-.odcontrols {
+.odp-controls {
   position: absolute;
   inset: 0;
   pointer-events: none;
   transition: opacity 0.25s;
 }
 
-.odcontrols.hidden {
+.odp-controls.hidden {
   opacity: 0;
 }
 
-.odcontrols > * {
+.odp-controls > * {
   position: absolute;
   left: 0;
   right: 0;
 }
 
-.odcontrols:not(.hidden) button,
-.odcontrols:not(.hidden) .odbar {
+.odp-controls:not(.hidden) button,
+.odp-controls:not(.hidden) .odp-bar {
   pointer-events: auto;
 }
 
-.odtop {
+.odp-top {
   top: 0;
   display: flex;
   align-items: center;
@@ -2064,17 +2064,17 @@ a.btn {
   background: linear-gradient(#000000c0, transparent);
 }
 
-.odtitle {
+.odp-title {
   font-size: 17px;
   font-weight: 600;
 }
 
-.odsub {
+.odp-sub {
   font-size: 12.5px;
   color: #ffffffb3;
 }
 
-.odcenter {
+.odp-center {
   top: 50%;
   transform: translateY(-50%);
   display: flex;
@@ -2083,13 +2083,13 @@ a.btn {
   gap: 34px;
 }
 
-.odbottom {
+.odp-bottom {
   bottom: 0;
   padding: 30px 16px 12px;
   background: linear-gradient(transparent, #000000cc);
 }
 
-.odbtn {
+.odp-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2105,21 +2105,21 @@ a.btn {
   white-space: nowrap;
 }
 
-.odbtn.big {
+.odp-btn.big {
   min-width: 60px;
   height: 60px;
   border-radius: 30px;
   font-size: 20px;
 }
 
-.odbtn:focus-visible,
-.odend .btn:focus-visible,
-.odmodal .btn:focus-visible {
+.odp-btn:focus-visible,
+.odp-end .btn:focus-visible,
+.odp-modal .btn:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
-.odbarrow {
+.odp-barrow {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -2128,7 +2128,7 @@ a.btn {
     monospace;
 }
 
-.odbar {
+.odp-bar {
   position: relative;
   flex: 1;
   height: 22px;
@@ -2136,8 +2136,8 @@ a.btn {
   touch-action: none;
 }
 
-.odbar .track,
-.odbar .played {
+.odp-bar .track,
+.odp-bar .played {
   position: absolute;
   left: 0;
   top: 9px;
@@ -2145,16 +2145,16 @@ a.btn {
   border-radius: 2px;
 }
 
-.odbar .track {
+.odp-bar .track {
   right: 0;
   background: #ffffff40;
 }
 
-.odbar .played {
+.odp-bar .played {
   background: var(--accent);
 }
 
-.odbar .thumb {
+.odp-bar .thumb {
   position: absolute;
   top: 4px;
   width: 14px;
@@ -2164,16 +2164,16 @@ a.btn {
   background: #fff;
 }
 
-.odbar:focus-visible {
+.odp-bar:focus-visible {
   outline: none;
 }
 
-.odbar:focus-visible .thumb {
+.odp-bar:focus-visible .thumb {
   box-shadow: 0 0 0 4px var(--focus);
   transform: scale(1.25);
 }
 
-.odbar .bubble {
+.odp-bar .bubble {
   position: absolute;
   bottom: 24px;
   transform: translateX(-50%);
@@ -2184,7 +2184,7 @@ a.btn {
   white-space: nowrap;
 }
 
-.odbtnrow {
+.odp-btnrow {
   display: flex;
   gap: 8px;
   align-items: center;
@@ -2192,11 +2192,11 @@ a.btn {
 }
 
 /* The bottom row's own ▶ only on a phone in portrait, where the centre row goes. */
-.odbtnrow .odpp {
+.odp-btnrow .odp-pp {
   display: none;
 }
 
-.odspin {
+.odp-spin {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -2206,17 +2206,17 @@ a.btn {
   border-radius: 50%;
   border: 4px solid #ffffff33;
   border-top-color: var(--accent);
-  animation: odspin 0.8s linear infinite;
+  animation: odp-spin 0.8s linear infinite;
   pointer-events: none;
 }
 
-@keyframes odspin {
+@keyframes odp-spin {
   to {
     transform: rotate(360deg);
   }
 }
 
-.odflash {
+.odp-flash {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
@@ -2231,20 +2231,20 @@ a.btn {
   pointer-events: none;
 }
 
-.odflash.l {
+.odp-flash.l {
   left: 12%;
 }
 
-.odflash.r {
+.odp-flash.r {
   right: 12%;
 }
 
-.odflash.c {
+.odp-flash.c {
   left: 50%;
   margin-left: -55px;
 }
 
-.odtoast {
+.odp-toast {
   position: absolute;
   left: 50%;
   bottom: 80px;
@@ -2257,18 +2257,18 @@ a.btn {
   z-index: 4;
 }
 
-.odmodal {
+.odp-modal {
   z-index: 3;
 }
 
 /* The end card: the last frame shrinks into a corner, the card takes the rest. */
-.odend {
+.odp-end {
   position: absolute;
   inset: 0;
   background: #08080e;
 }
 
-.odstage.carded video {
+.odp-stage.carded video {
   position: absolute;
   right: 4%;
   top: 8%;
@@ -2280,37 +2280,37 @@ a.btn {
   z-index: 2;
 }
 
-.odend .txt {
+.odp-end .txt {
   position: absolute;
   left: 6%;
   right: 42%;
   bottom: 12%;
 }
 
-.odend .k {
+.odp-end .k {
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--dim);
 }
 
-.odend .watched {
+.odp-end .watched {
   color: var(--ok);
   font-weight: 600;
 }
 
-.odend .n {
+.odp-end .n {
   font-size: 26px;
   font-weight: 600;
   margin: 4px 0;
 }
 
-.odend .d {
+.odp-end .d {
   color: var(--dim);
   font-size: 13px;
 }
 
-.odend .btns {
+.odp-end .btns {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
@@ -2318,51 +2318,51 @@ a.btn {
 }
 
 /* Below the video on a phone in portrait; hidden everywhere else. */
-.odinfo {
+.odp-info {
   display: none;
 }
 
 @media (max-width: 720px) and (orientation: portrait) {
-  .odplayer:not(.full) .odinfo {
+  .odp-player:not(.full) .odp-info {
     display: block;
     padding: 12px 16px;
     overflow: auto;
   }
 
-  .odinfo p {
+  .odp-info p {
     color: var(--dim);
     font-size: 13px;
   }
 
-  .odinfo .odwide {
+  .odp-info .odp-wide {
     display: block;
     width: 100%;
     margin-top: 10px;
   }
 
-  .odplayer:not(.full) .odcenter {
+  .odp-player:not(.full) .odp-center {
     display: none;
   }
 
-  .odplayer:not(.full) .odbtnrow .odpp {
+  .odp-player:not(.full) .odp-btnrow .odp-pp {
     display: inline-flex;
   }
 
-  .odplayer:not(.full) .odstage {
+  .odp-player:not(.full) .odp-stage {
     flex: none;
     aspect-ratio: 16 / 9;
   }
 
-  .odend .txt {
+  .odp-end .txt {
     right: 6%;
     bottom: 8%;
   }
 
-  .odend .n {
+  .odp-end .n {
     font-size: 18px;
   }
 
-  .odstage.carded video {
+  .odp-stage.carded video {
     width: 44%;
   }
 }

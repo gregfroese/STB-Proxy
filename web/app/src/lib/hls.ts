@@ -1,6 +1,7 @@
 // hls.js over the BFF's ffmpeg-remuxed HLS (spec 2.7 fallback). ffmpeg produces
 // fMP4 with correct composition times, which the browser's hardware decoder
-// accepts — unlike mpegts.js for B-frame-heavy streams.
+// accepts — unlike mpegts.js for B-frame-heavy streams. `attachVod` plays an On Demand
+// session's HLS (ticket 12).
 
 import Hls from "hls.js";
 import type { PlaybackError } from "./playerLogic";
