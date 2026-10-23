@@ -108,9 +108,23 @@ export function browsePath(browse: Browse): string {
   return query ? `/ondemand?${query}` : "/ondemand";
 }
 
-/** A title's page (ticket 11). */
-export function titlePath(item: Pick<OnDemandItem, "portal" | "id">): string {
-  return `/ondemand/title?${new URLSearchParams({ portal: item.portal, id: item.id }).toString()}`;
+/** A title's page (ticket 11); `from` names where it was opened, for its Back button. */
+export function titlePath(item: Pick<OnDemandItem, "portal" | "id">, from?: string): string {
+  const params = new URLSearchParams({ portal: item.portal, id: item.id });
+  if (from) params.set("from", from);
+  return `/ondemand/title?${params.toString()}`;
+}
+
+/** A title page's Back button: "‹ Back to <from>", or "‹ Back". */
+export function titleBack(query: URLSearchParams): string {
+  const from = query.get("from");
+  return from ? `‹ Back to ${from}` : "‹ Back";
+}
+
+/** Where a title is opened from (09): its category, "results" while searching, else On Demand. */
+export function backLabel(browse: Browse, categoryName: string | null): string {
+  if (searchTerm(browse.q) !== null) return "results";
+  return browse.category ? (categoryName ?? browse.category) : "On Demand";
 }
 
 /** The browse state in a /ondemand address. */

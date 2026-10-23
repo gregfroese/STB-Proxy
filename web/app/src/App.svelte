@@ -10,6 +10,7 @@
   import Settings from "./routes/Settings.svelte";
   import OnDemand from "./routes/OnDemand.svelte";
   import OnDemandTitle from "./routes/OnDemandTitle.svelte";
+  import OnDemandWatch from "./routes/OnDemandWatch.svelte";
 
   onMount(() => {
     installUnauthorizedHandler();
@@ -41,6 +42,8 @@
   <OnDemand />
 {:else if $route.name === "ondemandTitle"}
   <OnDemandTitle />
+{:else if $route.name === "ondemandWatch"}
+  <OnDemandWatch />
 {:else}
   <Picker />
 {/if}

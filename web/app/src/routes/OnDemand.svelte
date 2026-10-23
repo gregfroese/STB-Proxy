@@ -16,6 +16,7 @@
     activeSort,
     allShelves,
     appendPage,
+    backLabel,
     browseFromQuery,
     browsePath,
     browseView,
@@ -101,7 +102,7 @@
   }
 
   function pick(item: OnDemandItem) {
-    navigate(titlePath(item));
+    navigate(titlePath(item, backLabel(browse, categoryName)));
   }
 
   const categoryName = $derived(
