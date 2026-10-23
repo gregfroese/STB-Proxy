@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -33,10 +34,12 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -57,13 +60,14 @@ import cc.selfhosters.stbproxy.ui.common.MultiviewIcon
 import cc.selfhosters.stbproxy.ui.common.TvFocusColor
 
 /**
- * The app's top-level destinations. Every browse screen shows all of them, in
- * this order: a left rail on TV, a bottom bar on phones. Multiview opens full
- * screen (like the player) and Back returns to where you were.
+ * The app's top-level destinations. Every browse screen shows the
+ * [visibleDestinations], in this order: a left rail on TV, a bottom bar on phones.
+ * Multiview opens full screen (like the player) and Back returns to where you were.
  */
 enum class Destination(val route: String, @StringRes val label: Int, val icon: ImageVector) {
     CHANNELS(Routes.PICKER, R.string.nav_channels, Icons.AutoMirrored.Filled.List),
     GUIDE(Routes.GUIDE, R.string.nav_guide, Icons.Filled.DateRange),
+    ON_DEMAND(Routes.ON_DEMAND, R.string.nav_on_demand, Icons.Filled.PlayArrow),
     MULTIVIEW(Routes.MULTIVIEW, R.string.nav_multiview, MultiviewIcon),
     SETTINGS(Routes.SETTINGS, R.string.nav_settings, Icons.Filled.Settings),
     ;
@@ -73,6 +77,20 @@ enum class Destination(val route: String, @StringRes val label: Int, val icon: I
         fun of(route: String?): Destination? = entries.firstOrNull { it.route == route }
     }
 }
+
+/** The destinations the nav shows: On Demand only when the lineup offers it (ADR 0004). */
+fun visibleDestinations(onDemand: Boolean): List<Destination> =
+    Destination.entries.filter { it != Destination.ON_DEMAND || onDemand }
+
+/** True when [route] is one of On Demand's screens and On Demand has gone: back to Channels. */
+fun leavesOnDemand(route: String?, onDemand: Boolean): Boolean =
+    !onDemand && route != null && Routes.isOnDemand(route)
+
+/**
+ * The TV nav rail, for screens that send focus to it (Back from On Demand's panes).
+ * Requesting focus lands on the current destination. Null on phones.
+ */
+val LocalNavRail = staticCompositionLocalOf<FocusRequester?> { null }
 
 private val RailCollapsed = 76.dp
 private val RailExpanded = 232.dp
@@ -86,23 +104,30 @@ private val RailExpanded = 232.dp
 @Composable
 fun TvShell(
     current: Destination?,
+    destinations: List<Destination>,
     showRail: Boolean,
     onSelect: (Destination) -> Unit,
     content: @Composable () -> Unit,
 ) {
+    val railFocus = remember { FocusRequester() }
     Box(modifier = Modifier.fillMaxSize()) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(start = if (showRail) RailCollapsed else 0.dp),
         ) {
-            content()
+            CompositionLocalProvider(LocalNavRail provides railFocus.takeIf { showRail }) {
+                content()
+            }
         }
         if (showRail) {
             TvNavRail(
                 current = current,
+                destinations = destinations,
                 onSelect = onSelect,
-                modifier = Modifier.zIndex(1f),
+                modifier = Modifier
+                    .zIndex(1f)
+                    .focusRequester(railFocus),
             )
         }
     }
@@ -111,6 +136,7 @@ fun TvShell(
 @Composable
 private fun TvNavRail(
     current: Destination?,
+    destinations: List<Destination>,
     onSelect: (Destination) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -135,7 +161,7 @@ private fun TvNavRail(
             .background(background)
             .onFocusChanged { expanded = it.hasFocus }
             .focusProperties {
-                onEnter = { current?.let { requesters.getValue(it).requestFocus() } }
+                onEnter = { current?.takeIf { it in destinations }?.let { requesters.getValue(it).requestFocus() } }
             }
             .focusGroup()
             .padding(horizontal = 14.dp, vertical = 28.dp),
@@ -148,7 +174,7 @@ private fun TvNavRail(
                 .padding(bottom = 16.dp)
                 .size(48.dp),
         )
-        Destination.entries.forEach { destination ->
+        destinations.forEach { destination ->
             RailItem(
                 destination = destination,
                 selected = destination == current,
@@ -212,9 +238,13 @@ private fun RailItem(
 
 /** Phone bottom navigation, shown on the browse screens. */
 @Composable
-fun PhoneNavBar(current: Destination?, onSelect: (Destination) -> Unit) {
+fun PhoneNavBar(
+    current: Destination?,
+    destinations: List<Destination>,
+    onSelect: (Destination) -> Unit,
+) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        Destination.entries.forEach { destination ->
+        destinations.forEach { destination ->
             NavigationBarItem(
                 selected = destination == current,
                 onClick = { onSelect(destination) },

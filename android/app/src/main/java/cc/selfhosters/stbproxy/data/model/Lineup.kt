@@ -14,6 +14,8 @@ data class Lineup(
     val blocks: List<String> = emptyList(),
     val channels: List<Channel> = emptyList(),
     val failedPortals: List<String> = emptyList(),
+    /** True when this Account may use On Demand (ADR 0004); gates the nav entry. */
+    val onDemand: Boolean = false,
 )
 
 @Serializable
