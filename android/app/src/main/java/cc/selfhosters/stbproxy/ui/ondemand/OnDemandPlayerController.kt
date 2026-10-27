@@ -86,7 +86,10 @@ fun sessionEndText(end: SessionEnd): String = when (end) {
     SessionEnd.IDLE, SessionEnd.UNKNOWN -> "Playback stopped — the stream ended on the server."
 }
 
-const val IDLE_RESTART_FAILED = "Couldn't restart — someone else on this login is watching."
+/** The overlay after the app went to the background, which ends the session. */
+const val BACKGROUND_STOPPED = "Stopped while the app was in the background."
+
+const val IDLE_RESTART_FAILED ="Couldn't restart — someone else on this login is watching."
 
 /**
  * Runs one On Demand player (ticket 15): the session Play minted ([start]), progress
@@ -237,10 +240,38 @@ class OnDemandPlayerController(
         mint(overlay.resume, overlay.replaces)
     }
 
-    /** The app went to the background: pause and report. */
+    /**
+     * The app went to the background: report, stop, and end the session so its portal
+     * slot is free for another device at once. Coming back shows the overlay's Resume.
+     */
     fun onStop() {
         if (port.playWhenReady) port.pause()
-        report()
+        val state = _state.value
+        val sid = state.session
+        if (closed || sid == null || state.overlay != null) {
+            report()
+            return
+        }
+        mintJob?.cancel()
+        schedule.reported()
+        val key = state.choice.key
+        val position = (port.positionMs / 1000).toInt()
+        val duration = durationSec()
+        val send = lastReport != key to position
+        lastReport = key to position
+        end.dismiss()
+        port.stop()
+        val choice = state.choice.copy(startSec = position)
+        _state.update {
+            it.copy(
+                session = null, starting = false, endCard = null, endSecondsLeft = null,
+                overlay = SessionOverlay(BACKGROUND_STOPPED, resumeLabel(choice), choice, replaces = null),
+            )
+        }
+        background.launch {
+            if (send) runCatching { api.reportOnDemandProgress(key, position, duration) }
+            runCatching { api.endOnDemandSession(sid) }
+        }
     }
 
     fun toastShown() = _state.update { it.copy(toast = null) }

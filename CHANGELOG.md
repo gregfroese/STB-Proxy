@@ -2,6 +2,14 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.20.2] - 2026-10-26
+
+### Android app
+
+- **Back leaves an On Demand title on TV**: Back while watching now leaves the player (with the controls showing, the first Back hides them). Before, Back only brought the controls up and hid them again, so you couldn't get out unless you paused first.
+- **Leaving the app frees the stream**: pressing Home (or switching apps) while watching now stops the stream at once, so another device can use the slot or tuner straight away instead of waiting about 2 minutes. On Demand saves your place and shows **Resume from** when you come back; a live channel starts again by itself.
+- The app is now version 1.12.2.
+
 ## [1.20.1] - 2026-10-26
 
 ### Android app

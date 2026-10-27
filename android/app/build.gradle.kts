@@ -22,8 +22,8 @@ android {
         applicationId = "cc.selfhosters.stbproxy"
         minSdk = 26
         targetSdk = 36
-        versionCode = 16
-        versionName = "1.12.1"
+        versionCode = 17
+        versionName = "1.12.2"
 
         vectorDrawables {
             useSupportLibrary = true
