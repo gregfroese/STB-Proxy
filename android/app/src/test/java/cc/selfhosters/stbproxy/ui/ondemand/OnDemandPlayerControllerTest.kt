@@ -201,6 +201,30 @@ class OnDemandPlayerControllerTest {
         assertEquals("DELETE /api/ondemand/session/sid1", order[1])
     }
 
+    @Test
+    fun `going to the background reports, ends the session and offers Resume`() = test(movie) { controller ->
+        port.playing = true
+        port.positionMs = 1_234_000
+        controller.onStop()
+        assertEquals(false, port.playWhenReady)
+        assertEquals(1, port.stops)
+        val overlay = controller.state.value.overlay
+        assertEquals(BACKGROUND_STOPPED, overlay?.message)
+        assertEquals("▶ Resume from 20:34", overlay?.action)
+        assertNull(controller.state.value.session)
+        assertTrue(awaitRequest(progress).contains("\"positionSec\":1234"))
+        assertEquals("DELETE /api/ondemand/session/sid1", awaitRequest("DELETE"))
+
+        // Leaving afterwards doesn't end it again; Resume mints a fresh session.
+        route(play.removePrefix("POST "), session("sid2"))
+        controller.resume()
+        assertEquals("""$play {"portal":"p1","id":"m1"}""", awaitRequest(play))
+        controller.state.first { it.session == "sid2" && it.overlay == null }
+        assertEquals(1_234_000L, port.loads.last().second)
+        settle()
+        assertEquals(1, count("DELETE"))
+    }
+
     // ---- end card ----
 
     @Test

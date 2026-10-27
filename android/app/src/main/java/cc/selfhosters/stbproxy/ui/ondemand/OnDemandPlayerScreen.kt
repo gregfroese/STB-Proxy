@@ -298,6 +298,9 @@ fun OnDemandPlayerScreen(start: OnDemandPlayStart, onBack: () -> Unit) {
 
     val tvKeys = Modifier.onPreviewKeyEvent { event ->
         if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+        // Back goes to the BackHandler untouched: showing the controls here first made
+        // it hide them again, so Back never left.
+        if (event.key == Key.Back || event.key == Key.Escape) return@onPreviewKeyEvent false
         controller.input()
         when (event.key) {
             Key.MediaPlayPause, Key.MediaPlay, Key.MediaPause, Key.Spacebar -> {

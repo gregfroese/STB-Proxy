@@ -146,7 +146,23 @@ fun PlayerScreen(
         player.playWhenReady = true
     }
 
-    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.onForeground() }
+    // In the background the stream stops, so its tuner is free for another device at
+    // once; coming back starts the channel again.
+    var stoppedInBackground by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) {
+        if (player.playbackState != Player.STATE_IDLE) {
+            player.stop()
+            stoppedInBackground = true
+        }
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        viewModel.onForeground()
+        if (stoppedInBackground) {
+            stoppedInBackground = false
+            player.prepare()
+            player.playWhenReady = true
+        }
+    }
 
     KeepScreenOnEffect()
     var immersive by remember { mutableStateOf(shouldAutoFullscreen(isTv, isLandscape)) }
