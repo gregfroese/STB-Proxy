@@ -17,13 +17,21 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +42,7 @@ import androidx.compose.ui.unit.sp
 import cc.selfhosters.stbproxy.data.epg.NowNext
 import cc.selfhosters.stbproxy.data.epg.Programme
 import cc.selfhosters.stbproxy.data.model.Channel
+import cc.selfhosters.stbproxy.ui.common.focusRing
 import java.time.Instant
 import java.time.ZoneId
 
@@ -44,6 +53,9 @@ val SidebarWidth = 340.dp
  * The persistent now/next sidebar (spec 2.6). On TV it is a right-hand pane; on
  * phone the same content fills the bottom sheet. TV uses a Compose-for-TV
  * surface, phone a mobile Material surface (spec 2.10).
+ *
+ * [focusCurrent] opens the channel list scrolled to the current channel with focus
+ * on it, for a remote.
  */
 @Composable
 fun PlayerSidebar(
@@ -51,17 +63,18 @@ fun PlayerSidebar(
     isTv: Boolean,
     onSelectChannel: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    focusCurrent: Boolean = false,
 ) {
     if (isTv) {
         androidx.tv.material3.Surface(modifier = modifier) {
-            SidebarContent(state, onSelectChannel)
+            SidebarContent(state, onSelectChannel, focusCurrent)
         }
     } else {
         androidx.compose.material3.Surface(
             modifier = modifier,
             color = MaterialTheme.colorScheme.surface,
         ) {
-            SidebarContent(state, onSelectChannel)
+            SidebarContent(state, onSelectChannel, focusCurrent)
         }
     }
 }
@@ -70,8 +83,14 @@ fun PlayerSidebar(
 private fun SidebarContent(
     state: PlayerUiState,
     onSelectChannel: (Int) -> Unit,
+    focusCurrent: Boolean,
 ) {
     val zone = ZoneId.systemDefault()
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = (state.currentIndex - 2).coerceAtLeast(0),
+    )
+    // Focus the current row once, when it is first composed.
+    var focusPending by remember { mutableStateOf(focusCurrent) }
     val channel = state.channel
     val resolved = resolveNowNext(channel?.epgId?.let { state.nowNext[it] }, state.now)
 
@@ -102,6 +121,7 @@ private fun SidebarContent(
 
         SectionLabel("${state.scopeLabel} — channel up/down")
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f),
@@ -116,6 +136,8 @@ private fun SidebarContent(
                     selected = index == state.currentIndex,
                     nowNext = c.epgId?.let { state.nowNext[it] },
                     now = state.now,
+                    takeFocus = focusPending && index == state.currentIndex,
+                    onFocusTaken = { focusPending = false },
                     onClick = { onSelectChannel(index) },
                 )
             }
@@ -190,16 +212,27 @@ private fun ZapRow(
     selected: Boolean,
     nowNext: NowNext?,
     now: Instant,
+    takeFocus: Boolean,
+    onFocusTaken: () -> Unit,
     onClick: () -> Unit,
 ) {
     val scheme = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(9.dp)
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(takeFocus) {
+        if (takeFocus) {
+            runCatching { focus.requestFocus() }
+            onFocusTaken()
+        }
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(shape)
             .background(if (selected) scheme.primary.copy(alpha = 0.16f) else Color.Transparent)
             .border(1.dp, if (selected) scheme.primary else Color.Transparent, shape)
+            .focusRing(shape)
+            .focusRequester(focus)
             .clickable(onClick = onClick)
             .padding(8.dp),
         verticalAlignment = Alignment.CenterVertically,

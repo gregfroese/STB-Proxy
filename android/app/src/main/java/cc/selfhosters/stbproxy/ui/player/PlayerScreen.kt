@@ -185,6 +185,7 @@ fun PlayerScreen(
             if (event.type != KeyEventType.KeyDown) {
                 false
             } else {
+                val controlsWereVisible = controls.visible
                 controls.show()
                 // While the guide is open the D-pad navigates its list instead of zapping.
                 if (guideVisible) {
@@ -196,6 +197,13 @@ fun PlayerScreen(
                         }
                         Key.DirectionDown, Key.ChannelDown -> {
                             viewModel.zap(-1); true
+                        }
+                        // On TV, OK while the buttons are hidden opens the guide; once
+                        // they show, OK presses the focused one.
+                        Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                            val open = isTv && !controlsWereVisible
+                            if (open) guideVisible = true
+                            open
                         }
                         else -> false
                     }
@@ -317,9 +325,7 @@ private fun GuideOverlay(
     modifier: Modifier = Modifier,
 ) {
     var offsetX by remember { mutableFloatStateOf(0f) }
-    // A remote lands on the ✕ first, then the D-pad walks the channel list.
-    val closeFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { closeFocus.requestFocus() } }
+    // A remote lands on the current channel in the list (Up reaches the ✕).
     Box(
         modifier = modifier
             .offset { IntOffset(offsetX.roundToInt(), 0) }
@@ -335,6 +341,7 @@ private fun GuideOverlay(
             state = state,
             isTv = false,
             onSelectChannel = onSelectChannel,
+            focusCurrent = true,
             modifier = Modifier.fillMaxSize(),
         )
         Box(
@@ -344,7 +351,6 @@ private fun GuideOverlay(
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xCC000000))
                 .focusRing(RoundedCornerShape(8.dp))
-                .focusRequester(closeFocus)
                 .clickable(onClick = onClose)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         ) {
