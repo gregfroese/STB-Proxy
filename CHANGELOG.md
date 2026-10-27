@@ -2,6 +2,13 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.20.1] - 2026-10-26
+
+### Android app
+
+- **Guide in the TV player**: press **OK** while watching to open the channel guide (once the buttons have faded; while they show, OK presses the highlighted one). The guide opens on the channel you're watching, the D-pad walks the list with a visible highlight, **OK** switches channel and **Back** closes it. Before, the player's buttons faded after 4 seconds and the next key press only brought them back, so getting to **Guide** with the remote rarely worked, and inside the guide the selected row was hard to see.
+- The app is now version 1.12.1.
+
 ## [1.20.0] - 2026-10-23
 
 ### Server and Operator UI
