@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.20.3] - 2026-10-30
+
+### Web viewer
+
+- **A Docker image for the web viewer**: `web/Dockerfile` builds the SPA and the BFF into one image (`docker build web/`). The session database and the HLS segments live in `/data`, and `PROXY_URL` defaults to `http://stb-proxy:8001`, the proxy's name in a compose project next to it. Nothing changes for the proxy itself.
+
 ## [1.20.2] - 2026-10-26
 
 ### Android app

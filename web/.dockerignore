@@ -1,0 +1,9 @@
+# Only the BFF and the SPA's sources go into the build; the SPA is built inside it.
+app/node_modules
+app/dist
+tests
+.venv
+__pycache__
+*.pyc
+.env
+sessions.db*

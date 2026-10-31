@@ -25,6 +25,7 @@ web/
   requirements-dev.txt
   .env.example    every config key
   deploy.sh       pull + build + install + restart
+  Dockerfile      the BFF and the built SPA as one image (docker build web/)
   systemd/        the stb-proxy-web unit
 ```
 
