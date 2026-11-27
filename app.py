@@ -4604,8 +4604,19 @@ def getDownloader():
             downloaderHolder["downloader"] = downloads.Downloader(
                 store, downloadsFolder, portalStreaming, admitDownload,
                 lambda rec, mac: mintOnDemandLink(rec["portal"], mac, rec["play"]),
-                openDownloadSession, logger)
+                openDownloadSession, logger, done=plexScanDownload)
         return downloaderHolder["downloader"]
+
+
+def plexScanDownload(rec, folder):
+    """A finished download: have Plex scan the folder it landed in, when Plex is set up (its
+    files don't reach Plex any other way over NFS until its next scheduled scan)."""
+    if rec is None or not plexConfigured():
+        return
+    settings = getSettings()
+    asked = plex.scanFolder(settings["plex url"], settings["plex token"],
+                            "movie" if rec["kind"] == "movie" else "show", folder, os.path.dirname(rec["file"]))
+    logger.info("Plex scans {} for Download({})".format(asked, rec["id"]))
 
 
 def startDownloads():

@@ -2,6 +2,12 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.21.1] - 2026-11-27
+
+### Server and Operator UI
+
+- **Plex sees On Demand downloads at once**: when a download finishes and Plex is set up (Settings → Plex), STB-Proxy asks Plex to scan just the folder it landed in. Plex can't notice new files on a network share by itself, so before this they only showed up at its next scheduled scan. Plex sees the files under its own paths, so STB-Proxy matches the downloads folder's name (`movies`, `tv`) to a Plex library's folder; when none matches clearly, it scans every Movies or TV Shows library instead. A failed scan is only logged.
+
 ## [1.21.0] - 2026-11-27
 
 ### Server and Operator UI

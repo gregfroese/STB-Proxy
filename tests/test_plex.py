@@ -104,6 +104,42 @@ class PlexTest(unittest.TestCase):
             plex.sync("http://plex.test:32400", "tok", "http://proxy.test:8001", ENTRIES)
 
 
+SECTIONS = {
+    "MediaContainer": {
+        "Directory": [
+            {"key": "1", "type": "movie", "title": "Movies", "Location": [{"path": "/media/movies"}]},
+            {"key": "4", "type": "movie", "title": "Documentaries", "Location": [{"path": "/media/documentaries"}]},
+            {"key": "2", "type": "show", "title": "TV Shows", "Location": [{"path": "/media/tv"}]},
+        ]
+    }
+}
+
+
+class ScanFolderTest(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch("plex.requests.request", return_value=response(json=SECTIONS))
+        self.request = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def refreshes(self):
+        return [(c.args[1].rsplit("/library", 1)[1], c.kwargs["params"]) for c in self.request.call_args_list[1:]]
+
+    def test_only_the_new_folder_under_plexs_own_path(self):
+        asked = plex.scanFolder("http://plex.test:32400", "tok", "show", "/plex/tv", "/plex/tv/Show (2020)/Season 02")
+        self.assertEqual(self.refreshes(), [("/sections/2/refresh", {"path": "/media/tv/Show (2020)/Season 02"})])
+        self.assertEqual(asked, "/media/tv/Show (2020)/Season 02 in TV Shows")
+
+    def test_no_clear_match_scans_every_library_of_the_type(self):
+        asked = plex.scanFolder("http://plex.test:32400", "tok", "movie", "/downloads", "/downloads/Heat (1995)")
+        self.assertEqual(self.refreshes(), [("/sections/1/refresh", None), ("/sections/4/refresh", None)])
+        self.assertEqual(asked, "all of Movies, Documentaries")
+
+    def test_no_library_of_the_type(self):
+        self.request.return_value = response(json={"MediaContainer": {"Directory": []}})
+        with self.assertRaisesRegex(plex.PlexSyncError, "no Movies library"):
+            plex.scanFolder("http://plex.test:32400", "tok", "movie", "/plex/movies", "/plex/movies/Heat (1995)")
+
+
 class ChannelMapSizeTest(unittest.TestCase):
     def entries(self, n, idLength):
         return [{"GuideNumber": str(10000 + i), "GuideName": "C", "URL": "u", "epgId": "x" * idLength} for i in range(n)]

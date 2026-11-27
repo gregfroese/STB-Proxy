@@ -141,6 +141,20 @@ class QueueTest(DownloaderTestCase):
         rec["names"].update(season=None, seasonName="Extras", episode=None, year=None)
         self.assertEqual(downloads.libraryPath("/tv", rec), "/tv/Show/Extras/Show - Five.mp4")
 
+    def test_the_library_is_told_and_its_failure_changes_nothing(self):
+        told = []
+
+        def done(rec, folder):
+            told.append((rec["status"], rec["file"], folder))
+            raise RuntimeError("Plex is away")
+        self.downloader.done = done
+        rec = self.movie()
+        self.later()
+        self.runQueue()
+        path = os.path.join(self.folder, "Heat (1995)", "Heat (1995).mp4")
+        self.assertEqual(told, [("done", path, self.folder)])
+        self.assertEqual(self.store.get(rec["id"])["status"], "done")
+
     def test_a_taken_name_gets_a_number(self):
         os.makedirs(os.path.join(self.folder, "Heat (1995)"))
         open(os.path.join(self.folder, "Heat (1995)", "Heat (1995).mp4"), "w").close()

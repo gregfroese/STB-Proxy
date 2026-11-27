@@ -1,4 +1,7 @@
-"""Keep a Plex DVR's channel map in step with STB-Proxy's lineup."""
+"""Keep a Plex DVR's channel map in step with STB-Proxy's lineup, and have Plex scan the
+folders On Demand downloads land in."""
+import posixpath
+
 import requests
 
 from urllib.parse import urlencode
@@ -89,3 +92,30 @@ def sync(plexUrl, token, tunerUri, lineupEntries):
     )
     call("POST", plexUrl, "/livetv/dvrs/{}/reloadGuide".format(dvrKey), token)
     return "Plex updated: {} channels enabled".format(len(lineupEntries))
+
+
+def scanFolder(plexUrl, token, sectionType, root, folder):
+    """Ask Plex to scan folder, a folder inside root (a downloads folder), in its libraries of
+    sectionType ("movie" or "show"). Plex sees the files under its own paths, so root is matched
+    by its last name ("movies") to one of those libraries' folders, and only folder is scanned;
+    without exactly one match, every library of that type is scanned. Returns what was asked for."""
+    reply = call("GET", plexUrl, "/library/sections", token).json()
+    try:
+        sections = [s for s in reply["MediaContainer"].get("Directory", []) if s.get("type") == sectionType]
+    except (KeyError, TypeError, AttributeError):
+        raise PlexSyncError("unexpected reply from Plex's /library/sections")
+    if not sections:
+        raise PlexSyncError("Plex has no {} library".format("Movies" if sectionType == "movie" else "TV Shows"),
+                            retry=False)
+    name = posixpath.basename(root.rstrip("/"))
+    relative = posixpath.relpath(folder, root)
+    matches = [(s, loc["path"]) for s in sections for loc in s.get("Location", [])
+               if posixpath.basename(loc.get("path", "").rstrip("/")) == name]
+    if len(matches) == 1 and not relative.startswith(".."):
+        section, location = matches[0]
+        path = posixpath.join(location, relative)
+        call("GET", plexUrl, "/library/sections/{}/refresh".format(section["key"]), token, params={"path": path})
+        return "{} in {}".format(path, section.get("title", section["key"]))
+    for section in sections:
+        call("GET", plexUrl, "/library/sections/{}/refresh".format(section["key"]), token)
+    return "all of " + ", ".join(s.get("title", s["key"]) for s in sections)
