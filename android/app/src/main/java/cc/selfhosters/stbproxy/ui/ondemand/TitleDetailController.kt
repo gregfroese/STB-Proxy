@@ -210,7 +210,7 @@ class TitleDetailController(
         val state = _state.value
         val item = state.item ?: return
         val seasonId = state.seasonId ?: return
-        if (state.seasonDownload == null) return
+        if (state.seasonDownload?.canStart != true) return
         requestDownload(item) { api.requestOnDemandSeasonDownload(item.portal, item.id, seasonId) }
     }
 

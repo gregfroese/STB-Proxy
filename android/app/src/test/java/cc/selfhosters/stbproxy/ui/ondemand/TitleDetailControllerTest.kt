@@ -194,11 +194,15 @@ class TitleDetailControllerTest {
         )
         controller.load("p1", "s1")
         val shown = controller.state.first { it.episodeRows != null }
-        assertEquals("Download Season 1", shown.seasonDownload)
+        assertEquals(DownloadButton("Download Season 1", true), shown.seasonDownload)
 
         controller.downloadSeason()
         val marked = controller.state.first { s -> s.episodeRows?.all { it.download != null } == true }
         assertEquals(listOf("Downloading 42%", "Queued"), marked.episodeRows?.map { it.download })
+        assertEquals(DownloadButton("Season queued (0 of 2 downloaded)", false), marked.seasonDownload)
+        val asked = server.requestCount
+        controller.downloadSeason() // nothing left to ask for
+        assertEquals(asked, server.requestCount)
         assertEquals(
             """POST /api/ondemand/downloads {"portal":"p1","seriesId":"s1","seasonId":"se1"}""",
             requests().last(),

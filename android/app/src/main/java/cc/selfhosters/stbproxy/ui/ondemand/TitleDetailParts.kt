@@ -335,17 +335,18 @@ private fun SeasonsAndEpisodes(
                 }
             }
         }
-        state.seasonDownload?.let { label ->
+        state.seasonDownload?.let { button ->
             ActionButton(
-                label,
+                button.label,
                 primary = false,
-                enabled = true,
+                enabled = button.canStart,
                 busy = state.downloadBusy,
                 palette = palette,
                 onClick = actions.onDownloadSeason,
                 modifier = Modifier
                     .padding(top = 10.dp)
                     .focusRequester(seasonDownloadFocus),
+                color = if (button.label == SEASON_DOWNLOADED) WatchedGreen else null,
             )
             state.downloadError?.let { InlineError(it, palette, null, Modifier.padding(top = 10.dp)) }
         }
