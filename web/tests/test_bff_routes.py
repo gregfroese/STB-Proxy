@@ -116,7 +116,9 @@ def _upstream(request: httpx.Request) -> httpx.Response:
         )
     if path.startswith("/api/ondemand/"):
         return _ondemand_upstream(request)
-    if path == "/static/STB-Proxy-Companion.apk":
+    if path == "/api/companion":
+        return httpx.Response(200, json={"versionName": "1.13.0", "url": "/companion.apk", "sizeBytes": 9})
+    if path == "/companion.apk":
         return httpx.Response(
             200,
             stream=httpx.ByteStream(b"APK-BYTES"),
@@ -186,6 +188,15 @@ def _ondemand_upstream(request: httpx.Request) -> httpx.Response:
             return httpx.Response(400, json={"error": "Send the item", "code": "bad_request"})
         return httpx.Response(204)
     if path == "/api/ondemand/session/s1" and request.method == "DELETE":
+        return httpx.Response(204)
+    if path == "/api/ondemand/downloads" and request.method == "GET":
+        return httpx.Response(200, json={"canDownload": True, "items": []})
+    if path == "/api/ondemand/downloads" and request.method == "POST":
+        body = json.loads(request.content or b"null")
+        if body.get("id") == "off":
+            return httpx.Response(403, json={"error": "Downloads aren't switched on for this login", "code": "downloads_off"})
+        return httpx.Response(202, json={"items": [{"id": "d1", "status": "queued", "item": body}]})
+    if path == "/api/ondemand/downloads/d1" and request.method == "DELETE":
         return httpx.Response(204)
     if path == "/api/ondemand/poster/p1/42":
         return httpx.Response(
@@ -390,6 +401,12 @@ def test_companion_apk_is_public_so_the_login_page_can_offer_it(client):
     assert client.get("/companion.apk").status_code == 200
 
 
+def test_companion_release_is_public_for_the_apps_update_button(client):
+    response = client.get("/api/companion")
+    assert response.status_code == 200
+    assert response.json() == {"versionName": "1.13.0", "url": "/companion.apk", "sizeBytes": 9}
+
+
 def test_hls_playlist_and_segments_are_served(client):
     client.post("/api/login", json={"username": "katie", "password": "pw"})
     playlist = client.get("/hls/1/9/copy/s1/index.m3u8")
@@ -579,6 +596,28 @@ def test_ondemand_session_can_be_released(client):
     assert response.status_code == 204
     assert _ondemand_seen[-1].method == "DELETE"
     assert _ondemand_seen[-1].url.path == "/api/ondemand/session/s1"
+
+
+def test_ondemand_downloads_are_mirrored(client):
+    csrf = _login(client)
+    assert client.get("/api/ondemand/downloads").json() == {"canDownload": True, "items": []}
+    response = client.post("/api/ondemand/downloads", json={"portal": "p1", "id": "42"}, headers={"X-CSRF-Token": csrf})
+    assert response.status_code == 202
+    assert response.json()["items"][0]["item"] == {"portal": "p1", "id": "42"}
+    assert json.loads(_ondemand_seen[-1].content) == {"portal": "p1", "id": "42"}
+    off = client.post("/api/ondemand/downloads", json={"portal": "p1", "id": "off"}, headers={"X-CSRF-Token": csrf})
+    assert (off.status_code, off.json()["code"]) == (403, "downloads_off")
+    cancelled = client.delete("/api/ondemand/downloads/d1", headers={"X-CSRF-Token": csrf})
+    assert cancelled.status_code == 204
+    assert _ondemand_seen[-1].url.path == "/api/ondemand/downloads/d1"
+
+
+def test_ondemand_download_changes_need_the_csrf_token(client):
+    _login(client)
+    before = len(_ondemand_seen)
+    assert client.post("/api/ondemand/downloads", json={"portal": "p1", "id": "42"}).status_code == 403
+    assert client.delete("/api/ondemand/downloads/d1").status_code == 403
+    assert len(_ondemand_seen) == before
 
 
 def test_ondemand_changes_need_the_csrf_token(client):

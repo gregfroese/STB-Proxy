@@ -218,6 +218,7 @@ class DetailTest(BrowseTestCase):
             "description": "A crew of thieves.", "genres": "Crime, Drama", "director": "Someone",
             "actors": "A, B", "country": "USA", "durationMin": 170, "ageRating": "R",
             "categories": ["action", "crime films"], "progress": None,
+            "canDownload": False, "download": None,
         })
 
     def test_placeholders_read_null_and_an_unchanged_original_name_is_left_out(self):

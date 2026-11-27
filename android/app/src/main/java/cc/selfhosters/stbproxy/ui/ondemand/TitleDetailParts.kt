@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -36,11 +38,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import cc.selfhosters.stbproxy.data.model.OnDemandDownloadBrief
 import cc.selfhosters.stbproxy.data.model.OnDemandItem
 import cc.selfhosters.stbproxy.ui.common.focusRing
 import cc.selfhosters.stbproxy.ui.picker.PickerPalette
 
 private val WatchedGreen = Color(0xFF6FCF97)
+
+/**
+ * Follows the shown title's downloads (every 15 s while one is queued or running) for
+ * as long as the screen is composed and started; it stops when the screen goes away.
+ */
+@Composable
+internal fun FollowDownloads(controller: TitleDetailController) {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(controller, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { controller.watchDownloads() }
+    }
+}
 
 /** What the detail's buttons and chips do. */
 internal class TitleDetailActions(
@@ -48,12 +66,19 @@ internal class TitleDetailActions(
     val onToggleWatched: () -> Unit,
     val onRetry: () -> Unit,
     val onSeason: (String) -> Unit,
+    /** A Movie's Download (or Download failed – try again). */
+    val onDownload: () -> Unit,
+    /** A Series' "Download Season N" for the shown Season. */
+    val onDownloadSeason: () -> Unit,
+    /** A Movie's Cancel download (the viewer's own, unfinished). */
+    val onCancelDownload: () -> Unit,
 )
 
 /**
  * A title's detail, shared by the TV preview pane ([tv]) and the phone detail page:
- * the poster, title, `originalName` and facts; the Play buttons with the inline error
- * under them; a Series' Season chips and Episodes; then the description, genre tags
+ * the poster, title, `originalName` and facts; the Play buttons (and a Movie's Download)
+ * with the inline errors under them; a Series' Season chips, "Download Season N" and
+ * Episodes; then the description, genre tags
  * (phone), credits and "From <portal>". [entry] goes on the main Play button (TV:
  * OK/→ on a row lands there).
  */
@@ -84,9 +109,12 @@ internal fun TitleDetailBody(
         }
 
         shown.buttons?.let { buttons ->
-            PlayActions(buttons, shown.busy, palette, actions, tv, entry, Modifier.padding(top = 16.dp))
+            PlayActions(buttons, shown, palette, actions, tv, entry, Modifier.padding(top = 16.dp))
         }
         shown.actionError?.let { InlineError(it, palette, actions.onRetry, Modifier.padding(top = 10.dp)) }
+        if (shown.movieDownload != null) {
+            shown.downloadError?.let { InlineError(it, palette, null, Modifier.padding(top = 10.dp)) }
+        }
 
         if (detail != null && detail.isSeries && detail.seasons.isNotEmpty()) {
             SeasonsAndEpisodes(shown, palette, actions, Modifier.padding(top = 18.dp))
@@ -109,14 +137,15 @@ internal fun TitleDetailBody(
 }
 
 /**
- * The Play buttons. TV: one row (Play, Start over, Mark watched), the Series' note
- * beside them. Phone: a full-width Play/Resume, then Start over and Mark watched.
+ * The Play buttons. TV: one row (Play, Start over, Mark watched, Download, Cancel
+ * download), the Series' note beside them. Phone: a full-width Play/Resume, then Start
+ * over and Mark watched, then Download and Cancel download.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PlayActions(
     buttons: PlayButtons,
-    busy: Boolean,
+    state: TitleDetailState,
     palette: PickerPalette,
     actions: TitleDetailActions,
     tv: Boolean,
@@ -128,7 +157,7 @@ private fun PlayActions(
             label = buttons.primary.label,
             primary = true,
             enabled = buttons.primary.choice != null,
-            busy = busy,
+            busy = state.busy,
             palette = palette,
             onClick = { actions.onPlay(buttons.primary.choice) },
             modifier = m.then(if (entry != null) Modifier.focusRequester(entry) else Modifier),
@@ -150,6 +179,29 @@ private fun PlayActions(
             )
         }
     }
+    val download = state.movieDownload
+    val downloadFocus = remember { FocusRequester() }
+    val downloads = @Composable {
+        download?.let {
+            ActionButton(
+                it.label,
+                primary = false,
+                enabled = it.canStart,
+                busy = state.downloadBusy,
+                palette = palette,
+                onClick = actions.onDownload,
+                modifier = Modifier.focusRequester(downloadFocus),
+                color = if (state.detail?.download?.status == OnDemandDownloadBrief.DONE) WatchedGreen else null,
+            )
+        }
+        if (download != null && state.canCancelMovieDownload) {
+            ActionButton(CANCEL_DOWNLOAD, false, !state.downloadBusy, false, palette, {
+                // TV: Cancel download goes away once it works; keep focus on the Download button.
+                runCatching { downloadFocus.requestFocus() }
+                actions.onCancelDownload()
+            })
+        }
+    }
     val note = @Composable { m: Modifier ->
         buttons.note?.let { Label(it, palette.muted, 12.sp, maxLines = 2, modifier = m) }
     }
@@ -162,6 +214,7 @@ private fun PlayActions(
         ) {
             primary(Modifier)
             secondary()
+            downloads()
             note(Modifier)
         }
     } else {
@@ -170,6 +223,12 @@ private fun PlayActions(
             note(Modifier)
             if (buttons.startOver != null || buttons.watchedToggle != null) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { secondary() }
+            }
+            if (download != null) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) { downloads() }
             }
         }
     }
@@ -218,9 +277,9 @@ private fun ActionButton(
     }
 }
 
-/** The error under Play (or under the Episodes), with Try again. */
+/** The error under Play (or under the Episodes), with Try again when [onRetry] is set. */
 @Composable
-internal fun InlineError(text: String, palette: PickerPalette, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+internal fun InlineError(text: String, palette: PickerPalette, onRetry: (() -> Unit)?, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -230,11 +289,14 @@ internal fun InlineError(text: String, palette: PickerPalette, onRetry: () -> Un
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Label(text, MaterialTheme.colorScheme.error, 13.sp)
-        ActionButton("Try again", false, true, false, palette, onRetry)
+        onRetry?.let { ActionButton("Try again", false, true, false, palette, it) }
     }
 }
 
-/** Season chips (opening on Up next's Season), then the chosen Season's Episodes. */
+/**
+ * Season chips (opening on Up next's Season), "Download Season N" when downloads are
+ * on, then the chosen Season's Episodes.
+ */
 @Composable
 private fun SeasonsAndEpisodes(
     state: TitleDetailState,
@@ -243,6 +305,9 @@ private fun SeasonsAndEpisodes(
     modifier: Modifier = Modifier,
 ) {
     val seasons = state.detail?.seasons.orEmpty()
+    // TV: Down from any chip lands on "Download Season N" (a chip far right has it out of line).
+    val seasonDownloadFocus = remember { FocusRequester() }
+    val hasSeasonDownload = state.seasonDownload != null
     Column(modifier = modifier) {
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
@@ -256,6 +321,7 @@ private fun SeasonsAndEpisodes(
                     modifier = Modifier
                         .clip(shape)
                         .background(if (selected) palette.accent else palette.surfaceVariant)
+                        .focusProperties { if (hasSeasonDownload) down = seasonDownloadFocus }
                         .focusRing(shape)
                         .clickable { actions.onSeason(season.id) }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
@@ -268,6 +334,20 @@ private fun SeasonsAndEpisodes(
                     )
                 }
             }
+        }
+        state.seasonDownload?.let { label ->
+            ActionButton(
+                label,
+                primary = false,
+                enabled = true,
+                busy = state.downloadBusy,
+                palette = palette,
+                onClick = actions.onDownloadSeason,
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .focusRequester(seasonDownloadFocus),
+            )
+            state.downloadError?.let { InlineError(it, palette, null, Modifier.padding(top = 10.dp)) }
         }
         val rows = state.episodeRows
         when {
@@ -290,7 +370,10 @@ private fun SeasonsAndEpisodes(
     }
 }
 
-/** One Episode: number, name, "✓ Watched" / "mm:ss in", a thin bar and the Up next badge. */
+/**
+ * One Episode: number, name, "✓ Watched" / "mm:ss in" and its download status
+ * ("Downloading 42%"), a thin bar and the Up next badge.
+ */
 @Composable
 private fun EpisodeRowView(row: EpisodeRow, palette: PickerPalette, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
@@ -313,14 +396,13 @@ private fun EpisodeRowView(row: EpisodeRow, palette: PickerPalette, onClick: () 
         Label(row.number, palette.muted, 14.sp, modifier = Modifier.width(30.dp))
         Column(modifier = Modifier.weight(1f)) {
             Label(row.name, palette.onSurface, 14.sp, maxLines = 1)
-            row.status?.let {
-                Label(
-                    it,
-                    if (row.watched) WatchedGreen else palette.muted,
-                    11.sp,
-                    maxLines = 1,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
+            if (row.status != null || row.download != null) {
+                Row(modifier = Modifier.padding(top = 2.dp)) {
+                    row.status?.let { Label(it, if (row.watched) WatchedGreen else palette.muted, 11.sp, maxLines = 1) }
+                    row.download?.let {
+                        Label(if (row.status != null) " · $it" else it, palette.muted, 11.sp, maxLines = 1)
+                    }
+                }
             }
             row.progress?.let { ProgressLine(it, palette, Modifier.padding(top = 4.dp)) }
         }

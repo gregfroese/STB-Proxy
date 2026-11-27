@@ -2,6 +2,24 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.21.0] - 2026-11-27
+
+### Server and Operator UI
+
+- **On Demand downloads**: an Account with the new **Downloads** switch on (Accounts page, off by default) can have STB-Proxy save a Movie, an Episode or a whole Season as an MP4 in the new **On Demand Movies folder** and **On Demand TV Shows folder** settings (Settings → Recording), named the way Plex and Jellyfin expect, so they can be Plex's own library folders. Either can stay empty to turn that kind off. Downloads wait in a queue and run one at a time per portal, only once nobody has watched from that portal for 3 minutes. Anyone who starts watching (live, a preview, a recording or On Demand) pauses the download straight away, and it goes on later from where it stopped. A running download shows on the Streams page, where you can pause it. The On Demand page lists every download with Cancel, Retry and Delete. The list is kept in `downloads.json` beside `config.json`.
+- **Companion app updates**: STB-Proxy offers the newest `STB-Proxy-Companion-<version>.apk` from a `companion` folder beside `config.json`, at `/companion.apk` and `/api/companion` (its version). Before, the APK had to be dropped into `static/`, which the Docker image doesn't keep.
+
+### Web viewer
+
+- A **Download** button on a Movie, **Download this Season** and a per-Episode download on a Series, with each item's status (Queued, Paused at 42%, Downloading, Downloaded, Failed). You can cancel your own downloads before they finish.
+- The **Download the Android app** link now gets the newest APK from STB-Proxy's `companion` folder.
+
+### Android app
+
+- The same **Download** buttons and statuses on phone and TV.
+- **Update** in Settings: the app checks the server for a newer version, downloads it and opens Android's installer. The first time, Android asks you to allow installs from the app.
+- The app is now version 1.13.0. Install this one by hand; later versions can come through **Update**.
+
 ## [1.20.3] - 2026-10-30
 
 ### Web viewer

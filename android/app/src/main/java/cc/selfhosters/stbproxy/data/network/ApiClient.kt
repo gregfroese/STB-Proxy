@@ -2,11 +2,15 @@ package cc.selfhosters.stbproxy.data.network
 
 import cc.selfhosters.stbproxy.data.OnDemandAvailability
 import cc.selfhosters.stbproxy.data.model.Channel
+import cc.selfhosters.stbproxy.data.model.CompanionRelease
 import cc.selfhosters.stbproxy.data.model.GuideChannelProgrammes
 import cc.selfhosters.stbproxy.data.model.GuideSearchResult
 import cc.selfhosters.stbproxy.data.model.Lineup
 import cc.selfhosters.stbproxy.data.model.OnDemandCategories
 import cc.selfhosters.stbproxy.data.model.OnDemandDetail
+import cc.selfhosters.stbproxy.data.model.OnDemandDownload
+import cc.selfhosters.stbproxy.data.model.OnDemandDownloadList
+import cc.selfhosters.stbproxy.data.model.OnDemandDownloads
 import cc.selfhosters.stbproxy.data.model.OnDemandEpisode
 import cc.selfhosters.stbproxy.data.model.OnDemandItem
 import cc.selfhosters.stbproxy.data.model.OnDemandItemList
@@ -15,6 +19,7 @@ import cc.selfhosters.stbproxy.data.model.OnDemandPage
 import cc.selfhosters.stbproxy.data.model.OnDemandPlayback
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.DeserializationStrategy
 import kotlinx.serialization.builtins.ListSerializer
@@ -34,7 +39,9 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import java.io.File
 import java.io.IOException
+import kotlin.coroutines.coroutineContext
 
 /**
  * A non-2xx HTTP response: the status [code] (e.g. 401 for re-auth) plus, when the body
@@ -60,6 +67,9 @@ class ApiException(
         const val PORTAL_ERROR = "portal_error"
         const val UNSUPPORTED_STREAM = "unsupported_stream"
         const val SESSION_ENDED = "session_ended"
+        const val DOWNLOADS_OFF = "downloads_off"
+        const val DOWNLOADS_UNAVAILABLE = "downloads_unavailable"
+        const val DOWNLOADED = "downloaded"
     }
 }
 
@@ -128,6 +138,58 @@ class ApiClient(
             if (refresh) addQueryParameter("refresh", "1")
         }.build()
         getJson(url.toString(), GuideChannelProgrammes.serializer())
+    }
+
+    // ---- Companion app updates ----
+
+    /**
+     * The Companion APK the server offers (`GET /api/companion`), or null when it has
+     * none (404). Other failures surface as for any read.
+     */
+    suspend fun fetchCompanion(): CompanionRelease? = withContext(Dispatchers.IO) {
+        try {
+            getJson("${requireBase()}/api/companion", CompanionRelease.serializer())
+        } catch (e: ApiException) {
+            if (e.code == 404) null else throw e
+        }
+    }
+
+    /**
+     * Downloads [release]'s APK into [target] with the login attached, reporting
+     * `(bytesRead, totalBytes)` to [onProgress]; the total is the Content-Length, else
+     * the release's `sizeBytes`, else null. Never retried. A short body (fewer bytes
+     * than the Content-Length) fails.
+     */
+    suspend fun downloadCompanion(
+        release: CompanionRelease,
+        target: File,
+        onProgress: (bytesRead: Long, totalBytes: Long?) -> Unit = { _, _ -> },
+    ) = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(joinUrl(requireBase(), release.url)).build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw failure(response)
+            val body = response.body ?: throw IOException("Empty response body")
+            val contentLength = body.contentLength().takeIf { it > 0 }
+            val total = contentLength ?: release.sizeBytes?.takeIf { it > 0 }
+            var read = 0L
+            onProgress(0L, total)
+            body.byteStream().use { input ->
+                target.outputStream().use { output ->
+                    val buffer = ByteArray(DOWNLOAD_BUFFER_BYTES)
+                    while (true) {
+                        coroutineContext.ensureActive()
+                        val n = input.read(buffer)
+                        if (n < 0) break
+                        output.write(buffer, 0, n)
+                        read += n
+                        onProgress(read, total)
+                    }
+                }
+            }
+            if (contentLength != null && read != contentLength) {
+                throw IOException("Download incomplete ($read of $contentLength bytes)")
+            }
+        }
     }
 
     // ---- On Demand (ADR 0005/0006) ----
@@ -217,6 +279,41 @@ class ApiClient(
     /** Releases an On Demand session's slot now (idempotent for this login's own). */
     suspend fun endOnDemandSession(sid: String) = withContext(Dispatchers.IO) {
         execute(Request.Builder().url(onDemandUrl("session", sid)).delete().build())
+    }
+
+    /** The server's downloads, oldest first, and whether this login may ask for more. */
+    suspend fun fetchOnDemandDownloads(): OnDemandDownloads = withContext(Dispatchers.IO) {
+        getJson(onDemandUrl("downloads").toString(), OnDemandDownloads.serializer())
+    }
+
+    /**
+     * Asks the server to download a Movie or an Episode (into its downloads folder; the
+     * device stores nothing). Idempotent on the server; never retried here.
+     */
+    suspend fun requestOnDemandDownload(key: OnDemandKey): List<OnDemandDownload> =
+        postDownload(buildJsonObject { putKey(key) })
+
+    /** Asks the server to download every Episode of one Season. */
+    suspend fun requestOnDemandSeasonDownload(
+        portal: String,
+        seriesId: String,
+        seasonId: String,
+    ): List<OnDemandDownload> = postDownload(
+        buildJsonObject {
+            put("portal", portal)
+            put("seriesId", seriesId)
+            put("seasonId", seasonId)
+        },
+    )
+
+    /** Cancels one of this login's unfinished downloads (409 `downloaded` once finished). */
+    suspend fun cancelOnDemandDownload(id: String) = withContext(Dispatchers.IO) {
+        execute(Request.Builder().url(onDemandUrl("downloads", id)).delete().build())
+    }
+
+    private suspend fun postDownload(body: JsonObject): List<OnDemandDownload> = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(onDemandUrl("downloads")).post(body.asRequestBody()).build()
+        execute(request, OnDemandDownloadList.serializer()).items
     }
 
     /** A server-relative poster path as an absolute URL, or null when there is none. */
@@ -338,5 +435,6 @@ class ApiClient(
     companion object {
         val DEFAULT_RETRY_DELAYS_MS: List<Long> = listOf(500L, 1500L)
         private val JSON_MEDIA_TYPE = "application/json".toMediaType()
+        private const val DOWNLOAD_BUFFER_BYTES = 64 * 1024
     }
 }

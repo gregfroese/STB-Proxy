@@ -132,6 +132,10 @@ data class OnDemandDetail(
     val upNext: OnDemandUpNext? = null,
     /** A Series' Seasons, ascending. */
     val seasons: List<OnDemandSeason> = emptyList(),
+    /** Downloads are on for this Account and the server has a downloads folder. */
+    val canDownload: Boolean = false,
+    /** A Movie's download; null when never asked for (and for a Series). */
+    val download: OnDemandDownloadBrief? = null,
 ) {
     val isSeries: Boolean get() = kind == OnDemandItem.SERIES
 }
@@ -152,7 +156,85 @@ data class OnDemandEpisode(
     val number: Int? = null,
     val name: String? = null,
     val progress: OnDemandProgress? = null,
+    /** This Episode's download; null when never asked for. */
+    val download: OnDemandDownloadBrief? = null,
 )
+
+/**
+ * A server download of a Movie or Episode (into STB-Proxy's downloads folder, for
+ * Plex/Jellyfin; nothing is stored on the device). [status] is one of [QUEUED],
+ * [DOWNLOADING], [DONE] or [FAILED]; queued with [progress] > 0 is paused (it gave way
+ * to a viewer and goes on once nobody watches from that portal).
+ */
+@Serializable
+data class OnDemandDownloadBrief(
+    val id: Id,
+    val status: String = QUEUED,
+    /** 0..100. */
+    val progress: Int = 0,
+    val error: String? = null,
+    /** This Account asked for it (so it may cancel it while unfinished). */
+    val mine: Boolean = false,
+) {
+    companion object {
+        const val QUEUED = "queued"
+        const val DOWNLOADING = "downloading"
+        const val DONE = "done"
+        const val FAILED = "failed"
+    }
+}
+
+/** One entry of `GET /api/ondemand/downloads` (and of a `POST`'s 202), oldest first. */
+@Serializable
+data class OnDemandDownload(
+    val id: Id,
+    /** `movie` or `episode`. */
+    val kind: String = OnDemandItem.MOVIE,
+    val item: OnDemandDownloadItem,
+    val title: String = "",
+    /** Server-relative poster path. */
+    val poster: String? = null,
+    val status: String = OnDemandDownloadBrief.QUEUED,
+    val progress: Int = 0,
+    val error: String? = null,
+    val sizeBytes: Long? = null,
+    val mine: Boolean = false,
+    /** Epoch seconds. */
+    val createdAt: Double? = null,
+    val finishedAt: Double? = null,
+) {
+    val brief: OnDemandDownloadBrief
+        get() = OnDemandDownloadBrief(id = id, status = status, progress = progress, error = error, mine = mine)
+}
+
+/** What a download names: a Movie's `{portal, id}` or an Episode's `{portal, seriesId, seasonId, episodeId}`. */
+@Serializable
+data class OnDemandDownloadItem(
+    val portal: Id,
+    val id: Id? = null,
+    val seriesId: Id? = null,
+    val seasonId: Id? = null,
+    val episodeId: Id? = null,
+) {
+    /** The Movie or Episode it names, or null for a shape this app doesn't know. */
+    val key: OnDemandKey?
+        get() = when {
+            id != null -> OnDemandKey.Movie(portal, id)
+            seriesId != null && seasonId != null && episodeId != null ->
+                OnDemandKey.Episode(portal, seriesId, seasonId, episodeId)
+            else -> null
+        }
+}
+
+/** `GET /api/ondemand/downloads`. */
+@Serializable
+data class OnDemandDownloads(
+    val canDownload: Boolean = false,
+    val items: List<OnDemandDownload> = emptyList(),
+)
+
+@Serializable
+internal data class OnDemandDownloadList(val items: List<OnDemandDownload> = emptyList())
 
 /** `POST /api/ondemand/play`: an On Demand session. */
 @Serializable

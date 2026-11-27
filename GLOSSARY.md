@@ -102,6 +102,10 @@ _Avoid_: seen, finished, completed
 The **Episode** a **Series** resumes at for an **Account**: the one it last played, if unfinished, or else the one after it.
 _Avoid_: next episode, autoplay
 
+**Download**:
+A **Movie** or **Episode** STB-Proxy saves as an MP4 in its Movies or TV Shows downloads folder (Plex's library folders, say), asked for by an **Account** with Downloads switched on. Downloads wait in a queue and run only while nobody watches from their portal; one that gives way to a viewer is paused and goes on later from where it was. Nothing is kept on the viewer's device.
+_Avoid_: offline, recording (that saves a live **Channel**), save
+
 **Continue watching**:
 An **Account**'s unfinished **Movies** and **Series**, most recently played first.
 _Avoid_: history, recently watched, in progress

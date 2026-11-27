@@ -10,12 +10,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -29,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -55,9 +59,16 @@ fun SettingsScreen() {
             container.sessionController,
             container.accountStore,
             container.viewerPreferences,
+            container.apiClient,
+            container.updatesDir,
+            container.apkInstaller,
         ),
     )
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val update by viewModel.update.collectAsStateWithLifecycle()
+
+    // The App section asks the server for a newer Companion each time Settings opens.
+    LaunchedEffect(Unit) { viewModel.checkForUpdate() }
 
     // TV: start on the first setting rather than leaving focus in the nav rail.
     val isTv = isTvDevice()
@@ -171,8 +182,111 @@ fun SettingsScreen() {
                     modifier = Modifier.focusRing(),
                 ) { Text("Sign out") }
             }
+
+            SettingsSection("App", "Updates come from the server this app connects to.") {
+                Text("Version ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodyLarge)
+                AppUpdate(
+                    state = update,
+                    onCheck = viewModel::checkForUpdate,
+                    onUpdate = viewModel::installUpdate,
+                )
+            }
         }
     }
+}
+
+/**
+ * The App section's update status and its one button. The button stays the same
+ * composable through every state (only its style and label change), so TV focus
+ * stays on it while it goes Check again → Checking… → Update → Downloading….
+ */
+@Composable
+private fun AppUpdate(
+    state: AppUpdateState,
+    onCheck: () -> Unit,
+    onUpdate: () -> Unit,
+) {
+    val status: String
+    val label: String
+    val primary: Boolean
+    val onClick: () -> Unit
+    when (state) {
+        AppUpdateState.Checking -> {
+            // A status line in every state keeps the button from jumping (and TV scroll steady).
+            status = "Checking for updates…"
+            label = "Checking…"
+            primary = false
+            onClick = {}
+        }
+        AppUpdateState.UpToDate -> {
+            status = "Up to date"
+            label = "Check again"
+            primary = false
+            onClick = onCheck
+        }
+        AppUpdateState.CheckFailed -> {
+            status = "Couldn't check for updates"
+            label = "Check again"
+            primary = false
+            onClick = onCheck
+        }
+        is AppUpdateState.Available -> {
+            status = "Version ${state.release.versionName} is available"
+            label = "Update to ${state.release.versionName}"
+            primary = true
+            onClick = onUpdate
+        }
+        is AppUpdateState.Downloading -> {
+            status = "Version ${state.release.versionName} is available"
+            label = state.percent?.let { "Downloading… $it%" } ?: "Downloading…"
+            primary = true
+            onClick = {}
+        }
+    }
+
+    Text(
+        text = status,
+        color = if (state == AppUpdateState.CheckFailed) {
+            MaterialTheme.colorScheme.error
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+    )
+    Button(
+        onClick = onClick,
+        colors = if (primary) ButtonDefaults.buttonColors() else ButtonDefaults.outlinedButtonColors(),
+        border = if (primary) null else ButtonDefaults.outlinedButtonBorder(),
+        elevation = if (primary) ButtonDefaults.buttonElevation() else null,
+        modifier = Modifier.focusRing(),
+    ) { Text(label) }
+
+    if (state is AppUpdateState.Downloading) {
+        // Below the focused button at the end of the page: scroll it into view once.
+        val requester = remember { BringIntoViewRequester() }
+        LaunchedEffect(Unit) { runCatching { requester.bringIntoView() } }
+        val modifier = Modifier.fillMaxWidth().bringIntoViewRequester(requester)
+        val percent = state.percent
+        if (percent != null) {
+            LinearProgressIndicator(progress = { percent / 100f }, modifier = modifier)
+        } else {
+            LinearProgressIndicator(modifier = modifier)
+        }
+    }
+    if (state is AppUpdateState.Available) {
+        state.message?.let { UpdateNote(it, MaterialTheme.colorScheme.primary) }
+        state.error?.let { UpdateNote(it, MaterialTheme.colorScheme.error) }
+    }
+}
+
+/**
+ * A line under the Update button. It is the last thing on the page and focus stays on
+ * the button above it, so it scrolls itself into view rather than appearing off-screen.
+ */
+@Composable
+private fun UpdateNote(text: String, color: Color) {
+    val requester = remember { BringIntoViewRequester() }
+    LaunchedEffect(text) { runCatching { requester.bringIntoView() } }
+    Text(text = text, color = color, modifier = Modifier.bringIntoViewRequester(requester))
 }
 
 /** A titled card grouping related settings. */

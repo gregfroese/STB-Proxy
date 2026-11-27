@@ -9,6 +9,7 @@ import logos
 import recordings
 import ondemand
 import ondemandsession
+import downloads
 import changelog
 import version
 import collections
@@ -99,6 +100,8 @@ defaultSettings = {
     "jellyfin url": "",
     "jellyfin api key": "",
     "recordings folder": "",
+    "downloads movies folder": "",
+    "downloads tv folder": "",
 }
 
 defaultPortal = {
@@ -1490,6 +1493,7 @@ def accountsCreate():
         "enabled": request.form.get("enabled") == "true",
         "on demand": False,
         "adult on demand": False,
+        "downloads": False,
     })
     saveAccounts(records)
     logger.info("Account({}) created".format(username))
@@ -1552,10 +1556,13 @@ def accountsToggle():
     return redirect("/accounts", code=302)
 
 
+ONDEMAND_SWITCHES = {"on demand": "On Demand", "adult on demand": "Adult On Demand", "downloads": "Downloads"}
+
+
 @app.route("/accounts/ondemand", methods=["POST"])
 @authorise
 def accountsOnDemand():
-    """Switch On Demand, or Adult On Demand, on or off for one Account (ADR 0004)."""
+    """Switch On Demand, Adult On Demand or Downloads on or off for one Account (ADR 0004)."""
     username = request.form.get("username", "").strip()
     switch = request.form.get("switch")
     on = request.form.get("value") == "true"
@@ -1563,13 +1570,13 @@ def accountsOnDemand():
     if not account:
         flash("No account called {}".format(username), "danger")
         return redirect("/accounts", code=302)
-    if switch not in ("on demand", "adult on demand"):
+    if switch not in ONDEMAND_SWITCHES:
         flash("Unknown switch", "danger")
         return redirect("/accounts", code=302)
 
     account[switch] = on
     saveAccounts(getAccounts())
-    label = "On Demand" if switch == "on demand" else "Adult On Demand"
+    label = ONDEMAND_SWITCHES[switch]
     logger.info("Account({}) {} {}".format(username, label, "on" if on else "off"))
     flash("{} for {} {}".format(label, username, "on" if on else "off"), "success")
     if on:
@@ -2280,6 +2287,8 @@ def save():
         settings["plex token"] = getSettings()["plex token"]
 
     settings["recordings folder"] = request.form.get("recordings folder", "").strip()
+    settings["downloads movies folder"] = request.form.get("downloads movies folder", "").strip()
+    settings["downloads tv folder"] = request.form.get("downloads tv folder", "").strip()
 
     saveSettings(settings)
     logger.info("Settings saved!")
@@ -2881,6 +2890,7 @@ def roomFor(portalId, kind, starting=None, tuner=True, ignoring=None):
     Demand session: it needs a slot on the portal's MACs but no Tuner (ADR 0005). `ignoring`
     is an `occupied` entry whose slot counts as free (see portalHasFreeSlot)."""
     onDemandSessions.sweep()  # an idle session's slot is free
+    yieldDownloads(portalId)  # a download never keeps a viewer out
     while True:
         with sharedStreamsLock:
             others = [s for s in sharedStreams.values() if s is not starting and not s.done]
@@ -3033,6 +3043,7 @@ def playChannel(portalId, channelId):
     logger.info(
         "IP({}) requested Portal({}):Channel({})".format(ip, portalId, channelId)
     )
+    yieldDownloads(portalId)  # also for "stream method" redirect, which skips admission
 
     if web:
         stopPreview(tile)
@@ -3502,6 +3513,15 @@ def stopStream():
     """Stop an active stream from the Streams page: kill its ffmpeg and drop its viewers,
     freeing its tuner. An On Demand session is named by `session` instead, and ends with
     the reason "stopped"."""
+    download = request.form.get("download")
+    if download:
+        downloader = existingDownloader()
+        rec = downloader.get(download) if downloader is not None else None
+        if rec is None or rec["status"] != "downloading":
+            return flask.jsonify({"error": "That download is not running"}), 404
+        logger.info("Operator paused the download of {}".format(rec["title"]))
+        yieldDownloads(rec["portal"])
+        return flask.jsonify({"ok": True})
     sid = request.form.get("session")
     if sid:
         session = onDemandSessions.sessions.get(sid)
@@ -3889,8 +3909,14 @@ def onDemandPage():
         categories = [dict(c, portalNames=[portals[p] for p in c["portals"]], hidden=c["id"] in hidden)
                       for c in index.catalogue(portals)]
     known = {c["id"] for c in categories}
+    downloader = existingDownloader()
     return render_template(
         "ondemand.html",
+        downloads=[dict(d, statusText=DOWNLOAD_STATUS_TEXT[d["status"]], portalName=portals.get(d["portal"], d["portal"]),
+                        sizeText=humanSize(d["size"] if d["status"] == "done" else d["bytes"]))
+                   for d in (downloader.list() if downloader is not None else [])],
+        downloadsMoviesFolder=downloadsFolder("movie"),
+        downloadsTvFolder=downloadsFolder("episode"),
         indexed=index is not None,
         anyOn=anyAccountOnDemand(),
         statuses=statuses,
@@ -4069,6 +4095,9 @@ def apiOnDemandItem(portal, id):
     if detail is None:
         return onDemandError(404, "not_found", "That isn't in On Demand")
     detail = onDemandListItem(withOnDemandProgress([detail])[0], enabledOnDemandPortals())
+    detail["canDownload"] = viewerCanDownload("movie" if detail["kind"] == "movie" else "episode")
+    if detail["kind"] == "movie":
+        detail["download"] = downloadBrief(portal, {"id": detail["id"]})
     if detail["kind"] == "series":
         try:
             detail["seasons"] = onDemandSeries().seasons(portal, id) or []
@@ -4094,7 +4123,10 @@ def apiOnDemandSeason(portal, seriesId, seasonId):
         return onDemandError(404, "not_found", "That Season isn't in On Demand")
     progress = onDemandProgress().episodes(viewerOnDemand().account["username"], portal, detail["id"], seasonId)
     return flask.jsonify([dict({key: e[key] for key in ("id", "seasonId", "number", "name")},
-                               progress=progress.get(e["id"])) for e in episodes])
+                               progress=progress.get(e["id"]),
+                               download=downloadBrief(portal, {"seriesId": detail["id"], "seasonId": seasonId,
+                                                               "episodeId": e["id"]}))
+                          for e in episodes])
 
 
 def onDemandProgressRequest(body):
@@ -4475,6 +4507,277 @@ def apiOnDemandSessionEnd(sid):
     return "", 204
 
 
+# On Demand downloads (downloads.py): an Account with its "downloads" switch on queues a
+# Movie or Episode, saved into the "downloads movies folder" or "downloads tv folder" setting
+# (Plex's own library folders, say) while nobody streams from its
+# portal. A running download holds one slot in `occupied` (kind "download", no Tuner) and
+# gives it up the moment any viewer asks for the portal (yieldDownloads).
+downloaderHolder = {"downloader": None}
+DOWNLOAD_STATUS_TEXT = {"queued": "Queued", "downloading": "Downloading", "done": "Downloaded", "failed": "Failed"}
+
+
+DOWNLOAD_FOLDER_SETTINGS = {"movie": "downloads movies folder", "episode": "downloads tv folder"}
+
+
+def downloadsFolder(kind):
+    """The folder Movies ("movie") or Episodes ("episode") are saved in; "" when they're off."""
+    return getSettings().get(DOWNLOAD_FOLDER_SETTINGS[kind], "").strip()
+
+
+def humanSize(size):
+    if not size:
+        return ""
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return "{:.1f} {}".format(size, unit) if unit in ("MB", "GB") else "{} {}".format(int(size), unit)
+        size /= 1024
+
+
+def portalStreaming(portalId):
+    """Whether anyone but a download streams from the portal."""
+    return any(e.get("kind") != "download" for e in occupied.get(portalId, []))
+
+
+def admitDownload(rec, stillQuiet):
+    """A slot on the download's portal, taken under admissionLock: (mac, release) or None."""
+    portalId = rec["portal"]
+    portal = getPortals().get(portalId)
+    if portal is None or portal.get("enabled") != "true":
+        return None
+    with admissionLock:
+        if portalStreaming(portalId) or not stillQuiet():
+            return None
+        macs = freeMacs(portalId)
+        if not macs:
+            return None
+        mac = macs[0]
+        entry = {
+            "mac": mac,
+            "channel id": None,
+            "channel name": rec["title"],
+            "client": "STB-Proxy",
+            "account": rec["account"],
+            "portal name": portal["name"],
+            "start time": datetime.now(timezone.utc).timestamp(),
+            "kind": "download",
+            "kinds": ["download"],
+            "viewers": 0,
+            "accounts": [rec["account"]],
+            "download": rec["id"],
+        }
+        occupied.setdefault(portalId, []).append(entry)
+    logger.info("Occupied Portal({}):MAC({}) to download {}".format(portalId, mac, rec["title"]))
+
+    def release():
+        entries = occupied.get(portalId, [])
+        for i, e in enumerate(entries):
+            if e is entry:
+                del entries[i]
+                logger.info("Unoccupied Portal({}):MAC({})".format(portalId, mac))
+                break
+
+    return mac, release
+
+
+def openDownloadSession(rec, mac):
+    portal = getPortals()[rec["portal"]]
+    return ondemandsession.Session(
+        "download-" + rec["id"], rec["account"], rec["portal"], mac, rec["title"], proxy=portal["proxy"],
+        headers={"User-Agent": stb.deviceHeaders(mac)["User-Agent"]})
+
+
+def downloadsFile():
+    return os.path.join(os.path.dirname(os.path.abspath(configFile)), "downloads.json")
+
+
+def existingDownloader():
+    """The downloader, or None if nothing was ever downloaded (so the list isn't made)."""
+    if downloaderHolder["downloader"] is None and not os.path.exists(downloadsFile()):
+        return None
+    return getDownloader()
+
+
+def getDownloader():
+    with onDemandLock:
+        if downloaderHolder["downloader"] is None:
+            store = downloads.DownloadStore(downloadsFile(), logger)
+            downloaderHolder["downloader"] = downloads.Downloader(
+                store, downloadsFolder, portalStreaming, admitDownload,
+                lambda rec, mac: mintOnDemandLink(rec["portal"], mac, rec["play"]),
+                openDownloadSession, logger)
+        return downloaderHolder["downloader"]
+
+
+def startDownloads():
+    """Run the queue in the background, if there's one (at boot)."""
+    downloader = existingDownloader()
+    if downloader is not None and downloader.list():
+        downloader.start()
+
+
+def yieldDownloads(portalId):
+    """Someone is about to watch from the portal: a download there stops at once."""
+    downloader = downloaderHolder["downloader"]
+    if downloader is not None:
+        downloader.yieldPortal(portalId)
+
+
+def viewerCanDownload(kind=None):
+    """Whether this On Demand viewer may download (a kind, or anything): their switch, and a
+    downloads folder for it."""
+    viewer = viewerOnDemand()
+    kinds = [kind] if kind else list(DOWNLOAD_FOLDER_SETTINGS)
+    return viewer is not None and viewer.account.get("downloads") is True and \
+        any(downloadsFolder(k) for k in kinds)
+
+
+def downloadBrief(portal, key):
+    """An item's download as detail and Episode lists show it, or None."""
+    downloader = existingDownloader()
+    rec = downloader.find(portal, key) if downloader is not None else None
+    if rec is None:
+        return None
+    return {"id": rec["id"], "status": rec["status"], "progress": rec["progress"], "error": rec["error"],
+            "mine": rec["account"] == viewerOnDemand().account["username"]}
+
+
+def downloadView(rec, account):
+    """A download for GET /api/ondemand/downloads."""
+    key = rec["key"]
+    item = dict(key, portal=rec["portal"])
+    return {
+        "id": rec["id"], "kind": rec["kind"], "item": item, "title": rec["title"],
+        "poster": "/api/ondemand/poster/{}/{}".format(rec["portal"], key.get("id") or key["seriesId"]),
+        "status": rec["status"], "progress": rec["progress"], "error": rec["error"],
+        "sizeBytes": rec["size"] if rec["status"] == "done" else rec["bytes"],
+        "mine": rec["account"] == account, "createdAt": rec["created"], "finishedAt": rec["finished"],
+    }
+
+
+def seasonEpisodeLabel(season, episode):
+    return " ".join(part.format(n) for part, n in (("S{}", season.get("number")), ("E{}", episode.get("number")))
+                    if n is not None)
+
+
+def onDemandDownloadables(body):
+    """What a POST /api/ondemand/downloads body asks for, as [(key, kind, title, names, play)]:
+    a Movie ({portal, id}), an Episode ({portal, seriesId, seasonId, episodeId}) or a whole
+    Season ({portal, seriesId, seasonId}). Raises OnDemandRefusal as /play does."""
+    if "id" in body or "episodeId" in body:
+        portal, title, play = onDemandPlayable(body)
+    portal = body.get("portal")
+    if "id" in body:
+        detail = onDemandDetail(portal, str(body["id"]))
+        return [({"id": detail["id"]}, "movie", title, {"name": detail["name"], "year": detail["year"]}, play)]
+    seriesId, seasonId = (onDemandId(body.get(k)) for k in ("seriesId", "seasonId"))
+    if not isinstance(portal, str) or None in (seriesId, seasonId):
+        raise OnDemandRefusal(400, "bad_request", "Send portal and id, or portal, seriesId, seasonId and episodeId")
+    detail = onDemandDetail(portal, seriesId)
+    if detail is None or detail["kind"] != "series":
+        raise OnDemandRefusal(404, "not_found", "That isn't in On Demand")
+    try:
+        episodes = onDemandSeries().episodes(portal, seriesId, seasonId) or []
+    except ondemand.PortalError:
+        raise OnDemandRefusal(502, "portal_error", "The portal didn't send this Season's Episodes, try again")
+    if "episodeId" in body:
+        episodes = [e for e in episodes if e["id"] == onDemandId(body["episodeId"])]
+    if not episodes:
+        raise OnDemandRefusal(404, "not_found", "That Season isn't in On Demand")
+    season = next((s for s in onDemandIndex().seasonList(portal, seriesId) if s["id"] == seasonId), {})
+    wanted = []
+    for episode in episodes:
+        label = seasonEpisodeLabel(season, episode)
+        names = {"series": detail["name"], "year": detail["year"], "season": season.get("number"),
+                 "seasonName": season.get("name"), "episode": episode["number"], "episodeName": episode["name"]}
+        wanted.append(({"seriesId": detail["id"], "seasonId": seasonId, "episodeId": episode["id"]}, "episode",
+                       detail["name"] + (" - " + label if label else ""), names, episode["play"]))
+    return wanted
+
+
+@app.route("/api/ondemand/downloads", methods=["GET"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandDownloads():
+    """Every download of an item this viewer may see, oldest first (the order they run in),
+    each with `mine`; plus whether this viewer may start one."""
+    account = viewerOnDemand().account["username"]
+    items, visible = [], {}
+    downloader = existingDownloader()
+    if downloader is not None:
+        for rec in downloader.list():
+            itemId = rec["key"].get("id") or rec["key"]["seriesId"]
+            if (rec["portal"], itemId) not in visible:
+                visible[(rec["portal"], itemId)] = onDemandDetail(rec["portal"], itemId) is not None
+            if visible[(rec["portal"], itemId)]:
+                items.append(downloadView(rec, account))
+    return flask.jsonify({"canDownload": viewerCanDownload(), "items": items})
+
+
+@app.route("/api/ondemand/downloads", methods=["POST"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandDownload():
+    """Download a Movie, an Episode or a whole Season into the downloads folder. Asking for
+    something already queued or downloaded gives that download; a failed one is tried again."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict):
+        return onDemandError(400, "bad_request", "Send a JSON object")
+    account = viewerOnDemand().account
+    if account.get("downloads") is not True:
+        return onDemandError(403, "downloads_off", "Downloads aren't switched on for this login")
+    try:
+        wanted = onDemandDownloadables(body)
+    except OnDemandRefusal as refusal:
+        return onDemandError(refusal.status, refusal.code, refusal.text)
+    if not all(downloadsFolder(kind) for _, kind, _, _, _ in wanted):
+        return onDemandError(503, "downloads_unavailable", "Downloads aren't set up on this server")
+    downloader = getDownloader()
+    started = []
+    for key, kind, title, names, play in wanted:
+        rec, queued = downloader.request(account["username"], body["portal"], key, kind, title, names, play)
+        if queued:
+            logger.info("Account({}) queued a download of {}".format(account["username"], title))
+        started.append(downloadView(rec, account["username"]))
+    downloader.start()
+    return flask.jsonify({"items": started}), 202
+
+
+@app.route("/api/ondemand/downloads/<id>", methods=["DELETE"])
+@feedAuthorise
+@onDemandAuthorise
+def apiOnDemandDownloadCancel(id):
+    """Cancel one of this viewer's own downloads that hasn't finished."""
+    account = viewerOnDemand().account["username"]
+    downloader = existingDownloader()
+    rec = downloader.get(id) if downloader is not None else None
+    if rec is None or rec["account"] != account:
+        return onDemandError(404, "not_found", "No such download")
+    if rec["status"] == "done":
+        return onDemandError(409, "downloaded", "That's downloaded already; the operator can delete it")
+    downloader.cancel(id)
+    return "", 204
+
+
+@app.route("/ondemand/downloads/<action>", methods=["POST"])
+@authorise
+def onDemandDownloadAction(action):
+    """The operator's Cancel, Delete (a finished file too) and Retry on the On Demand page."""
+    id = request.form.get("id", "")
+    downloader = getDownloader()
+    rec = downloader.get(id)
+    if rec is None or action not in ("delete", "retry"):
+        flash("No such download", "danger")
+        return redirect("/ondemand", code=302)
+    if action == "retry":
+        downloader.retry(id)
+        downloader.start()
+        flash("{} will be tried again".format(rec["title"]), "success")
+    else:
+        downloader.delete(id)
+        flash("{} {}".format(rec["title"], "deleted" if rec["status"] == "done" else "cancelled"), "success")
+    return redirect("/ondemand", code=302)
+
+
 lastPlexSync = {"time": None, "message": "Not synced since STB-Proxy started", "ok": None}
 lastJellyfinSync = {"time": None, "message": "Not refreshed since STB-Proxy started", "ok": None}
 syncRetry = {"at": None}
@@ -4592,6 +4895,49 @@ def lineup():
     )
 
 
+# The Companion app's updates: android/'s assembleCompanion makes STB-Proxy-Companion-<version>.apk,
+# copied into the "companion" folder beside config.json. The newest is offered to the app's Update
+# button (and the web viewer's download link). Both routes are public, like the old static APK.
+COMPANION_APK = re.compile(r"^STB-Proxy-Companion-(\d+(?:\.\d+)*)\.apk$")
+
+
+def companionFolder():
+    return os.path.join(os.path.dirname(os.path.abspath(configFile)), "companion")
+
+
+def newestCompanion():
+    """(path, versionName) of the newest Companion APK, or None."""
+    try:
+        names = os.listdir(companionFolder())
+    except OSError:
+        return None
+    found = [(tuple(int(p) for p in m.group(1).split(".")), m.group(1), name)
+             for name in names for m in [COMPANION_APK.match(name)] if m]
+    if not found:
+        return None
+    _, versionName, name = max(found)
+    return os.path.join(companionFolder(), name), versionName
+
+
+@app.route("/api/companion", methods=["GET"])
+def apiCompanion():
+    """The newest Companion app the server has, for the app's Update button."""
+    newest = newestCompanion()
+    if newest is None:
+        return flask.jsonify({"code": "not_found", "message": "This server has no Companion app to offer"}), 404
+    path, versionName = newest
+    return flask.jsonify({"versionName": versionName, "url": "/companion.apk", "sizeBytes": os.path.getsize(path)})
+
+
+@app.route("/companion.apk", methods=["GET"])
+def companionApk():
+    newest = newestCompanion()
+    if newest is None:
+        return flask.jsonify({"code": "not_found", "message": "This server has no Companion app to offer"}), 404
+    return flask.send_file(newest[0], mimetype="application/vnd.android.package-archive", as_attachment=True,
+                           download_name="STB-Proxy-Companion.apk", conditional=True)
+
+
 if __name__ == "__main__":
     logger.info("STB-Proxy {} starting".format(version.VERSION))
     config = loadConfig()
@@ -4599,6 +4945,7 @@ if __name__ == "__main__":
     # they read from its own /play.
     threading.Timer(3, getRecorder().resume).start()
     startOnDemand()  # carry on indexing On Demand if an Account has it on
+    startDownloads()  # carry on the download queue, once the portals are quiet
     if any(looksUpLogos(p) for p in config["portals"].values()):
         currentLogoIndex()  # start fetching channel logos in the background
     if config.get("xmltv ids") != "short":

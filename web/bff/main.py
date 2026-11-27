@@ -512,6 +512,21 @@ async def ondemand_session_end(sid: str, request: Request):
     return await _ondemand_json(request, "DELETE", _ondemand_path("session", sid))
 
 
+@app.get("/api/ondemand/downloads")
+async def ondemand_downloads(request: Request):
+    return await _ondemand_json(request, "GET", _ondemand_path("downloads"))
+
+
+@app.post("/api/ondemand/downloads")
+async def ondemand_download(request: Request):
+    return await _ondemand_json(request, "POST", _ondemand_path("downloads"))
+
+
+@app.delete("/api/ondemand/downloads/{download_id}")
+async def ondemand_download_cancel(download_id: str, request: Request):
+    return await _ondemand_json(request, "DELETE", _ondemand_path("downloads", download_id))
+
+
 @app.get("/stream/{portal}/{channel_id}")
 async def stream(portal: str, channel_id: str, request: Request):
     session = _peek_session(request)
@@ -592,16 +607,37 @@ async def hls_stop(portal: str, channel_id: str, variant: str, session: str, req
     return {"ok": True}
 
 
+@app.get("/api/companion")
+async def companion_release(request: Request):
+    """The newest Companion app STB-Proxy offers ({versionName, url, sizeBytes}), for the
+    app's Update button. Public, like the APK itself."""
+    client: httpx.AsyncClient = request.app.state.client
+    try:
+        upstream = await client.get("/api/companion")
+    except httpx.HTTPError:
+        raise proxy_unreachable()
+    if upstream.status_code == 404:
+        raise not_found("This server has no Companion app to offer.")
+    if upstream.status_code != 200:
+        raise proxy_error()
+    body = upstream.json()
+    return JSONResponse(
+        {"versionName": body.get("versionName"), "url": "/companion.apk", "sizeBytes": body.get("sizeBytes")},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
 @app.get("/companion.apk")
 async def companion_apk(request: Request):
-    """The Android companion app, proxied from STB-Proxy's /static so the browser can grab it.
+    """The Android companion app, proxied from STB-Proxy's /companion.apk so the browser
+    (and the app's Update button) can grab it.
 
-    STB-Proxy itself is not reachable from the browser, so this streams the APK the
-    operator dropped in its static folder, named for a clean download. Public (no
-    session): the login page offers it, and the app needs credentials anyway.
+    STB-Proxy itself is not reachable from the browser, so this streams the newest APK in
+    its companion folder, named for a clean download. Public (no session): the login page
+    offers it, and the app needs credentials anyway.
     """
     client: httpx.AsyncClient = request.app.state.client
-    upstream_request = client.build_request("GET", "/static/STB-Proxy-Companion.apk")
+    upstream_request = client.build_request("GET", "/companion.apk")
     try:
         upstream = await client.send(upstream_request, stream=True)
     except httpx.HTTPError:

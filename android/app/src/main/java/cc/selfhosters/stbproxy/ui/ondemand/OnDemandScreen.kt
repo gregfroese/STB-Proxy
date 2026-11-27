@@ -94,6 +94,7 @@ fun OnDemandScreen(
     if (isTvDevice()) {
         val play by rememberUpdatedState(onPlay)
         LaunchedEffect(viewModel) { viewModel.detail.playStarts.collect { play(it) } }
+        FollowDownloads(viewModel.detail)
         TvOnDemand(viewModel)
     } else {
         PhoneOnDemand(viewModel, onOpenCategory, onOpenItem)
@@ -285,6 +286,9 @@ private fun TvOnDemand(viewModel: OnDemandViewModel) {
                             onToggleWatched = viewModel.detail::toggleWatched,
                             onRetry = viewModel.detail::retry,
                             onSeason = viewModel.detail::selectSeason,
+                            onDownload = viewModel.detail::downloadMovie,
+                            onDownloadSeason = viewModel.detail::downloadSeason,
+                            onCancelDownload = viewModel.detail::cancelMovieDownload,
                         )
                     },
                 )

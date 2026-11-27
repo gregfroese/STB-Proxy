@@ -2,6 +2,7 @@ package cc.selfhosters.stbproxy.ui.ondemand
 
 import cc.selfhosters.stbproxy.data.OnDemandChanges
 import cc.selfhosters.stbproxy.data.model.OnDemandDetail
+import cc.selfhosters.stbproxy.data.model.OnDemandDownload
 import cc.selfhosters.stbproxy.data.model.OnDemandEpisode
 import cc.selfhosters.stbproxy.data.model.OnDemandItem
 import cc.selfhosters.stbproxy.data.model.OnDemandKey
@@ -46,6 +47,10 @@ data class TitleDetailState(
     val busy: Boolean = false,
     /** The inline error under Play (with Try again). */
     val actionError: String? = null,
+    /** A download request or cancel is in flight. */
+    val downloadBusy: Boolean = false,
+    /** The server's text after a refused download request or cancel. */
+    val downloadError: String? = null,
 ) {
     val key: String? get() = item?.let(::itemKey)
 
@@ -67,7 +72,8 @@ data class TitleDetailState(
 /**
  * Drives one title's detail (ticket 14): loading it (after a settle on TV), its
  * Seasons and Episodes, Play (which mints the session so 503/404/502 show inline
- * under the button), Mark watched and Try again. Shared by the TV preview pane
+ * under the button), Mark watched and Try again, and the server downloads of a Movie
+ * or a whole Season (with [watchDownloads] following them). Shared by the TV preview pane
  * ([OnDemandViewModel]) and the phone detail page ([OnDemandDetailViewModel]).
  *
  * Calls are expected on the main thread.
@@ -189,6 +195,106 @@ class TitleDetailController(
                 }
             }
         }
+    }
+
+    /** Asks the server to download the shown Movie (again, after a failure). */
+    fun downloadMovie() {
+        val state = _state.value
+        val item = state.item ?: return
+        if (state.movieDownload?.canStart != true) return
+        requestDownload(item) { api.requestOnDemandDownload(OnDemandKey.Movie(item.portal, item.id)) }
+    }
+
+    /** Asks the server to download every Episode of the shown Season. */
+    fun downloadSeason() {
+        val state = _state.value
+        val item = state.item ?: return
+        val seasonId = state.seasonId ?: return
+        if (state.seasonDownload == null) return
+        requestDownload(item) { api.requestOnDemandSeasonDownload(item.portal, item.id, seasonId) }
+    }
+
+    /** Cancels the viewer's own unfinished download of the shown Movie. */
+    fun cancelMovieDownload() {
+        val state = _state.value
+        val item = state.item ?: return
+        val brief = state.detail?.download ?: return
+        if (!state.canCancelMovieDownload || state.downloadBusy) return
+        downloadCall(item) {
+            api.cancelOnDemandDownload(brief.id)
+            _state.update {
+                if (it.key != itemKey(item)) it
+                else it.copy(detail = it.detail?.let { d -> if (d.download?.id == brief.id) d.copy(download = null) else d })
+                    .also(::cacheDetail)
+            }
+        }
+    }
+
+    /**
+     * While the screen shows: every [intervalMs], if a download the detail shows is queued
+     * or running, re-reads the downloads list. Runs until cancelled.
+     */
+    suspend fun watchDownloads(intervalMs: Long = DOWNLOAD_POLL_MS) {
+        while (true) {
+            delay(intervalMs)
+            if (_state.value.hasActiveDownload) refreshDownloads()
+        }
+    }
+
+    /** Re-reads the downloads list and puts the shown title's statuses in step with it. */
+    suspend fun refreshDownloads() {
+        val key = _state.value.key ?: return
+        try {
+            val downloads = api.fetchOnDemandDownloads()
+            val briefs = briefsByKey(downloads.items)
+            _state.update {
+                if (it.key != key) it
+                else it.withDownloads(briefs, complete = true)
+                    .let { s -> s.copy(detail = s.detail?.copy(canDownload = downloads.canDownload)) }
+                    .also(::cacheDetail)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // A missed look is fine: the next one (or a refetch) catches up.
+            if (e is ApiException && e.code == 401) onUnauthorized()
+        }
+    }
+
+    private fun requestDownload(item: OnDemandItem, request: suspend () -> List<OnDemandDownload>) {
+        if (_state.value.downloadBusy) return
+        downloadCall(item) {
+            val briefs = briefsByKey(request())
+            _state.update {
+                if (it.key != itemKey(item)) it else it.withDownloads(briefs, complete = false).also(::cacheDetail)
+            }
+        }
+    }
+
+    /** Runs a download request or cancel for [item], with its busy flag and inline error. */
+    private fun downloadCall(item: OnDemandItem, call: suspend () -> Unit) {
+        val key = itemKey(item)
+        _state.update { it.copy(downloadBusy = true, downloadError = null) }
+        scope.launch {
+            try {
+                call()
+                _state.update { if (it.key != key) it else it.copy(downloadBusy = false) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (e is ApiException && e.code == 401) onUnauthorized()
+                _state.update {
+                    if (it.key != key) it else it.copy(downloadBusy = false, downloadError = downloadErrorText(e))
+                }
+            }
+        }
+    }
+
+    /** Keeps the cached detail's download in step (the TV pane shows the cache on return). */
+    private fun cacheDetail(state: TitleDetailState) {
+        val detail = state.detail ?: return
+        val key = "${detail.portal}/${detail.id}"
+        if (key in details) details[key] = detail
     }
 
     /** Try again: the failed Play / Mark watched, else the detail or the Season. */
