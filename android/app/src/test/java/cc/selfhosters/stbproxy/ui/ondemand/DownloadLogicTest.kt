@@ -100,9 +100,21 @@ class DownloadLogicTest {
 
     @Test
     fun `a Series offers its shown Season's download`() {
-        assertEquals("Download Season 2", state(series).seasonDownload)
+        assertEquals(DownloadButton("Download Season 2", true), state(series).seasonDownload)
         assertNull(state(series.copy(canDownload = false)).seasonDownload)
         assertNull(state(movie).seasonDownload)
+    }
+
+    @Test
+    fun `a Season's button says when every Episode is asked for`() {
+        val season = series.seasons.last().id
+        fun with(vararg statuses: String?) = state(series, mapOf(season to statuses.mapIndexed { i, s ->
+            OnDemandEpisode("e$i", season, number = i + 1, download = s?.let { brief(it) })
+        })).seasonDownload
+        assertEquals(DownloadButton("Download Season 2", true), with("queued", null))
+        assertEquals(DownloadButton("Download Season 2", true), with("done", "failed"))
+        assertEquals(DownloadButton("Season queued (1 of 3 downloaded)", false), with("done", "downloading", "queued"))
+        assertEquals(DownloadButton(SEASON_DOWNLOADED, false), with("done", "done"))
     }
 
     @Test

@@ -77,13 +77,27 @@ val TitleDetailState.movieDownload: DownloadButton?
 val TitleDetailState.canCancelMovieDownload: Boolean
     get() = detail?.takeIf { it.canDownload && !it.isSeries }?.download.let(::canCancelDownload)
 
-/** A Series' "Download Season N" for the shown Season; null unless allowed. */
-val TitleDetailState.seasonDownload: String?
+/**
+ * A Series' button for the shown Season; null unless allowed. "Download Season N" while any of
+ * its loaded Episodes was never asked for (or failed); once every one is, it says so and can't
+ * be pressed: "Season queued (2 of 5 downloaded)", then "Season downloaded".
+ */
+val TitleDetailState.seasonDownload: DownloadButton?
     get() {
         val detail = detail?.takeIf { it.canDownload && it.isSeries } ?: return null
         val season = season ?: return null
-        return seasonDownloadLabel(season, detail.seasons.indexOf(season))
+        val briefs = episodes[season.id]?.map { it.download }
+        if (!briefs.isNullOrEmpty() && briefs.all { it != null && it.status != OnDemandDownloadBrief.FAILED }) {
+            val done = briefs.count { it?.status == OnDemandDownloadBrief.DONE }
+            return DownloadButton(
+                if (done == briefs.size) SEASON_DOWNLOADED else "Season queued ($done of ${briefs.size} downloaded)",
+                canStart = false,
+            )
+        }
+        return DownloadButton(seasonDownloadLabel(season, detail.seasons.indexOf(season)), canStart = true)
     }
+
+const val SEASON_DOWNLOADED = "Season downloaded"
 
 /** A download the detail shows is queued or running (so it is polled). */
 val TitleDetailState.hasActiveDownload: Boolean

@@ -2,6 +2,13 @@
 
 STB-Proxy is a fork of [Chris230291/STB-Proxy](https://github.com/Chris230291/STB-Proxy), which had no version numbers. Version 1.0.0 is everything added since the fork. From here on, every change bumps the version: the minor number for new features, the patch number for fixes.
 
+## [1.21.2] - 2026-11-27
+
+### Android app
+
+- **Download Season shows that it worked**: the Season's button kept saying "Download Season N" after you pressed it, so it looked as if nothing was queued (the Episodes were). Once every Episode of the Season is asked for, it now says "Season queued (2 of 5 downloaded)", then "Season downloaded", and can't be pressed again; it offers the download again if one failed.
+- The app is now version 1.13.1, the first that **Settings → Update** can bring to a phone or TV on 1.13.0.
+
 ## [1.21.1] - 2026-11-27
 
 ### Server and Operator UI
