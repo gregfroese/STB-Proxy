@@ -76,6 +76,78 @@
     </div>
     {% endif %}
 
+    <h6 class="mt-4">Downloads</h6>
+    {% if not downloadsMoviesFolder and not downloadsTvFolder %}
+    <p class="text-body-secondary">Downloads are off: choose an On Demand Movies or TV Shows folder in Settings, then
+        switch Downloads on for an Account.</p>
+    {% else %}
+    <p class="text-body-secondary">Movies are saved in
+        {% if downloadsMoviesFolder %}<code>{{ downloadsMoviesFolder }}</code>{% else %}no folder (off){% endif %},
+        Episodes in {% if downloadsTvFolder %}<code>{{ downloadsTvFolder }}</code>{% else %}no folder (off){% endif %}.
+        Downloads run one at a time per portal,
+        oldest first, and only once nobody has watched from that portal for a few minutes; one that is cut off goes on
+        from where it was.</p>
+    {% endif %}
+    {% if downloads %}
+    <table class="table table-striped align-middle" id="downloads">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Account</th>
+                <th>Portal</th>
+                <th>Status</th>
+                <th>Size</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in downloads %}
+            <tr data-download="{{ d.id }}">
+                <td>{{ d.title }}{% if d.file %}<div class="small text-body-secondary text-break">{{ d.file }}</div>{% endif %}</td>
+                <td>{{ d.account }}</td>
+                <td>{{ d.portalName }}</td>
+                <td>
+                    {% if d.status == "done" %}
+                    <span class="text-success"><i class="bi bi-check-circle-fill"></i> Downloaded</span>
+                    {% elif d.status == "downloading" %}
+                    <span class="text-info"><i class="bi bi-arrow-down-circle"></i> Downloading {{ d.progress }}%</span>
+                    {% elif d.status == "failed" %}
+                    <span class="text-danger" title="{{ d.error }}"><i class="bi bi-x-octagon-fill"></i> Failed</span>
+                    <div class="small text-body-secondary">{{ d.error }}</div>
+                    {% elif d.progress %}
+                    <span class="text-warning"><i class="bi bi-pause-circle"></i> Paused at {{ d.progress }}%</span>
+                    {% else %}
+                    <span class="text-body-secondary"><i class="bi bi-hourglass-split"></i> Queued</span>
+                    {% endif %}
+                </td>
+                <td class="text-nowrap">{{ d.sizeText }}</td>
+                <td class="text-nowrap text-end">
+                    {% if d.status == "failed" %}
+                    <form action="/ondemand/downloads/retry" method="post" class="d-inline">
+                        <input type="hidden" name="id" value="{{ d.id }}">
+                        <button class="btn btn-sm btn-outline-light" title="Try again"><i class="bi bi-arrow-clockwise"></i></button>
+                    </form>
+                    {% endif %}
+                    <form action="/ondemand/downloads/delete" method="post" class="d-inline"
+                        {% if d.status == "done" %}data-confirm="Delete {{ d.title }} from the downloads folder?"
+                        onsubmit="return confirm(this.dataset.confirm)"{% endif %}>
+                        <input type="hidden" name="id" value="{{ d.id }}">
+                        <button class="btn btn-sm btn-outline-danger"
+                            title="{{ 'Delete the file' if d.status == 'done' else 'Cancel this download' }}">
+                            <i class="bi {{ 'bi-trash' if d.status == 'done' else 'bi-x-lg' }}"></i></button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <i class="bi bi-download"></i>
+        <span>Nothing downloaded yet.</span>
+    </div>
+    {% endif %}
+
     <h6 class="mt-4">Categories</h6>
     {% if categories or stale %}
     <table class="table table-striped align-middle">

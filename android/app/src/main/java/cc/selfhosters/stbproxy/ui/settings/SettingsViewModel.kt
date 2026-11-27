@@ -5,16 +5,20 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import cc.selfhosters.stbproxy.BuildConfig
 import cc.selfhosters.stbproxy.data.AccountStore
 import cc.selfhosters.stbproxy.data.ConnectOutcome
 import cc.selfhosters.stbproxy.data.GroupMode
 import cc.selfhosters.stbproxy.data.SessionController
 import cc.selfhosters.stbproxy.data.ViewerPreferences
+import cc.selfhosters.stbproxy.data.network.ApiClient
+import cc.selfhosters.stbproxy.data.update.ApkInstaller
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.io.File
 
 /** State of the Settings screen: the URL, the accounts and an add/re-auth form (spec 2.4). */
 data class SettingsUiState(
@@ -31,13 +35,28 @@ data class SettingsUiState(
 
 /**
  * Edits the proxy URL and the account list. Adding an account re-runs the same
- * *Connect* probe as the login form (via [SessionController.connect]).
+ * *Connect* probe as the login form (via [SessionController.connect]). The App
+ * section's update check and install live in [AppUpdateController].
  */
 class SettingsViewModel(
     private val session: SessionController,
     private val store: AccountStore,
     private val viewerPreferences: ViewerPreferences,
+    api: ApiClient,
+    updatesDir: File,
+    installer: ApkInstaller,
 ) : ViewModel() {
+
+    private val updates = AppUpdateController(
+        api = api,
+        updatesDir = updatesDir,
+        installer = installer,
+        scope = viewModelScope,
+        currentVersion = BuildConfig.VERSION_NAME,
+    )
+
+    /** The App section: checking, up to date, an update to offer, or its download. */
+    val update: StateFlow<AppUpdateState> = updates.state
 
     private val _state = MutableStateFlow(
         SettingsUiState(
@@ -144,13 +163,22 @@ class SettingsViewModel(
 
     fun signOut() = session.signOut()
 
+    /** Asks the server for a newer Companion (the screen opening, or Check again). */
+    fun checkForUpdate() = updates.check()
+
+    /** Downloads and installs the offered update. */
+    fun installUpdate() = updates.update()
+
     companion object {
         fun factory(
             session: SessionController,
             store: AccountStore,
             viewerPreferences: ViewerPreferences,
+            api: ApiClient,
+            updatesDir: File,
+            installer: ApkInstaller,
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { SettingsViewModel(session, store, viewerPreferences) }
+            initializer { SettingsViewModel(session, store, viewerPreferences, api, updatesDir, installer) }
         }
     }
 }

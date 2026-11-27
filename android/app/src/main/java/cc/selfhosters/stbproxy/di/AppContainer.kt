@@ -19,11 +19,14 @@ import cc.selfhosters.stbproxy.data.network.ApiClient
 import cc.selfhosters.stbproxy.data.network.BasicAuthInterceptor
 import cc.selfhosters.stbproxy.data.network.ConnectionProbe
 import cc.selfhosters.stbproxy.data.network.sameOriginAs
+import cc.selfhosters.stbproxy.data.update.AndroidApkInstaller
+import cc.selfhosters.stbproxy.data.update.ApkInstaller
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
@@ -102,6 +105,15 @@ class AppContainer(
             ),
         )
         .build()
+
+    /**
+     * Where Settings' Update downloads the server's Companion APK; shared with the
+     * system installer through the `.updates` FileProvider (`res/xml/update_paths.xml`).
+     */
+    val updatesDir: File = File(context.cacheDir, "updates")
+
+    /** Hands a downloaded APK to the system installer. */
+    val apkInstaller: ApkInstaller = AndroidApkInstaller(context)
 
     /** Best-effort now/next source for the picker teaser and the player (spec 2.8). */
     val epgRepository: EpgRepository = EpgRepository(

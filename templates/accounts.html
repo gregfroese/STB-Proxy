@@ -87,6 +87,7 @@
                     {% for switch, label, on, locked in [
                         ("on demand", "On Demand", account["on demand"], false),
                         ("adult on demand", "Adult", account["adult on demand"], not account["on demand"]),
+                        ("downloads", "Downloads", account["downloads"], not account["on demand"]),
                     ] %}
                     <form action="/accounts/ondemand" method="post">
                         <input type="hidden" name="username" value="{{ account.username }}">

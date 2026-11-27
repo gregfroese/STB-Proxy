@@ -3,16 +3,32 @@
   // Play under the facts (Resume / Start over / Play again, Mark watched), then the
   // description, genres and credits. A Series adds Season chips and its Episode list.
   // Play opens the session here, so its errors show inline, then hands it to the player.
+  // With Downloads on for the login, Download asks STB-Proxy to save the Movie, an Episode
+  // or a whole Season in its downloads folder (nothing is kept in the browser).
   import { onDestroy, tick, untrack } from "svelte";
   import { ApiError } from "../lib/api";
   import {
+    cancelDownload,
     endSession,
     loadDetail,
+    loadDownloads,
     loadSeason,
     markWatched,
     playHandoff,
+    requestDownload,
     startSession,
+    type DownloadRequest,
   } from "../lib/onDemand";
+  import {
+    DOWNLOAD_POLL_MS,
+    briefsByItem,
+    canCancel,
+    downloadButton,
+    downloadErrorText,
+    episodeDownloadText,
+    isActive,
+    itemKey,
+  } from "../lib/onDemandDownloadLogic";
   import {
     credits,
     episodeRow,
@@ -32,7 +48,12 @@
   } from "../lib/onDemandDetailLogic";
   import { isOnDemandOff, titleBack } from "../lib/onDemandLogic";
   import { navigate, route } from "../lib/router";
-  import type { OnDemandDetail, OnDemandEpisode } from "../lib/types";
+  import type {
+    OnDemandDetail,
+    OnDemandDownloadBrief,
+    OnDemandEpisode,
+    OnDemandKey,
+  } from "../lib/types";
 
   const tv = document.documentElement.classList.contains("tv");
 
@@ -56,6 +77,12 @@
   let marking = $state(false);
   let markError = $state<string | null>(null);
 
+  /** Downloads learnt since the page loaded, by item key (null: cancelled), over what the
+   * detail and Episode lists said. */
+  let briefs = $state.raw<Map<string, OnDemandDownloadBrief | null>>(new Map());
+  let asking = $state(false);
+  let downloadError = $state<string | null>(null);
+
   let controller: AbortController | null = null;
 
   async function load(p: string, i: string) {
@@ -70,6 +97,8 @@
     seasonError = null;
     playError = null;
     markError = null;
+    briefs = new Map();
+    downloadError = null;
     try {
       const loaded = await loadDetail(p, i, mine.signal);
       if (mine.signal.aborted) return;
@@ -124,6 +153,56 @@
   });
 
   onDestroy(() => controller?.abort());
+
+  function briefFor(key: OnDemandKey, fromList: OnDemandDownloadBrief | null | undefined) {
+    const k = itemKey(key);
+    return briefs.has(k) ? briefs.get(k) : (fromList ?? null);
+  }
+
+  function learn(entries: [string, OnDemandDownloadBrief | null][]) {
+    const next = new Map(briefs);
+    for (const [k, brief] of entries) next.set(k, brief);
+    briefs = next;
+  }
+
+  async function askDownload(what: DownloadRequest) {
+    if (asking) return;
+    asking = true;
+    downloadError = null;
+    try {
+      const items = await requestDownload(what);
+      learn([...briefsByItem(items)]);
+    } catch (error) {
+      if (!isOnDemandOff(error)) downloadError = downloadErrorText(error);
+    } finally {
+      asking = false;
+    }
+  }
+
+  async function cancel(key: OnDemandKey, brief: OnDemandDownloadBrief) {
+    downloadError = null;
+    try {
+      await cancelDownload(brief.id);
+      learn([[itemKey(key), null]]);
+    } catch (error) {
+      if (!isOnDemandOff(error)) downloadError = downloadErrorText(error);
+    }
+  }
+
+  // While a download on show is queued or running, look again now and then.
+  $effect(() => {
+    const keys = shownKeys;
+    if (!keys.some(({ brief }) => isActive(brief))) return;
+    const timer = setInterval(async () => {
+      try {
+        const known = briefsByItem((await loadDownloads(controller?.signal)).items);
+        learn(keys.map(({ key }) => [itemKey(key), known.get(itemKey(key)) ?? null]));
+      } catch {
+        /* try again next time */
+      }
+    }, DOWNLOAD_POLL_MS);
+    return () => clearInterval(timer);
+  });
 
   function back() {
     if ($route.query.has("from") && history.length > 1) history.back();
@@ -193,6 +272,33 @@
           row: episodeRow(detail!, episode, detail!.upNext),
         }))
       : [],
+  );
+  const movieKey = $derived(
+    detail?.kind === "movie" ? { portal: detail.portal, id: detail.id } : null,
+  );
+  const movieDownload = $derived(movieKey ? briefFor(movieKey, detail?.download) : null);
+  const episodeKey = (episode: OnDemandEpisode): OnDemandKey => ({
+    portal: detail!.portal,
+    seriesId: detail!.id,
+    seasonId: episode.seasonId,
+    episodeId: episode.id,
+  });
+  const episodeDownloads = $derived(
+    detail && shownEpisodes
+      ? new Map(shownEpisodes.map((e) => [e.id, briefFor(episodeKey(e), e.download)]))
+      : new Map<string, OnDemandDownloadBrief | null | undefined>(),
+  );
+  /** What's on show that may have a download, for polling. */
+  const shownKeys = $derived(
+    movieKey
+      ? [{ key: movieKey as OnDemandKey, brief: movieDownload }]
+      : (shownEpisodes ?? []).map((e) => ({
+          key: episodeKey(e),
+          brief: episodeDownloads.get(e.id),
+        })),
+  );
+  const seasonDownloadable = $derived(
+    (shownEpisodes ?? []).some((e) => downloadButton(episodeDownloads.get(e.id)).canStart),
   );
   const factParts = $derived(detail ? facts(detail) : []);
   const genres = $derived(genreTags(detail?.genres));
@@ -301,6 +407,22 @@
               >
                 {movie.mark.label}
               </button>
+              {#if detail.canDownload && movieKey}
+                {@const button = downloadButton(movieDownload)}
+                <button
+                  class="btn {movieDownload?.status === 'done' ? 'watched' : ''}"
+                  disabled={!button.canStart || asking}
+                  title={button.hint ?? undefined}
+                  onclick={() => void askDownload(movieKey!)}
+                >
+                  {button.label}
+                </button>
+                {#if movieDownload && canCancel(movieDownload)}
+                  <button class="btn" onclick={() => void cancel(movieKey!, movieDownload!)}>
+                    Cancel download
+                  </button>
+                {/if}
+              {/if}
             {:else if series}
               <button
                 class="btn primary"
@@ -326,6 +448,7 @@
             </div>
           {/if}
           {#if markError}<div class="inlineerr">{markError}</div>{/if}
+          {#if downloadError}<div class="inlineerr">{downloadError}</div>{/if}
 
           {#if detail.description}<p class="desc">{detail.description}</p>{/if}
           {#if genres.length > 0}
@@ -356,6 +479,23 @@
                 </button>
               {/each}
             </div>
+            {#if detail.canDownload && seasonId && shownEpisodes && shownEpisodes.length > 0}
+              <div class="actions seasondl">
+                <button
+                  class="btn"
+                  disabled={!seasonDownloadable || asking}
+                  title="Save every Episode of this Season in STB-Proxy's downloads folder"
+                  onclick={() =>
+                    void askDownload({
+                      portal: detail!.portal,
+                      seriesId: detail!.id,
+                      seasonId: seasonId!,
+                    })}
+                >
+                  {seasonDownloadable ? "Download this Season" : "Season downloaded or queued"}
+                </button>
+              </div>
+            {/if}
             {#if seasonError}
               <div class="error-banner noticerow">
                 <span>{seasonError}</span>
@@ -370,20 +510,46 @@
             {:else}
               <div class="eplist">
                 {#each rows as { episode, row } (episode.id)}
-                  <button
-                    class="ep {row.upNext ? 'upnext' : ''}"
-                    disabled={playing}
-                    onclick={() => playEpisode(episode, row.start)}
-                  >
-                    <span class="n">{row.number}</span>
-                    <span class="nm">{row.name}</span>
-                    {#if row.upNext}<span class="badge">Up next</span>{/if}
-                    {#if row.status}<span class="st {row.watched ? 'w' : ''}">{row.status}</span
-                      >{/if}
-                    {#if row.progress != null}
-                      <span class="prog" style="width: {row.progress * 100}%"></span>
+                  {@const dlText = episodeDownloadText(episodeDownloads.get(episode.id))}
+                  {@const dl = episodeDownloads.get(episode.id)}
+                  <div class="eprow">
+                    <button
+                      class="ep {row.upNext ? 'upnext' : ''}"
+                      disabled={playing}
+                      onclick={() => playEpisode(episode, row.start)}
+                    >
+                      <span class="n">{row.number}</span>
+                      <span class="nm">{row.name}</span>
+                      {#if row.upNext}<span class="badge">Up next</span>{/if}
+                      {#if row.status}<span class="st {row.watched ? 'w' : ''}">{row.status}</span
+                        >{/if}
+                      {#if dlText}<span
+                          class="st dl {dl?.status === 'done' ? 'w' : ''}"
+                          title={dl?.error ?? undefined}>{dlText}</span
+                        >{/if}
+                      {#if row.progress != null}
+                        <span class="prog" style="width: {row.progress * 100}%"></span>
+                      {/if}
+                    </button>
+                    {#if detail.canDownload && downloadButton(dl).canStart}
+                      <button
+                        class="btn epdl"
+                        disabled={asking}
+                        title="Download this Episode"
+                        aria-label="Download {row.name}"
+                        onclick={() => void askDownload(episodeKey(episode))}>↓</button
+                      >
+                    {:else if dl && canCancel(dl)}
+                      <button
+                        class="btn epdl"
+                        title="Cancel this download"
+                        aria-label="Cancel the download of {row.name}"
+                        onclick={() => void cancel(episodeKey(episode), dl)}>×</button
+                      >
+                    {:else if detail.canDownload}
+                      <span class="epdl" aria-hidden="true"></span>
                     {/if}
-                  </button>
+                  </div>
                 {/each}
               </div>
             {/if}

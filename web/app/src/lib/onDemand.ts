@@ -11,6 +11,7 @@ import { navigate } from "./router";
 import type {
   OnDemandCategories,
   OnDemandDetail,
+  OnDemandDownload,
   OnDemandEpisode,
   OnDemandItem,
   OnDemandKey,
@@ -161,3 +162,25 @@ export interface PlayHandoff {
 }
 
 export const playHandoff = writable<PlayHandoff | null>(null);
+
+/** A Movie, an Episode, or a whole Season ({portal, seriesId, seasonId}) to download. */
+export type DownloadRequest = OnDemandKey | { portal: string; seriesId: string; seasonId: string };
+
+/** POST /downloads: queue it on the server (idempotent; a failed one is tried again). */
+export async function requestDownload(what: DownloadRequest): Promise<OnDemandDownload[]> {
+  return (
+    await onDemandMutate<{ items: OnDemandDownload[] }>("/api/ondemand/downloads", what, "POST")
+  ).items;
+}
+
+/** Every download of a title this login may see, oldest first. */
+export function loadDownloads(
+  signal?: AbortSignal,
+): Promise<{ canDownload: boolean; items: OnDemandDownload[] }> {
+  return onDemandRead("/api/ondemand/downloads", signal);
+}
+
+/** Cancel one of this login's unfinished downloads. */
+export function cancelDownload(id: string): Promise<void> {
+  return onDemandMutate<void>(`/api/ondemand/downloads/${part(id)}`, undefined, "DELETE");
+}

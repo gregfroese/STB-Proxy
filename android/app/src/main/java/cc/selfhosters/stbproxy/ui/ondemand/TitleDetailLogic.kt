@@ -115,7 +115,7 @@ fun openingSeason(detail: OnDemandDetail): String? =
 /**
  * One Episode row: its number, name (or "Episode n"), "✓ Watched" or "mm:ss in", the
  * thin bar, whether it is Up next, and what OK plays (from its Resume point unless
- * Watched).
+ * Watched); [download] is its server download's status ("Downloading 42%"), if any.
  */
 data class EpisodeRow(
     val id: String,
@@ -126,6 +126,7 @@ data class EpisodeRow(
     val upNext: Boolean,
     val choice: PlayChoice,
     val watched: Boolean = false,
+    val download: String? = null,
 )
 
 fun episodeRows(
@@ -157,6 +158,7 @@ fun episodeRows(
             subtitle = listOf(code, name).filter { it.isNotEmpty() }.joinToString(" · "),
         ),
         watched = watched,
+        download = episodeDownloadText(episode.download),
     )
 }
 

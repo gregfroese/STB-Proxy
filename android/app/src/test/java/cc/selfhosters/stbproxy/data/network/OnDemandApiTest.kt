@@ -2,6 +2,7 @@ package cc.selfhosters.stbproxy.data.network
 
 import cc.selfhosters.stbproxy.data.ON_DEMAND_OFF_NOTICE
 import cc.selfhosters.stbproxy.data.OnDemandAvailability
+import cc.selfhosters.stbproxy.data.model.OnDemandDownloadBrief
 import cc.selfhosters.stbproxy.data.model.OnDemandKey
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -260,5 +261,105 @@ class OnDemandApiTest {
         val request = server.takeRequest()
         assertEquals("DELETE", request.method)
         assertEquals("/api/ondemand/session/abc", request.path)
+    }
+
+    // ---- downloads ----
+
+    @Test
+    fun `an older server's detail and Episodes parse with downloads off`() = runBlocking {
+        respond(200, """{"portal": "p1", "id": "m1", "kind": "movie", "name": "Heat"}""")
+        respond(200, """[{"id": "e1", "seasonId": "s1", "number": 1}]""")
+        val detail = api().fetchOnDemandItem("p1", "m1")
+        val episodes = api().fetchOnDemandSeason("p1", "x", "s1")
+
+        assertEquals(false, detail.canDownload)
+        assertNull(detail.download)
+        assertNull(episodes.single().download)
+    }
+
+    @Test
+    fun `the detail and Episodes carry their download briefs`() = runBlocking {
+        respond(
+            200,
+            """{"portal": "p1", "id": "m1", "kind": "movie", "name": "Heat", "canDownload": true,
+               "download": {"id": 12, "status": "queued", "progress": 40, "error": null, "mine": true}}""",
+        )
+        respond(200, """[{"id": "e1", "seasonId": "s1", "download": {"id": "d2", "status": "done", "progress": 100}}]""")
+        val detail = api().fetchOnDemandItem("p1", "m1")
+        val episodes = api().fetchOnDemandSeason("p1", "x", "s1")
+
+        assertEquals(true, detail.canDownload)
+        assertEquals(OnDemandDownloadBrief("12", "queued", 40, null, mine = true), detail.download)
+        assertEquals(OnDemandDownloadBrief("d2", "done", 100), episodes.single().download)
+    }
+
+    @Test
+    fun `the downloads list decodes Movies and Episodes`() = runBlocking {
+        respond(
+            200,
+            """{"canDownload": true, "items": [
+                 {"id": "d1", "kind": "movie", "item": {"portal": "p1", "id": "m1"}, "title": "Heat",
+                  "poster": "/api/ondemand/poster/p1/m1", "status": "downloading", "progress": 42,
+                  "error": null, "sizeBytes": 123456789012, "mine": true, "createdAt": 1.5e9, "finishedAt": null},
+                 {"id": "d2", "kind": "episode",
+                  "item": {"portal": "p1", "seriesId": "s1", "seasonId": "se1", "episodeId": "e1"},
+                  "title": "Dark S1 E1", "poster": "", "status": "failed", "progress": 0,
+                  "error": "Portal said no", "sizeBytes": null, "mine": false, "createdAt": 1.5e9}]}""",
+        )
+        val result = api().fetchOnDemandDownloads()
+
+        assertEquals("/api/ondemand/downloads", server.takeRequest().path)
+        assertEquals(true, result.canDownload)
+        assertEquals(OnDemandKey.Movie("p1", "m1"), result.items[0].item.key)
+        assertEquals(123456789012L, result.items[0].sizeBytes)
+        assertEquals(OnDemandDownloadBrief("d1", "downloading", 42, mine = true), result.items[0].brief)
+        assertEquals(OnDemandKey.Episode("p1", "s1", "se1", "e1"), result.items[1].item.key)
+        assertEquals("Portal said no", result.items[1].error)
+    }
+
+    @Test
+    fun `asking for a download posts the Movie, Episode or Season once`() = runBlocking {
+        val accepted = """{"items": [{"id": "d1", "kind": "movie", "item": {"portal": "p1", "id": "m1"},
+            "title": "Heat", "poster": "", "status": "queued", "progress": 0, "error": null,
+            "sizeBytes": null, "mine": true, "createdAt": 1.0, "finishedAt": null}]}"""
+        respond(202, accepted)
+        respond(202, """{"items": []}""")
+        respond(202, """{"items": []}""")
+        respond(503, """{"error": "The downloads folder isn't set up", "code": "downloads_unavailable"}""")
+
+        val movie = api().requestOnDemandDownload(OnDemandKey.Movie("p1", "m1"))
+        api().requestOnDemandDownload(OnDemandKey.Episode("p1", "s1", "se1", "e1"))
+        api().requestOnDemandSeasonDownload("p1", "s1", "se1")
+        val e = failure { api().requestOnDemandSeasonDownload("p1", "s1", "se1") }
+
+        assertEquals("d1", movie.single().id)
+        val bodies = List(4) {
+            val request = server.takeRequest()
+            assertEquals("POST", request.method)
+            assertEquals("/api/ondemand/downloads", request.path)
+            json.parseToJsonElement(request.body.readUtf8())
+        }
+        assertEquals(json.parseToJsonElement("""{"portal": "p1", "id": "m1"}"""), bodies[0])
+        assertEquals(
+            json.parseToJsonElement("""{"portal": "p1", "seriesId": "s1", "seasonId": "se1", "episodeId": "e1"}"""),
+            bodies[1],
+        )
+        assertEquals(json.parseToJsonElement("""{"portal": "p1", "seriesId": "s1", "seasonId": "se1"}"""), bodies[2])
+        assertEquals(503, e?.code)
+        assertEquals("The downloads folder isn't set up", e?.serverMessage)
+        assertEquals(4, server.requestCount)
+    }
+
+    @Test
+    fun `cancelling a download sends DELETE`() = runBlocking {
+        respond(204)
+        respond(409, """{"error": "It has finished downloading", "code": "downloaded"}""")
+        api().cancelOnDemandDownload("d1")
+        val e = failure { api().cancelOnDemandDownload("d1") }
+
+        val request = server.takeRequest()
+        assertEquals("DELETE", request.method)
+        assertEquals("/api/ondemand/downloads/d1", request.path)
+        assertEquals("downloaded", e?.errorCode)
     }
 }

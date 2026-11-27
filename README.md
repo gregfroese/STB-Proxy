@@ -139,6 +139,7 @@ A companion app for **Android TV and phones**, included in this project. The sam
 - **Guide**: a **Guide** action in the picker browses the next 24 hours for the channels in your lineup, grouped by Block or Genre, with an **On now** filter and an inline per-channel timeline. The search runs across programme titles and descriptions (with match modes behind **Match**). Tapping a result plays its channel, and channel up/down then follows the scope you launched from (the search results, the on-now list, or the Block/Genre).
 - **Android TV**: the same APK appears in the TV launcher (with a banner) and is driven by the remote; **Back** closes the guide, then leaves the player.
 - **Build it**: `cd android && ./gradlew assembleCompanion` (signed with a local keystore, `android/keystore.properties`) — it writes **`STB-Proxy-Companion-<version>.apk`** to `android/app/build/outputs/apk/companion/`. Sideload the APK on the phone, or fetch it on the TV with an app like Downloader.
+- **Updates**: copy the APK into a `companion` folder beside `config.json` (`/config/companion/` in Docker). STB-Proxy offers the newest one at `/companion.apk` (also through the web viewer) and its version at `/api/companion`, and the app's **Settings → Update** downloads and installs it. Android asks once to allow installs from the app.
 
 # Web viewer (desktop & phones)
 
@@ -160,6 +161,14 @@ A browser client for STB-Proxy, included in this project under `web/`. It mirror
 - **Recordings** (in the menu) lists what's recording now, with **Stop**, and what's recorded. You can play recordings in the browser, download them or delete them. Files are saved as `Title/Title - date time.mp4`, so Plex or Jellyfin can use the folder as a library.
 - If the portal drops the stream, the recording reopens it and carries on, and the recording is marked **partial**, with the gaps noted. It also carries on after STB-Proxy restarts.
 - Starting a recording needs 1 GB free in the folder, and a recording stops, keeping what it has, when less than 300 MB is left.
+
+# On Demand downloads
+
+- Set **On Demand Movies folder** and **On Demand TV Shows folder** in Settings → Recording (in Docker, bind-mount them, say your Plex library's movies and tv folders), then switch **Downloads** on for an Account (Accounts page; it needs On Demand on). An empty folder turns that kind off.
+- On a Movie or Series in the web viewer or the app, **Download** saves the Movie, an Episode or a whole Season as an MP4 there: `<Movies folder>/Name (Year)/Name (Year).mp4` and `<TV Shows folder>/Series (Year)/Season 02/Series (Year) - S02E05.mp4`, so Plex or Jellyfin picks them up. Unfinished downloads wait in a hidden `.stb-proxy-partial` folder inside it, which Plex and Jellyfin skip. The files are written as the user STB-Proxy runs as (root in the Docker image), so the folders must be writable by it.
+- The portal plays one stream per MAC, so downloads wait their turn: one at a time per portal, only once nobody has watched from it for 3 minutes. Anyone who starts watching pauses the download straight away, and it goes on later from where it stopped (also after STB-Proxy restarts).
+- The **On Demand** page lists every download with **Cancel**, **Retry** and **Delete** (which removes the file). A running download shows on **Streams**, where you can pause it.
+- Starting a download needs 1 GB free in the folder.
 
 # Channel logos
 

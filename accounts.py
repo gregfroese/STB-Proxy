@@ -2,7 +2,7 @@
 
 Accounts live in config.json under "accounts", each a record
 {"username": str, "hash": str, "blocks": [str], "enabled": bool, "on demand": bool,
-"adult on demand": bool}. Passwords are
+"adult on demand": bool, "downloads": bool}. Passwords are
 stored only as a self-describing PBKDF2-HMAC-SHA256 string (see hashPassword),
 never in the clear. Blocks are referenced by name; see ADR 0001 for the model.
 """
@@ -63,6 +63,7 @@ def normaliseAccounts(value):
             # Permission switches, so only a real true turns them on (ADR 0004).
             "on demand": record.get("on demand") is True,
             "adult on demand": record.get("adult on demand") is True,
+            "downloads": record.get("downloads") is True,
         })
     return records
 

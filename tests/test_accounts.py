@@ -35,7 +35,7 @@ class NormaliseTest(unittest.TestCase):
             {"username": "katie", "hash": "h", "blocks": ["Kids"], "enabled": True},
         ])
         self.assertEqual(records, [{"username": "katie", "hash": "h", "blocks": ["Kids"], "enabled": True,
-                                    "on demand": False, "adult on demand": False}])
+                                    "on demand": False, "adult on demand": False, "downloads": False}])
 
     def test_drops_junk_and_fills_defaults(self):
         records = accounts.normaliseAccounts([
@@ -43,7 +43,7 @@ class NormaliseTest(unittest.TestCase):
             {"username": "katie", "hash": "h", "blocks": "Kids"},
         ])
         self.assertEqual(records, [{"username": "katie", "hash": "h", "blocks": [], "enabled": True,
-                                    "on demand": False, "adult on demand": False}])
+                                    "on demand": False, "adult on demand": False, "downloads": False}])
 
     def test_keeps_the_on_demand_switches(self):
         records = accounts.normaliseAccounts([

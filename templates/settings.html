@@ -222,6 +222,25 @@
                         less than 300 MB is left.</div>
                 </div>
 
+                <div class="col-md-6">
+                    <label class="form-label" for="downloads movies folder">On Demand Movies folder</label>
+                    <input form="save" type="text" name="downloads movies folder" id="downloads movies folder"
+                        class="form-control" value="{{ settings['downloads movies folder'] }}" placeholder="/movies">
+                    <div class="form-text">Where downloaded Movies are saved, each in its own
+                        <code>Name (Year)</code> folder: your Plex or Jellyfin Movies library, say. Empty turns Movie
+                        downloads off.</div>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label" for="downloads tv folder">On Demand TV Shows folder</label>
+                    <input form="save" type="text" name="downloads tv folder" id="downloads tv folder"
+                        class="form-control" value="{{ settings['downloads tv folder'] }}" placeholder="/tv">
+                    <div class="form-text">Where downloaded Episodes are saved, in
+                        <code>Series (Year)/Season 02</code> folders: your TV Shows library, say. Empty turns Episode
+                        downloads off. Accounts need their Downloads switch on, and a download only runs while nobody
+                        watches from its portal.</div>
+                </div>
+
             </div>
         </div>
     </div>

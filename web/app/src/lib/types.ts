@@ -196,6 +196,35 @@ export interface OnDemandDetail extends OnDemandItem {
   categories: string[];
   /** Series only. */
   seasons?: OnDemandSeason[];
+  /** Whether this login may download (its Downloads switch, and a downloads folder). */
+  canDownload?: boolean;
+  /** Movies only; null when nobody asked for it. */
+  download?: OnDemandDownloadBrief | null;
+}
+
+export type OnDemandDownloadStatus = "queued" | "downloading" | "done" | "failed";
+
+/** An item's download as the detail and Episode lists show it. A queued one with progress
+ * has given way to a viewer and goes on once nobody watches from its portal. */
+export interface OnDemandDownloadBrief {
+  id: string;
+  status: OnDemandDownloadStatus;
+  progress: number;
+  error: string | null;
+  /** This login started it, so may cancel it. */
+  mine?: boolean;
+}
+
+/** One download of GET /api/ondemand/downloads (and POST's answer). */
+export interface OnDemandDownload extends OnDemandDownloadBrief {
+  kind: "movie" | "episode";
+  item: OnDemandKey;
+  title: string;
+  poster: string;
+  sizeBytes: number | null;
+  mine: boolean;
+  createdAt: number;
+  finishedAt: number | null;
 }
 
 /** One Episode of GET /api/ondemand/series/<portal>/<seriesId>/season/<seasonId>. */
@@ -205,6 +234,7 @@ export interface OnDemandEpisode {
   number: number | null;
   name: string | null;
   progress: OnDemandProgress | null;
+  download?: OnDemandDownloadBrief | null;
 }
 
 /** What POST /play and PUT progress name: a Movie, or one Episode of a Series. */

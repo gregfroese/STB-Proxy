@@ -170,6 +170,7 @@ fun OnDemandItemScreen(
     val state by viewModel.detail.state.collectAsStateWithLifecycle()
     val play by rememberUpdatedState(onPlay)
     LaunchedEffect(viewModel) { viewModel.detail.playStarts.collect { play(it) } }
+    FollowDownloads(viewModel.detail)
     val palette = pickerPalette()
     val actions = remember(viewModel) {
         TitleDetailActions(
@@ -177,6 +178,9 @@ fun OnDemandItemScreen(
             onToggleWatched = viewModel.detail::toggleWatched,
             onRetry = viewModel.detail::retry,
             onSeason = viewModel.detail::selectSeason,
+            onDownload = viewModel.detail::downloadMovie,
+            onDownloadSeason = viewModel.detail::downloadSeason,
+            onCancelDownload = viewModel.detail::cancelMovieDownload,
         )
     }
 
