@@ -198,12 +198,14 @@ class Downloader:
     the download's portal, atomically with the viewers' admission and only if stillQuiet()
     is still true then: (mac, release) or None. mint(rec, mac) returns the
     playback link, and openSession(rec, mac) a fresh ondemandsession.Session to read it.
-    remux and freeSpace stand in for ffmpeg and the disk in tests.
+    remux and freeSpace stand in for ffmpeg and the disk in tests. done(rec, folder) is told of
+    each finished download (app.py has Plex scan it); its errors are logged, not raised.
     """
 
     def __init__(self, store, folder, busy, admit, mint, openSession, log, clock=time.time,
-                 remux=recordings.defaultRemux, freeSpace=recordings.defaultFreeSpace):
+                 remux=recordings.defaultRemux, freeSpace=recordings.defaultFreeSpace, done=None):
         self.store = store
+        self.done = done
         self.folder = folder
         self.busy = busy
         self.admit = admit
@@ -527,6 +529,11 @@ class Downloader:
         self.store.update(id, status="done", progress=100, file=out, size=size, error=None,
                           finished=self.clock(), updated=self.clock())
         self.log.info("Download({}) of {} done: {}".format(id, rec["title"], out))
+        if self.done is not None:
+            try:
+                self.done(self.store.get(id), folder)
+            except Exception as e:
+                self.log.error("Download({}): telling the library failed ({})".format(id, e))
 
     def removePartial(self, rec, folder=None):
         id = rec["id"]

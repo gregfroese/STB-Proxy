@@ -74,6 +74,15 @@ class ApiTest(DownloadTestCase):
         self.assertEqual(self.streaming(), [])  # its slot is back
         self.assertEqual(self.portal.mints, [("/media/5.mpg", "0")])
 
+    def test_plex_scans_the_new_folder_when_it_is_set_up(self):
+        self.app.getSettings().update({"plex url": "http://plex.test:32400", "plex token": "tok"})
+        with mock.patch.object(self.app.plex, "scanFolder", return_value="x") as scan:
+            self.download({"portal": PORTAL, "id": "5"})
+            self.runQueue()
+        movies = os.path.join(self.dir.name, "movies")
+        scan.assert_called_once_with("http://plex.test:32400", "tok", "movie", movies,
+                                     os.path.join(movies, "Heat (2020)"))
+
     def test_the_switch_and_the_folder_gate_it(self):
         self.assertEqual(self.download({"portal": PORTAL, "id": "5"}, "other", 403)["code"], "downloads_off")
         self.assertFalse(self.fetch("/api/ondemand/item/{}/5".format(PORTAL), "other").get_json()["canDownload"])
